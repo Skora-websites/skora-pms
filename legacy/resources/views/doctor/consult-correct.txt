@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Doctor Consultation Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    @include('doctor.inc.header-links')
+    <link rel="stylesheet" href="{{ asset('assets-doctor/css/custom.css') }}" id="app-style">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    @include('doctor.inc.custom')
+</head>
+<body>
+    <div class="main-wrapper">
+        @include('doctor.inc.header1')
+        <div class="modal fade" id="historyDetailsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Consultation Details</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-3 left-box">
+                    <div class="card info-card">
+                        <h5 class="section-title mt-1 ms-2">Basic Info</h5>
+                        <table class="table table-bordered table-sm mb-0">
+                            <tbody>
+                                <tr>
+                                    <th>Patient Registration ID</th>
+                                    <td>{{ $patient->registration_id ?? 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Mobile</th>
+                                    <td>{{ $patient->phone ?? 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Consultation for Patient</th>
+                                    <td>{{ $patient->name ?? 'N/A' }} ({{ ucfirst($patient->gender ?? 'Male') }})</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="modal fade" id="BillingRecords" tabindex="-1" aria-labelledby="exampleModalLabel"
+                            aria-hidden="true">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                    <div class="modal-header rounded border-0">
+                                        <h4 class="modal-title fw-bold d-flex align-items-center gap-2"
+                                            id="addbillingdetailsLabel" style="color: #0e606e; font-weight: 700;">
+                                          Save Billing Records
+                                        </h4>
+                                        <button type="button" class="btn-close rounded-circle shadow bg-white me-2"
+                                            data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="billingForm">
+                                            @csrf
+                                            <input type="hidden" id="selectedPatientId" name="patient_id" value="{{ $patient->id ?? '' }}">
+                                            <div class="row">
+                                                <div class="card mb-4 shadow-sm border-0 rounded-3">
+                                                    <div class="card-header">
+                                                        <h5 class="mb-0"><i class="fas fa-user me-2"></i> Patient Details</h5>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="row">
+                                                            <div class="col-md-6">
+                                                                <p><strong>Name:</strong> {{ $patient->name ?? 'N/A' }} ({{ ucfirst($patient->gender ?? 'Male') }})</p>
+                                                                <p><strong>Registration ID:</strong> {{ $patient->registration_id ?? 'N/A' }}</p>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <p><strong>Phone:</strong> {{ $patient->phone ?? 'N/A' }}</p>
+                                                                <p><strong>Age:</strong> {{ \Carbon\Carbon::parse($patient->dob)->age ?? 'N/A' }} years</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                              
+                                               <div class="col-md-3">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Billing Type</label>
+                                                    <div class="input-group">
+                                                        <select class="form-selects" id="billingTypeSelect"
+                                                            name="billing_type_id" required>
+                                                            <option value="">Select Billing Type ...</option>
+                                                            @foreach ($billingtype as $type)
+                                                                <option value="{{ $type->id }}">{{ $type->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                        <a href="{{ route('doctor-billing') }}"
+                                                        class="btn btn-outline-primary"
+                                                        title="Add Billing Type">
+                                                            <i class="fas fa-arrow-right"></i>
+                                                              <i class="fas fa-user-plus"></i>
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                                <div class="col-md-3">
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Total Amount</label>
+                                                        <input type="number" id="totalAmount" name="total_amount" class="form-control" placeholder="Total Amount" step="0.01" required>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Received Amount</label>
+                                                        <input type="number" id="receivedAmount" name="received_amount"
+                                                            class="form-control" placeholder="Received Amount"
+                                                            step="0.01" required>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Pending Amount</label>
+                                                        <input type="number" id="pendingAmount" name="pending_amount"
+                                                            class="form-control" placeholder="Pending Amount" readonly>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-12">
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Notes</label>
+                                                        <textarea name="notes" class="form-control" rows="3" placeholder="Additional notes (optional)"></textarea>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="card mb-3">
+                                                <div class="card-header">
+                                                    <h6 class="card-title color-doctorrx mb-0">Select Payment Method
+                                                    </h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <div class="payment-method-card">
+                                                        <div class="row">
+                                                            <div class="col-md-5">
+                                                                <label for="paymentUpi" class="mb-0 w-100">
+                                                                    <div class="payment-option"
+                                                                        onclick="selectPaymentMethod('upi')">
+                                                                        <input type="radio" id="paymentUpi"
+                                                                            name="payment_method" value="upi">
+                                                                        <i class="ti ti-brand-google-pay me-2"></i> UPI
+                                                                        Payment
+                                                                    </div>
+                                                                </label>
+                                                                <label for="paymentCash" class="mb-0 w-100">
+                                                                    <div class="payment-option"
+                                                                        onclick="selectPaymentMethod('cash')">
+                                                                        <input type="radio" id="paymentCash"
+                                                                            name="payment_method" value="cash">
+                                                                        <i class="ti ti-cash me-2"></i> Cash
+                                                                    </div>
+                                                                </label>
+                                                                <label for="paymentCard" class="mb-0 w-100">
+                                                                    <div class="payment-option"
+                                                                        onclick="selectPaymentMethod('card')">
+                                                                        <input type="radio" id="paymentCard"
+                                                                            name="payment_method" value="card">
+                                                                        <i class="ti ti-credit-card me-2"></i> Card
+                                                                    </div>
+                                                                </label>
+                                                                <label for="paymentNetbanking" class="mb-0 w-100">
+                                                                    <div class="payment-option"
+                                                                        onclick="selectPaymentMethod('netbanking')">
+                                                                        <input type="radio" id="paymentNetbanking"
+                                                                            name="payment_method" value="netbanking">
+                                                                        <i class="ti ti-building-bank me-2"></i> Net
+                                                                        Banking
+                                                                    </div>
+                                                                </label>
+                                                            </div>
+                                                            <div class="col-md-7">
+                                                                <div id="paymentFieldsContainer">
+                                                                    <div id="upiFields" class="payment-fields">
+                                                                        <h6 class="color-doctorrx mb-3">UPI Payment
+                                                                            Details</h6>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">UPI ID</label>
+                                                                            <input type="text" class="form-control"
+                                                                                name="payment_details[upi_id]"
+                                                                                placeholder="Enter UPI ID">
+                                                                        </div>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Transaction
+                                                                                Date</label>
+                                                                            <input type="date" class="form-control"
+                                                                                name="payment_details[transaction_date]">
+                                                                        </div>
+                                                                    </div>
+                                                                    <div id="cashFields" class="payment-fields">
+                                                                        <h6 class="color-doctorrx mb-3">Cash Payment
+                                                                            Details</h6>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Payment
+                                                                                Date</label>
+                                                                            <input type="date" class="form-control"
+                                                                                name="payment_details[payment_date]">
+                                                                        </div>
+                                                                    </div>
+                                                                    <div id="cardFields" class="payment-fields">
+                                                                        <h6 class="color-doctorrx mb-3">Card Payment
+                                                                            Details</h6>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Card
+                                                                                Number</label>
+                                                                            <input type="text" class="form-control"
+                                                                                name="payment_details[card_number]"
+                                                                                placeholder="Enter card number">
+                                                                        </div>
+                                                                        <div class="row mb-3">
+                                                                            <div class="col-md-6">
+                                                                                <label class="form-label">Expiry
+                                                                                    Date</label>
+                                                                                <input type="month"
+                                                                                    class="form-control"
+                                                                                    name="payment_details[expiry]">
+                                                                            </div>
+                                                                            <div class="col-md-6">
+                                                                                <label class="form-label">CVV</label>
+                                                                                <input type="text"
+                                                                                    class="form-control"
+                                                                                    name="payment_details[cvv]"
+                                                                                    placeholder="CVV">
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div id="netbankingFields" class="payment-fields">
+                                                                        <h6 class="color-doctorrx mb-3">Net Banking Details</h6>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Bank Name</label>
+                                                                            <select class="form-selects w-100"
+                                                                                name="payment_details[bank_name]">
+                                                                                <option value="">Select bank
+                                                                                </option>
+                                                                                <option>State Bank of India</option>
+                                                                                <option>HDFC Bank</option>
+                                                                                <option>ICICI Bank</option>
+                                                                                <option>Axis Bank</option>
+                                                                            </select>
+                                                                        </div>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Transaction
+                                                                                ID</label>
+                                                                            <input type="text" class="form-control"
+                                                                                name="payment_details[transaction_id]"
+                                                                                placeholder="Enter transaction ID">
+                                                                        </div>
+                                                                        <div class="mb-3">
+                                                                            <label class="form-label">Transaction
+                                                                                Date</label>
+                                                                            <input type="date" class="form-control"
+                                                                                name="payment_details[transaction_date]">
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer pt-1 pb-0">
+                                                <button type="submit" class="btn btn-outline-primary"id="submitBilling">Submit Bill</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="info-card mt-3 animate__animated animate__fadeIn"
+                            style="margin-bottom: 13px !important;">
+                            <h5><i class="fas fa-heartbeat me-2"></i>Vitals & Body Composition</h5>
+                            <div class="row">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-sm">
+                                        <tbody>
+                                            <tr>
+                                                <th>Blood Group</th>
+                                                <td>{{ $appointments->blood_group ?? 'N/A' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Weight</th>
+                                                <td>{{ $appointments->weight ?? 'N/A' }} kg</td>
+                                            </tr>
+                                            <tr>
+                                                <th>BP Level</th>
+                                                <td>{{ $appointments->bp ?? 'N/A' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Height</th>
+                                                <td>{{ $appointments->height ?? 'N/A ' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Age</th>
+                                                <td>{{ \Carbon\Carbon::parse($patient->dob)->age ?? 'N/A' }} years</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-history me-2"></i>Medical History <i
+                                    class="ti ti-microphone voice-mic" data-target="medicalHistoryNotes"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <textarea id="medicalHistoryNotes" class="form-control" rows="4" placeholder="Speak or type history..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-sticky-note me-2"></i>Private Notes <i
+                                    class="ti ti-microphone voice-mic" data-target="privateNotes"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <textarea id="privateNotes" class="form-control" rows="4" placeholder="Speak or type notes..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-file-medical me-2"></i>Medical Records <i
+                                    class="ti ti-microphone voice-mic" data-target="medicalRecordsNotes"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <textarea id="medicalRecordsNotes" class="form-control"rows="4" placeholder="Speak or type records..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-vial me-2"></i>Lab Results <i class="ti ti-microphone voice-mic"
+                                    data-target="labResultsNotes"></i><span class="voice-indicator"></span></h5>
+                            <textarea id="labResultsNotes" class="form-control"rows="4" placeholder="Speak or type results..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-9 right-box">
+                    <div class="card">
+                        <h5 class="section-title mt-3 mb-2 ms-2">Consultation Details</h5>
+                        <div class="form-section">
+                            <h5>Symptoms <i class="ti ti-microphone voice-mic" data-target="symptomsNote"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <select id="symptoms" class="form-select" multiple>
+                                @foreach ($Allsymptoms as $index => $symptoms)
+                                    <option value="{{ $symptoms->name }}">{{ $symptoms->name }}</option>
+                                @endforeach
+                            </select>
+                            <table id="symptomsTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Symptom</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="symptomsNote" class="form-control mt-2" rows="3" placeholder="Speak symptoms..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Examination <i class="ti ti-microphone voice-mic"
+                                    data-target="examinationNote"></i><span class="voice-indicator"></span></h5>
+                            <select id="examination" class="form-select" multiple>
+                                @foreach ($Allexamination as $examination)
+                                    <option value="{{ $examination->name }}">{{ $examination->name }}</option>
+                                @endforeach
+                            </select>
+                            <table id="examinationTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Examination</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="examinationNote" class="form-control mt-2" rows="3"
+                                placeholder="Speak examination findings..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Diagnosis <i class="ti ti-microphone voice-mic" data-target="diagnosisNote"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <select id="diagnosis" class="form-select" multiple>
+                                @foreach ($Alldignolisis as $dignolisis)
+                                    <option value="{{ $dignolisis->name }}">{{ $dignolisis->name }}</option>
+                                @endforeach
+                            </select>
+                            <table id="diagnosisTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Diagnosis</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="diagnosisNote" class="form-control mt-2" rows="3"
+                                placeholder="Speak diagnosis..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Lab Tests <i class="ti ti-microphone voice-mic" data-target="labNote"></i><span
+                                    class="voice-indicator"></span></h5>
+                            <select id="labTests" class="form-select" multiple>
+                                @foreach ($Alllabtest as $labtest)
+                                    <option value="{{ $labtest->name }}">{{ $labtest->name }}</option>
+                                @endforeach
+                            </select>
+                            <table id="labTestsTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Lab Test</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="labNote" class="form-control mt-2" rows="4" placeholder="Speak lab tests..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <div class="med-search-group mb-2 mt-2">
+                                <div class="row align-items-center">
+                                    <div class="col-md-6 col-12 mb-2 mb-md-0">
+                                        <div class="medications-header d-flex align-items-center">
+                                            <h5 class="me-3 mb-0">Medications</h5>
+                                            <i class="ti ti-microphone voice-mic" data-target="medicationsNote"></i>
+                                            <span class="voice-indicator"></span>
+                                        </div>
+                                    </div>
+                                    <!-- Right Side: Buttons -->
+                                    <div class="col-md-6 col-12 text-md-end text-start">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button"
+                                                class="btn btn-skora btn-outline-primary border-light"
+                                                id="loadPrevRx">
+                                                ↻ Load common medicine
+                                            </button>
+                                            <!-- <button type="button" class="btn btn-outline-primary border-light" id="templatesBtn">Templates</button>
+                                                <button type="button" class="btn btn-light" id="saveMedications">💾 Save</button>
+                                                -->
+                                            <button type="button"
+                                                class="btn btn-skora btn-outline-primary border-light"
+                                                id="clearMedications">
+                                                Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row align-items-stretch mt-4">
+                                <div class="col-md-6">
+                                    <select id="medicines" class="form-select " multiple
+                                        placeholder="Search || Select Medicines">
+                                        <option value="">Select Medicine Or Search</option>
+                                        @foreach ($Allmedicines as $medicine)
+                                            <option value="{{ $medicine->name }}">{{ $medicine->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-5 offset-md-1">
+                                    <div class="input-group">
+                                        <input type="text" id="searchMedicines"
+                                            class="form-control"placeholder="Print Medicines and Save Own Medicines Name">
+                                        <button class="btn btn-skora btn-outline-primary ps-3 pe-3" type="button"
+                                            id="addSearchedMedicine">
+                                            <i class="ti ti-pill"></i>
+                                        </button>
+                                        {{-- <button class="btn btn-skora btn-outline-primary ps-3 pe-3" type="button"
+                                            id="saveMedicine">
+                                            <i class="fas fa-save"></i>
+                                        </button> --}}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table id="medicinesTable" class="selection-table table-bordered table-sm selection-table mt-2">
+                                    <thead>
+                                        <tr>
+                                            <th width="7%"><i class="ti ti-grip-vertical"></i></th>
+                                            <th width="5%">Sr.</th>
+                                            <th width="22%">Medicine</th>
+                                            <th width="10%">Unit/Dose</th>
+                                            <th width="19%">Frequency</th>
+                                            <th width="12%">When</th>
+                                            <th width="12%">Duration</th>
+                                            <th width="25%">Note</th>
+                                            <th width="5%">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <textarea id="medicationsNote" class="form-control mt-2" rows="3"
+                                placeholder="Speak or type additional medications instructions..."></textarea>
+                        </div>
+                        <div class="text-center mb-4">
+                            <button id="submitConsultation"
+                                class="btn btn-outline-primary w-50 p-2 fs-3">
+                                <i class="fas fa-print"></i> Print & Save Consultation
+                            </button>
+                        </div>
+
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @include('doctor.inc.footer')
+    <!-- Submit Modal -->
+    <div class="modal-overlay" id="submitModalOverlay"></div>
+    <div class="submit-modal" id="submitModal">
+        <div class="modal-header">
+            <h5 class="modal-title p-3">Consultation Actions</h5>
+                    <button type="button" class="btn-close rounded-circle shadow bg-white me-2 p-2" data-bs-dismiss="modal" aria-label="Close" id="closeModal"></button>
+        </div>
+        <div class="modal-body">
+            <p class="mb-3">Choose an action for the current consultation:</p>
+            <button class="btn btn-primary action-btn" id="printPrescription">
+                <i class="fas fa-print me-2"></i>Print Prescription
+            </button>
+            <button class="btn btn-success action-btn" id="saveContinue">
+                <i class="fas fa-save me-2"></i>Save & Continue
+            </button>
+            <button type="button" class="btn btn-info action-btn" data-bs-toggle="modal"
+                data-bs-target="#BillingRecords"><i class="fas fa-file-invoice me-2"></i>
+                Generate Bill
+            </button>
+            {{-- <button class="btn btn-info action-btn" data-bs-toggle="modal" data-bs-target="#addbillingdetails" >
+        Generate Bill
+        </button> --}}
+            <button class="btn btn-warning action-btn" id="saveClose">
+                <i class="fas fa-times me-2"></i>Save & Close
+            </button>
+        </div>
+         {{-- <div class="modal-footer">
+            <button class="btn btn-secondary w-100" id="cancelAction">Cancel</button>
+        </div> --}}
+    </div>
+  
+    <div id="voiceModal" class="voice-modal">
+        <div class="voice-modal-content">
+            <h5>Voice Input Active <i class="fas fa-microphone"></i></h5>
+            <div class="voice-animation">
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+            </div>
+            <p id="transcriptPreview">Listening... Speak now.</p>
+            <button id="stopVoiceBtn">Stop Voice</button>
+            <button id="closeModalBtn">Cancel</button>
+        </div>
+    </div>
+    {{-- {{ route('doctors.generate-bill', $patient->id ?? 0) }} --}}
+    @include('doctor.inc.footer-links')
+    <script src="{{ asset('assets-doctor/js/select2.min.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize Sortable for table rows
+            const medicinesTable = document.getElementById('medicinesTable');
+            if (medicinesTable) {
+                new Sortable(medicinesTable.getElementsByTagName('tbody')[0], {
+                    handle: '.drag-handle',
+                    animation: 150,
+                    onEnd: function() {
+                        updateRowNumbers();
+                    }
+                });
+            }
+            // Function to update row numbers
+            function updateRowNumbers() {
+                $('#medicinesTable tbody tr').each(function(index) {
+                    $(this).find('td:eq(1)').text(index + 1);
+                });
+            }
+            // Function to add medicine to table
+            function addMedicineToTable(medicineName) {
+                if (!medicineName || medicineName.trim() === '') {
+                    showAlert('Please enter a medicine name', 'warning');
+                    return;
+                }
+                let medicineExists = false;
+                $('#medicinesTable tbody tr').each(function() {
+                    const existingMedicine = $(this).find('td:eq(2)').text().trim();
+                    if (existingMedicine === medicineName.trim()) {
+                        medicineExists = true;
+                        return false;
+                    }
+                });
+                if (medicineExists) {
+                    showAlert('This medicine is already added to the list!', 'warning');
+                    return;
+                }
+                const rowCount = $('#medicinesTable tbody tr').length + 1;
+                const newRow = `
+<tr>
+<td class="drag-handle">≡</td>
+<td>${rowCount}</td>
+<td>${medicineName}</td>
+<td><input type="text" class="p-2 form-control form-control1 dose-input" placeholder="e.g. 1 Tablet"></td>
+<td>
+<select class="form-control form-control1 freq-select p-2">
+<option value="">Select</option>
+<option value="1-0-0">1-0-0 (Once daily)</option>
+<option value="0-1-0">0-1-0 (Once daily)</option>
+<option value="0-0-1">0-0-1 (Once daily)</option>
+<option value="1-0-1">1-0-1 (Twice daily)</option>
+<option value="1-1-1">1-1-1 (Thrice daily)</option>
+<option value="SOS">SOS (When required)</option>
+</select>
+</td>
+<td>
+<select class="form-control form-control1 when-select p-2">
+<option value="">Select</option>
+<option value="Before Food">Before Food</option>
+<option value="After Food">After Food</option>
+<option value="With Food">With Food</option>
+<option value="Empty Stomach">Empty Stomach</option>
+</select>
+</td>
+<td>
+<select class="form-control form-control1 dur-select p-2">
+<option value="">Select</option>
+<option value="1 Day">1 Day</option>
+<option value="3 Days">3 Days</option>
+<option value="5 Days">5 Days</option>
+<option value="7 Days">7 Days</option>
+<option value="10 Days">10 Days</option>
+<option value="2 Weeks">2 Weeks</option>
+<option value="1 Month">1 Month</option>
+<option value="To Be Continued">To Be Continued</option>
+</select>
+</td>
+<td><textarea class="form-control form-control1 p-2 note-input" rows="1" placeholder="Special instructions..."></textarea></td>
+<td>
+<button type="button" class="btn btn-sm btn-outline-danger delete-row">
+<i class="fas fa-trash"></i>
+</button>
+</td>
+</tr>
+`;
+                $('#medicinesTable tbody').append(newRow);
+                updateRowNumbers();
+                showAlert('Medicine added successfully!', 'success');
+            }
+            // Initialize medicines select2
+            $('#medicines').select2({
+                placeholder: 'Select medicines...',
+                allowClear: true,
+                closeOnSelect: false
+            }).on('select2:select', function(e) {
+                const value = e.params.data.id;
+                addMedicineToTable(value);
+            });
+            // Add medicine from search input
+            $('#addSearchedMedicine').on('click', function() {
+                const medicineName = $('#searchMedicines').val().trim();
+                if (medicineName) {
+                    addMedicineToTable(medicineName);
+                    $('#searchMedicines').val('');
+                }
+            });
+            $('#searchMedicines').on('keypress', function(e) {
+                if (e.which === 13) {
+                    $('#addSearchedMedicine').click();
+                }
+            });
+            // Delete row
+            $(document).on('click', '.delete-row', function() {
+                const medicineName = $(this).closest('tr').find('td:eq(2)').text();
+                if (confirm(`Are you sure you want to remove "${medicineName}"?`)) {
+                    $(this).closest('tr').remove();
+                    updateRowNumbers();
+                    showAlert('Medicine removed!', 'warning');
+                }
+            });
+            // Clear all medications
+            $('#clearMedications').on('click', function() {
+                if ($('#medicinesTable tbody tr').length > 0) {
+                    if (confirm('Are you sure you want to clear all medications?')) {
+                        $('#medicinesTable tbody').empty();
+                        showAlert('All medications cleared!', 'info');
+                    }
+                } else {
+                    showAlert('No medications to clear!', 'warning');
+                }
+            });
+            // Load common medicines
+            $('#loadPrevRx').on('click', function() {
+                const commonMeds = ['Paracetamol', 'Ibuprofen', 'Cetirizine', 'Amoxicillin', 'Metformin'];
+                if (confirm('Load common medicines?')) {
+                    commonMeds.forEach(med => addMedicineToTable(med));
+                    showAlert('Common medicines loaded!', 'info');
+                }
+            });
+            // Initialize other select2 elements
+            $('.form-select').not('#medicines').select2({
+                placeholder: 'Select or type new options...',
+                allowClear: true,
+                closeOnSelect: false,
+                tags: true
+            }).on('change', function() {
+                const dropdownId = '#' + this.id;
+                const tableId = dropdownId + 'Table';
+                const selectedValues = $(this).val() || [];
+                const tableBody = $(tableId + ' tbody');
+                tableBody.empty();
+                selectedValues.forEach((value, index) => {
+                    const rowNumber = index + 1;
+                    tableBody.append(`
+            <tr data-value="${value}">
+            <td>${rowNumber}</td>
+            <td>${value}</td>
+            <td><textarea class="form-control form-control1 note-input" rows="2" placeholder="Add note for ${value}..." autocomplete="off"></textarea></td>
+            </tr>
+            `);
+                });
+            });
+            // Submit consultation
+            $('#submitConsultation').on('click', function() {
+                $('#submitModal').addClass('show');
+                $('#submitModalOverlay').addClass('show');
+            });
+            // Close modal
+            $('#closeModal, #cancelAction, #submitModalOverlay').on('click', function() {
+                $('#submitModal').removeClass('show');
+                $('#submitModalOverlay').removeClass('show');
+            });
+            // Modal actions (Yeh main changes - actions handle)
+            let consultationId = null;  // Global for PDF
+            $('#printPrescription').on('click', function() {
+                saveConsultation(function(response) {
+                    consultationId = response.consultation_id;
+                   window.open("{{ url('/consultations') }}/" + consultationId + "/pdf", '_blank');                    $('#submitModal').removeClass('show');
+                    $('#submitModalOverlay').removeClass('show');
+                });
+            });
+            $('#saveContinue').on('click', function() {
+                saveConsultation(function() {
+                    showAlert('Consultation saved successfully! You can add billing later.', 'success');
+                    $('#submitModal').removeClass('show');
+                    $('#submitModalOverlay').removeClass('show');
+                    // Stay on page
+                });
+            });
+            $('#saveClose').on('click', function() {
+                saveConsultation(function() {
+                    showAlert('Consultation saved and closed!', 'success');
+                    setTimeout(() => {
+                        window.location.href = '{{ route('doctor.dashboard') }}';  // Redirect to dashboard
+                    }, 1000);
+                });
+            });
+            // Save consultation function (updated with callback for actions)
+            function saveConsultation(callback) {
+                const consultationData = {
+                    patient_id: {{ $patient->id ?? 'null' }},
+                    appointment_id: "{{ $appointments->id ?? '' }}",
+                    symptoms_note: $('#symptomsNote').val(),
+                    examination_note: $('#examinationNote').val(),
+                    diagnosis_note: $('#diagnosisNote').val(),
+                    lab_note: $('#labNote').val(),
+                    medical_history: $('#medicalHistoryNotes').val(),
+                    private_notes: $('#privateNotes').val(),
+                    medical_records: $('#medicalRecordsNotes').val(),
+                    lab_results: $('#labResultsNotes').val(),
+                    symptoms: getTableData('#symptomsTable'),
+                    examination: getTableData('#examinationTable'),
+                    diagnosis: getTableData('#diagnosisTable'),
+                    lab_tests: getTableData('#labTestsTable'),
+                    medications: getMedicationsData(),
+                };
+                $.ajax({
+                    url: "{{ route('consultations.store') }}",
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        ...consultationData
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            if (callback) callback(response);
+                        } else {
+                            showAlert('Error: ' + response.message, 'error');
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('Error saving consultation:', xhr);
+                        showAlert('Error saving consultation. Please try again.', 'error');
+                    }
+                });
+            }
+            // Helper function to get table data
+            function getTableData(tableSelector) {
+                const data = [];
+                $(`${tableSelector} tbody tr`).each(function() {
+                    const item = $(this).find('td').eq(1).text();
+                    const note = $(this).find('.note-input').val() || '';
+                    data.push({
+                        item,
+                        note
+                    });
+                });
+                return data;
+            }
+            // Helper function to get medications data
+            function getMedicationsData() {
+                const medications = [];
+                $('#medicinesTable tbody tr').each(function() {
+                    const medicine = $(this).find('td:eq(2)').text();
+                    const dose = $(this).find('.dose-input').val() || '';
+                    const frequency = $(this).find('.freq-select').val() || '';
+                    const when = $(this).find('.when-select').val() || '';
+                    const duration = $(this).find('.dur-select').val() || '';
+                    const note = $(this).find('.note-input').val() || '';
+                    medications.push({
+                        medicine,
+                        dose,
+                        frequency,
+                        when,
+                        duration,
+                        note
+                    });
+                });
+                return medications;
+            }
+            // Voice Recognition Code (same, no change)
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            let recognition;
+            let currentTargetId = '';
+            let fullTranscript = '';
+            const voiceModal = $('#voiceModal');
+            const transcriptPreview = $('#transcriptPreview');
+            const stopBtn = $('#stopVoiceBtn');
+            const closeBtn = $('#closeModalBtn');
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition();
+                recognition.lang = 'en-US';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.onresult = (event) => {
+                    let interim = '';
+                    let final = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) {
+                            final += event.results[i][0].transcript + ' ';
+                        } else {
+                            interim = event.results[i][0].transcript;
+                        }
+                    }
+                    fullTranscript += final;
+                    const currentText = fullTranscript + (interim ? ' ' + interim : '');
+                    transcriptPreview.text(currentText || 'Listening... Speak now.');
+                    $('#' + currentTargetId).val(currentText); // Update textarea with interim too
+                };
+                // In onerror, handle 'no-speech' specifically
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    if (event.error === 'no-speech') {
+                        transcriptPreview.text('No speech detected. Speak louder or check mic. Try again.');
+                    } else if (event.error === 'not-allowed') {
+                        transcriptPreview.text('Microphone access denied. Please allow microphone access in browser settings.');
+                    } else if (event.error === 'service-not-allowed') {
+                        transcriptPreview.text('Speech service not allowed. Check browser permissions.');
+                    } else {
+                        transcriptPreview.text('Error: ' + event.error + '. Try again.');
+                    }
+                    setTimeout(() => {
+                        if (!stopBtn.data('stopped')) recognition.start();
+                    }, 1000);
+                    $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+                    setTimeout(() => closeVoiceModal(), 5000);
+                };
+                recognition.onend = () => {
+                    if (!stopBtn.data('stopped')) {
+                        recognition.start();
+                    } else {
+                        $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+                    }
+                };
+                $('.voice-mic').on('click', function() {
+                    currentTargetId = $(this).data('target');
+                    fullTranscript = '';
+                    transcriptPreview.text('Listening... Speak now.');
+                    voiceModal.css('display', 'flex');
+                    stopBtn.data('stopped', false);
+                    const input = $('#' + currentTargetId);
+                    input.val('');
+                    recognition.start();
+                });
+                stopBtn.on('click', function() {
+                    $(this).data('stopped', true);
+                    recognition.stop();
+                    closeVoiceModal();
+                });
+                closeBtn.on('click', function() {
+                    recognition.stop();
+                    closeVoiceModal();
+                });
+                function closeVoiceModal() {
+                    voiceModal.css('display', 'none');
+                    $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+                    currentTargetId = '';
+                    fullTranscript = '';
+                }
+            } else {
+                $('.voice-mic').hide();
+                showAlert('Speech Recognition not supported in this browser. Please use Chrome or Edge.',
+                    'error');
+            }
+            function selectPaymentMethod(method) {
+                $('.payment-fields').hide();
+                $(`#${method}Fields`).show();
+                $(`#payment${method.charAt(0).toUpperCase() + method.slice(1)}`).prop('checked', true);
+                $(`input[name="payment_method"]`).not(`#payment${method.charAt(0).toUpperCase() + method.slice(1)}`)
+                    .prop('checked', false);
+                $('.payment-fields').not(`#${method}Fields`).find('input, select').val('');
+            }
+            $('.payment-option').on('click', function() {
+                const method = $(this).find('input').val();
+                selectPaymentMethod(method);
+            });
+            // Calculate pending amount
+            $('#totalAmount, #receivedAmount').on('input', function() {
+                const total = parseFloat($('#totalAmount').val()) || 0;
+                const received = parseFloat($('#receivedAmount').val()) || 0;
+                const pending = total - received;
+                $('#pendingAmount').val(pending >= 0 ? pending.toFixed(2) : 0);
+            });
+            // Submit billing form
+          $('#submitBilling').on('click', function() {
+            const formData = $('#billingForm').serialize();
+            $.ajax({
+                url: "{{ route('billingsConsultpage.store') }}",
+                method: 'POST',
+                data: formData,
+                success: function(response) {
+                    showAlert('Bill submitted successfully!', 'success');
+                    $('#addbillingdetails').modal('hide');
+                    $('#submitModal').removeClass('show');
+                    $('#submitModalOverlay').removeClass('show');
+                },
+                error: function(xhr) {
+                    console.error('Billing submission error:', xhr.responseJSON);
+                    showAlert('Error submitting bill: ' + (xhr.responseJSON?.message || 'Unknown error. Please check console.'), 'error');
+                }
+                });
+            });
+        });
+        // Print Billing Details as PDF
+        window.printBilling = function(billingId) {
+            $.ajax({
+                url: "{{ route('billings.show', ':id') }}".replace(':id', billingId),
+                type: 'GET',
+                success: function({
+                    success,
+                    billing,
+                    message
+                }) {
+                    if (success) {
+                        const {
+                            jsPDF
+                        } = window.jspdf;
+                        const doc = new jsPDF();
+                        const pageWidth = 210;
+                        const pageHeight = 297;
+                        const margin = 12;
+                        const contentWidth = pageWidth - (margin * 2);
+                        const borderColor = [14, 96, 110]; // #0e606e
+                        const headerBgColor = [248, 249, 250];
+                        const amountColor = [40, 40, 40];
+                        let yPos = margin;
+                        let pageCount = 1;
+                        // Draw border on first page
+                        doc.setDrawColor(...borderColor);
+                        doc.setLineWidth(0.7);
+                        doc.rect(5, 5, 200, 287);
+                        function addWatermark() {
+                            const doctorName = "{{ current_clinic()->clinic_name ?? 'AK Clinic' }}";
+                            doc.setTextColor(200, 200, 200);
+                            doc.setFontSize(30);
+                            doc.setFont("helvetica", "bold");
+                            doc.saveGraphicsState();
+                            doc.setGState(new doc.GState({
+                                opacity: 0.2
+                            }));
+                            doc.text(doctorName, 60, 180, {
+                                angle: 45
+                            });
+                            doc.restoreGraphicsState();
+                            doc.setTextColor(0);
+                        }
+                        addWatermark();
+                        // Top Header
+                        doc.setFillColor(...headerBgColor);
+                        doc.rect(margin, yPos, contentWidth, 22, 'F');
+                        try {
+                            const logoUrl = "{{ asset('assets-doctor/img/prescription.png') }}";
+                            const img = new Image();
+                            img.src = logoUrl;
+                            doc.addImage(img, 'PNG', margin + 5, yPos + 2, 16, 16);
+                        } catch (e) {}
+                        doc.setFontSize(16);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(...borderColor);
+                        doc.text("MEDICAL BILL", pageWidth / 2, yPos + 8, {
+                            align: 'center'
+                        });
+                        doc.setFontSize(9);
+                        doc.setTextColor(80, 80, 80);
+                        doc.text("Dr. {{ Auth::user()->name }}", pageWidth / 2, yPos + 14, {
+                            align: 'center'
+                        });
+                        doc.text("MBBS, MD - Consultant Physician", pageWidth / 2, yPos + 18, {
+                            align: 'center'
+                        });
+                        yPos += 40;
+                        // Bill Information
+                        doc.setFontSize(8);
+                        doc.setTextColor(80, 80, 80);
+                        doc.text("Bill No:", margin + 5, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(billing.bill_number || 'N/A', margin + 18, yPos);
+                        doc.setFont(undefined, 'normal');
+                        doc.text("Bill Date:", margin + 60, yPos);
+                        doc.text(new Date(billing.created_at).toLocaleDateString('en-IN'), margin + 78,
+                            yPos);
+                        doc.text("Patient ID:", pageWidth - margin - 35, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(billing.patient.registration_id || 'N/A', pageWidth - margin - 5, yPos, {
+                            align: 'right'
+                        });
+                        yPos += 10;
+                        // Patient Information
+                        doc.setFontSize(9);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(...borderColor);
+                        doc.text("PATIENT INFORMATION", margin + 5, yPos);
+                        yPos += 6;
+                        const col1X = margin + 5;
+                        const col2X = margin + contentWidth / 2 + 10;
+                        doc.setFontSize(8);
+                        doc.setFont(undefined, 'normal');
+                        doc.setTextColor(0, 0, 0);
+                        doc.text(`Name: ${billing.patient.name || '-'}`, col1X, yPos);
+                        doc.text(`Mobile: ${billing.patient.phone || '-'}`, col1X, yPos + 4);
+                        doc.text(`Email: ${billing.patient.email || '-'}`, col2X, yPos);
+                        doc.text(`Patient ID: ${billing.patient.registration_id || '-'}`, col2X, yPos + 4);
+                        yPos += 14;
+                        // Billing Summary
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(...borderColor);
+                        doc.text("BILLING SUMMARY", margin + 5, yPos);
+                        yPos += 7;
+                        doc.setFillColor(...headerBgColor);
+                        doc.rect(margin, yPos, contentWidth, 6, 'F');
+                        doc.setFontSize(8);
+                        doc.setTextColor(0, 0, 0);
+                        doc.text("Description", margin + 5, yPos + 4);
+                        doc.setCharSpace(-0.3);
+                        doc.text("Amount (₹)", margin + contentWidth - 25, yPos + 4, {
+                            align: 'right'
+                        });
+                        yPos += 6;
+                        const billingType = billing.billing_type.name || 'Medical Consultation & Services';
+                        doc.text(billingType, margin + 5, yPos + 4);
+                        doc.setFont(undefined, 'normal');
+                        doc.setTextColor(...amountColor);
+                        doc.text(`₹${parseFloat(billing.total_amount).toFixed(2)}`, margin + contentWidth -
+                            25, yPos + 4, {
+                                align: 'right'
+                            });
+                        yPos += 12;
+                        doc.setDrawColor(200, 200, 200);
+                        doc.setLineWidth(0.2);
+                        doc.line(margin + 110, yPos, margin + contentWidth - 5, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(0, 0, 0);
+                        doc.text("Total Amount:", margin + 115, yPos + 4);
+                        doc.setCharSpace(-0.3);
+                        doc.text(`₹${parseFloat(billing.total_amount).toFixed(2)}`, margin + contentWidth -
+                            25, yPos + 4, {
+                                align: 'right'
+                            });
+                        doc.setCharSpace(0);
+                        yPos += 5;
+                        doc.text("Received Amount:", margin + 115, yPos + 4);
+                        doc.setCharSpace(-0.3);
+                        doc.text(`₹${parseFloat(billing.received_amount).toFixed(2)}`, margin +
+                            contentWidth - 25, yPos + 4, {
+                                align: 'right'
+                            });
+                        doc.setCharSpace(0);
+                        yPos += 5;
+                        doc.setTextColor(220, 53, 69);
+                        doc.text("Pending Amount:", margin + 115, yPos + 4);
+                        doc.setCharSpace(-0.3);
+                        doc.text(`₹${parseFloat(billing.pending_amount).toFixed(2)}`, margin +
+                            contentWidth - 25, yPos + 4, {
+                                align: 'right'
+                            });
+                        doc.setCharSpace(0);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 14;
+                        // Payment Information
+                        doc.setFontSize(9);
+                        doc.setFont(undefined, 'bold');
+                        doc.setTextColor(...borderColor);
+                        doc.text("PAYMENT INFORMATION", margin + 5, yPos);
+                        yPos += 6;
+                        doc.setFontSize(8);
+                        doc.setFont(undefined, 'normal');
+                        const paymentMethod = billing.payment_method.charAt(0).toUpperCase() + billing
+                            .payment_method.slice(1);
+                        const status = billing.status.toUpperCase();
+                        const statusColor = billing.status === 'paid' ? [40, 167, 69] :
+                            billing.status === 'partial' ? [255, 193, 7] : [220, 53, 69];
+                        doc.text(`Payment Method: ${paymentMethod}`, col1X, yPos);
+                        doc.setTextColor(...statusColor);
+                        doc.text(`Status: ${status}`, col2X, yPos);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 8;
+                        const paymentDetails = billing.payment_details || {};
+                        if (Object.keys(paymentDetails).length > 0) {
+                            doc.setFillColor(...headerBgColor);
+                            doc.rect(margin, yPos, contentWidth, 5, 'F');
+                            doc.setFont(undefined, 'bold');
+                            doc.text("Payment Details", margin + 5, yPos + 3.5);
+                            yPos += 14;
+                            doc.setFont(undefined, 'normal');
+                            if (billing.payment_method === 'upi') {
+                                doc.text(`UPI ID: ${paymentDetails.upi_id || '-'}`, col1X, yPos);
+                                doc.text(`Date: ${paymentDetails.transaction_date || '-'}`, col2X, yPos);
+                            } else if (billing.payment_method === 'cash') {
+                                doc.text(`Payment Date: ${paymentDetails.payment_date || '-'}`, col1X,
+                                yPos);
+                            } else if (billing.payment_method === 'card') {
+                                doc.text(`Card: ${paymentDetails.card_number || '-'}`, col1X, yPos);
+                                yPos += 4;
+                                doc.text(`Expiry: ${paymentDetails.expiry || '-'}`, col1X, yPos);
+                            } else if (billing.payment_method === 'netbanking') {
+                                doc.text(`Bank: ${paymentDetails.bank_name || '-'}`, col1X, yPos);
+                                yPos += 4;
+                                doc.text(`Txn ID: ${paymentDetails.transaction_id || '-'}`, col1X, yPos);
+                            }
+                            yPos += 8;
+                        } else {
+                            yPos += 4;
+                        }
+                        // Notes Section
+                        if (billing.notes && billing.notes.trim() !== '') {
+                            doc.setFontSize(9);
+                            doc.setFont(undefined, 'bold');
+                            doc.setTextColor(...borderColor);
+                            doc.text("NOTES", margin + 5, yPos);
+                            yPos += 5;
+                            doc.setFontSize(8);
+                            doc.setFont(undefined, 'normal');
+                            doc.setTextColor(0, 0, 0);
+                            const splitNotes = doc.splitTextToSize(billing.notes, contentWidth - 10);
+                            doc.text(splitNotes, margin + 5, yPos);
+                            yPos += (splitNotes.length * 3) + 8;
+                        }
+                        // Footer
+                        const footerStartY = pageHeight - margin - 30;
+                        doc.setDrawColor(200, 200, 200);
+                        doc.setLineWidth(0.3);
+                        doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
+                        doc.setFontSize(7);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text("Authorized Signature", margin + 5, footerStartY + 6);
+                        doc.setFont(undefined, 'bold');
+                        doc.text("Dr. {{ Auth::user()->name }}", margin + 5, footerStartY + 10);
+                        const centerX = pageWidth / 2;
+                        doc.setFont(undefined, 'normal');
+                        doc.text("This is a computer generated bill", centerX, footerStartY + 6, {
+                            align: 'center'
+                        });
+                        doc.text("No signature required", centerX, footerStartY + 10, {
+                            align: 'center'
+                        });
+                        doc.text("For queries: +91-9876543210", centerX, footerStartY + 14, {
+                            align: 'center'
+                        });
+                        const currentDate = new Date().toLocaleDateString('en-IN');
+                        const currentTime = new Date().toLocaleTimeString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        doc.text(`Generated: ${currentDate}`, margin + contentWidth - 5, footerStartY + 6, {
+                            align: 'right'
+                        });
+                        doc.text(`Time: ${currentTime}`, margin + contentWidth - 5, footerStartY + 10, {
+                            align: 'right'
+                        });
+                        // Ensure border on all pages
+                        doc.setDrawColor(...borderColor);
+                        doc.setLineWidth(0.7);
+                        doc.rect(5, 5, 200, 287);
+                        const pdfBlob = doc.output('blob');
+                        const pdfUrl = URL.createObjectURL(pdfBlob);
+                        const printWindow = window.open(pdfUrl, '_blank');
+                        if (printWindow) {
+                            printWindow.onload = function() {
+                                printWindow.print();
+                            };
+                        }
+                        showAlert('Opening PDF for printing...', 'success');
+                    } else {
+                        showAlert(message || 'Error fetching billing details!', 'error');
+                    }
+                },
+                error: () => showAlert('Error fetching billing details!', 'error')
+            });
+        };
+    
+    </script>
+<div class="modal fade custom-modal" id="welcomeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-animated">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold p-2">Move to Consultations Page</h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="welcome-icon mb-3">
+                    <i class="bi bi-chat-dots fs-1 text-primary"></i>
+                </div>
+                <i class="ti ti-stethoscope fs-1 fw-bold"></i>
+                <h4 class="fw-bold mb-3 mt-3"> Welcome Consultation</h4>
+                <p class="text-muted mb-4">
+                    Doctor apna consultations manage kar rahe hain.
+                    Agar aap manually continue karna chahte hain to manually button par click karein.
+                    Agar prescriptions upload karni hain to Go Prescriptions par click karein.
+                </p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <button type="button" class="btn btn-outline-primary px-4 w-100 hover-scale"
+                        data-bs-dismiss="modal">
+                        <i class="bi bi-pencil me-2"></i>Manually
+                    </button>
+                    </div>
+                    <div class="col-md-6">
+                         <a href="/doctor-upload-consultation-prescription/{{ $consultation->id ?? '' }}"
+                       class="btn btn-primary px-4 w-100 hover-scale">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>Go Prescriptions
+                    </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const pathParts = window.location.pathname.split('/');
+    const consultationId = pathParts[pathParts.length - 1];
+    const prescriptionsLink = document.querySelector('a[href*="doctor-upload-consultation-prescription"]');
+    if (prescriptionsLink) {
+        prescriptionsLink.href = `/doctor-upload-consultation-prescription/${consultationId}`;
+    }
+    setTimeout(function() {
+        var myModal = new bootstrap.Modal(document.getElementById('welcomeModal'));
+        myModal.show();
+    }, 100);
+    const manuallyBtn = document.querySelector('[data-bs-dismiss="modal"]');
+    manuallyBtn.addEventListener('click', function() {
+    });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,2784 @@
+<?php
+
+namespace App\Http\Controllers;
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Appointment;
+use App\Models\DoctorClinic;
+use Illuminate\Http\Request;
+use Twilio\Rest\Client;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Http;
+use App\Exports\AppointmentsExport;
+
+
+class AppointmentController extends Controller
+{
+
+     private $appKey;
+    private $authKey;
+
+    public function __construct()
+    {
+        $this->appKey = config('services.whatsapp.appkey');
+        $this->authKey = config('services.whatsapp.authkey');
+    }
+
+
+    public function showappointment(){
+
+        $userId = Auth::id();
+
+          $patients = User::where('reference_role_id', $userId)
+            ->where('role', 'patient')->orderBy('created_at', 'desc')
+            ->paginate(10);
+
+        return view('doctor.appointment', compact('patients'));
+    }
+
+   public function bookappointment()
+{
+    $patient_details = User::where('role', 'patient')
+        ->where('reference_role_id', Auth::id())
+        ->orderBy('created_at', 'desc')
+        ->get(['id', 'name', 'phone', 'registration_id','gender','address','dob']);
+    return view('doctor.book-appointment', compact('patient_details'));
+}
+
+
+public function getBookedTimes(Request $request)
+{
+    $date = $request->query('date');
+    $doctorId = Auth::id();
+
+    // Fetch booked times for the doctor and date
+    $bookedTimes = Appointment::where('doctor_id', $doctorId)
+        ->where('date', $date)
+        ->pluck('time')
+        ->toArray();
+
+    return response()->json(['booked_times' => $bookedTimes]);
+}
+
+
+public function sendWhatsapp(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'mobile' => 'required|digits:10',
+        'message' => 'required|string'
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => $validator->errors()->first()
+        ]);
+    }
+
+    $mobileNo = '+91' . $request->mobile;
+
+    $formData = [
+        ['name' => 'appkey', 'contents' => $this->appKey],
+        ['name' => 'authkey', 'contents' => $this->authKey],
+        ['name' => 'to', 'contents' => $mobileNo],
+        ['name' => 'message', 'contents' => $request->message],
+        ['name' => 'sandbox', 'contents' => 'false']
+    ];
+
+    try {
+
+        $response = Http::asMultipart()
+            ->timeout(30)
+            ->connectTimeout(10)
+            ->retry(2, 2000)
+            ->post('https://whatsapp.rajatmarketingss.online/api/create-message', $formData);
+
+        if ($response->successful()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Message sent successfully.'
+            ]);
+        }
+
+        // Log API response error for developer
+        Log::error('WhatsApp API Failed Response', [
+            'status' => $response->status(),
+            'body'   => $response->body(),
+            'mobile' => $mobileNo
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Message service is temporarily unavailable. Please try again later.'
+        ]);
+
+    } catch (ConnectionException $e) {
+
+        // Log detailed error for developer
+        Log::error('WhatsApp API Connection Error', [
+            'error'  => $e->getMessage(),
+            'mobile' => $mobileNo
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Unable to connect to message service. Please try again later.'
+        ]);
+
+    } catch (\Exception $e) {
+
+        Log::error('WhatsApp Unexpected Error', [
+            'error'  => $e->getMessage(),
+            'mobile' => $mobileNo
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Something went wrong while sending message.'
+        ]);
+    }
+}
+
+public function sendOtp(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'mobile' => 'required|digits:10'
+    ]);
+    if ($validator->fails()) {
+        return response()->json(['success' => false, 'message' => $validator->errors()->first()]);
+    }
+
+    $otp = rand(100000, 999999);
+    $sessionId = uniqid('otp_');
+    Session::put($sessionId, ['otp' => $otp, 'mobile' => $request->mobile, 'expires_at' => now()->addMinutes(10)]);
+
+    // Send SMS via Twilio
+    $sid = env('TWILIO_SID');
+    $token = env('TWILIO_TOKEN');
+    $client = new Client($sid, $token);
+    $client->messages->create(
+        '+91' . $request->mobile, 
+        [
+            'from' => env('TWILIO_PHONE'),
+            'body' => "Your OTP for appointment consent is: $otp. Valid for 10 minutes."
+        ]
+    );
+
+    return response()->json(['success' => true, 'session_id' => $sessionId]);
+}
+
+
+public function verifyOtp(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'session_id' => 'required|string',
+        'otp' => 'required|digits:6'
+    ]);
+    if ($validator->fails()) {
+        return response()->json(['success' => false, 'message' => $validator->errors()->first()]);
+    }
+
+    $sessionData = Session::get($request->session_id);
+    if (!$sessionData || now()->gt($sessionData['expires_at']) || $request->otp != $sessionData['otp']) {
+        return response()->json(['success' => false, 'message' => 'Invalid or expired OTP']);
+    }
+
+    // Optionally extend session or mark verified
+    return response()->json(['success' => true]);
+  }
+
+
+
+   public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'doctor_id' => 'required|exists:users,id',
+            'patient_id' => 'required|exists:users,id',
+            'patient_string' => 'required|string|max:255',
+            'date' => 'required|date|after_or_equal:today',
+            'time' => 'required|date_format:h:i A',
+            'case_type' => 'nullable|in:clinical_visit,home_visit,online_visit,on_call_visit',
+            'blood_group' => 'nullable|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
+            'bp' => 'nullable|regex:/^\d{2,3}\/\d{2,3}$/',
+            'weight' => 'nullable|numeric|min:0|max:500',
+            'height' => 'nullable|numeric|min:0|max:300',
+            'remarks' => 'nullable|string|max:1000',
+            'consent_type' => 'nullable|in:otp,consent,upload,skipped',
+            'consent_value' => 'nullable|string',
+            'consent_file' => 'nullable|required_if:consent_type,upload|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'mobile_number' => 'nullable|string|min:10|max:15',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => $validator->errors()->first()]);
+        }
+
+        $request->merge(['doctor_id' => auth()->id()]);
+
+        $doctorId = auth()->id();
+        $clinic = DoctorClinic::where('doctor_id', $doctorId)
+                            ->where('is_active', true)
+                            ->orderBy('created_at', 'desc')
+                            ->first();
+        
+        // ✅ LOG: Check if clinic found
+        \Log::info('Clinic search for doctor_id: ' . $doctorId, [
+            'clinic_found' => $clinic ? 'Yes' : 'No',
+            'clinic_details' => $clinic ? [
+                'id' => $clinic->id,
+                'name' => $clinic->clinic_name,
+                'address' => $clinic->address
+            ] : null
+        ]);
+
+        $consentFilePath = null;
+        if ($request->hasFile('consent_file')) {
+            $consentFilePath = $request->file('consent_file')->store('consent_files', 'public');
+            $request->merge(['consent_file' => $consentFilePath]);
+        }
+
+        $appointmentData = $request->only([
+            'doctor_id', 'patient_id', 'patient_string', 'date', 'time', 'case_type',
+            'blood_group', 'bp', 'weight', 'height', 'remarks', 'consent_type',
+            'consent_value', 'consent_file', 'mobile_number'
+        ]);
+        
+        if ($clinic) {
+            $appointmentData['clinic_id'] = $clinic->id;
+        }
+
+        // Create appointment
+        $appointment = Appointment::create($appointmentData);
+
+        $doctor = User::find($request->doctor_id);
+        $patient = User::find($request->patient_id);
+        $appointmentDate = \Carbon\Carbon::parse($request->date)->format('l, F d, Y');
+        $appointmentTime = \Carbon\Carbon::parse($request->time)->format('h:i A');
+        $patientName = $patient ? $patient->name : $request->patient_string;
+
+        $mobileNo = $patient && !empty($patient->phone) ? $patient->phone : ($request->mobile_number ?? null);
+        if ($mobileNo && !str_starts_with($mobileNo, '+')) {
+            $mobileNo = '+91' . $mobileNo; 
+        }
+        if ($mobileNo) {
+            $clinicName = $clinic ? $clinic->clinic_name : 'SkoraCares';
+            $clinicAddress = $clinic ? $clinic->address : 'Noida (UP), Ghaziabad';
+            $clinicPhone = $clinic && $clinic->phone ? $clinic->phone : null;
+            $consultationFee = $clinic && $clinic->consultation_fee ? $clinic->consultation_fee : null;
+
+            $message = "Dear $patientName,\n" .
+                    "Your appointment with Dr. " . ($doctor ? $doctor->name : 'Unknown') . " is successfully booked.\n\n" .
+                    "📅 Date: $appointmentDate\n" .
+                    "⏰ Time: $appointmentTime\n" .
+                    "🏥 Clinic/Hospital Name: $clinicName\n" .
+                    "📍 Address: $clinicAddress\n";
+            
+            // Add clinic phone if available
+            if ($clinicPhone) {
+                $message .= "📞 Contact: $clinicPhone\n";
+            }
+            
+            // Add consultation fee if available
+            if ($consultationFee) {
+                $message .= "💰 Consultation Fee: ₹" . number_format($consultationFee, 2) . "\n";
+            }
+            
+            $message .= "\nRegards,\nTeam SkoraCares";
+            $fileUrl = $request->consent_type === 'upload' && $consentFilePath
+                ? url('storage/' . $consentFilePath)
+                : null;
+
+            try {
+                $formData = [
+                    [
+                        'name' => 'appkey',
+                        'contents' => config('services.whatsapp.appkey')
+                    ],
+                    [
+                        'name' => 'authkey',
+                        'contents' => config('services.whatsapp.authkey')
+                    ],
+                    [
+                        'name' => 'to',
+                        'contents' => $mobileNo
+                    ],
+                    [
+                        'name' => 'message',
+                        'contents' => $message
+                    ],
+                    [
+                        'name' => 'sandbox',
+                        'contents' => 'false'
+                    ]
+                ];
+                if ($fileUrl) {
+                    $formData[] = [
+                        'name' => 'file',
+                        'contents' => $fileUrl
+                    ];
+                }
+                \Log::info('WhatsApp message prepared:', [
+                    'doctor_id' => $doctorId,
+                    'clinic_used' => $clinicName,
+                    'mobile' => $mobileNo,
+                    'message_length' => strlen($message)
+                ]);
+
+                $response = Http::asMultipart()->post('https://whatsapp.rajatmarketingss.online/api/create-message', $formData);
+                \Log::info('WhatsApp API response: status=' . $response->status() . ', body=' . $response->body());
+
+                if (!$response->successful()) {
+                    \Log::error('Failed to send WhatsApp message: ' . $response->body(), [
+                        'clinic_details' => [
+                            'name' => $clinicName,
+                            'address' => $clinicAddress
+                        ]
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error sending WhatsApp message: ' . $e->getMessage(), [
+                    'doctor_id' => $doctorId,
+                    'clinic_id' => $clinic ? $clinic->id : 'none'
+                ]);
+            }
+        } else {
+            \Log::warning('No valid mobile number provided for WhatsApp message', [
+                'doctor_id' => $doctorId,
+                'clinic' => $clinic ? $clinic->clinic_name : 'Default'
+            ]);
+        }
+
+        return response()->json([
+            'success' => true, 
+            'appointment' => $appointment,
+            'app_name' => config('app.name'),
+            'clinic_info' => $clinic ? [
+                'name' => $clinic->clinic_name,
+                'address' => $clinic->address,
+                'phone' => $clinic->phone,
+                'consultation_fee' => $clinic->consultation_fee
+            ] : [
+                'name' => 'Default Clinic',
+                'address' => 'Noida (UP), Ghaziabad',
+                'phone' => null,
+                'consultation_fee' => null              
+            ]
+        ]);
+    }
+
+
+    public function editappointment(Request $request)
+    {
+        $encryptedId = $request->query('appointment_id');
+        if (!$encryptedId) {
+            return redirect()->route('doctors.appointment')
+                            ->with('error', 'Invalid Request.');
+        }
+
+        try {
+            $appointmentId = Crypt::decryptString($encryptedId);
+        } catch (\Exception $e) {
+            return redirect()->route('doctors.appointment')
+                            ->with('error', 'Invalid or Tampered Appointment Link.');
+        }
+
+        $appointment = Appointment::with('patient')->findOrFail($appointmentId);
+
+        if ($appointment->doctor_id !== auth()->id()) {
+            abort(403);
+        }
+
+        // Future check
+        $apptTime = \Carbon\Carbon::parse($appointment->date . ' ' . $appointment->time);
+        if (!$apptTime->isAfter(now())) {
+            return redirect()->route('doctors.appointment')
+                            ->with('error', 'Past appointments cannot be edited.');
+        }
+
+        $clinic = DoctorClinic::where('doctor_id', auth()->id())
+                            ->where('is_active', true)
+                            ->orderBy('created_at', 'desc')
+                            ->first();
+
+        $patient_details = User::where('role', 'patient')
+                            ->select('id', 'name', 'phone', 'registration_id', 'gender')
+                            ->get();
+
+        return view('doctor.edit-book-appointment', compact('appointment', 'clinic', 'patient_details', 'encryptedId'));
+    }
+
+
+    public function bookedTimes(Request $request)  
+    {
+        $date = $request->date;
+        $excludeId = $request->exclude_id;   
+
+        $booked = Appointment::where('doctor_id', auth()->id())
+                    ->where('date', $date)
+                    ->when($excludeId, fn($q) => $q->where('id', '!=', $excludeId))
+                    ->pluck('time')
+                    ->toArray();
+
+        return response()->json(['booked_times' => $booked]);
+    }
+
+
+    public function updateappointment(Request $request)
+        {
+            $validator = Validator::make($request->all(), [
+                'appointment_id' => 'required|exists:appointments,id',
+                'patient_id'     => 'required|exists:users,id',
+                'patient_string' => 'required|string|max:255',
+                'date'           => 'required|date|after_or_equal:today',
+                'time'           => 'required|date_format:h:i A',
+                'case_type'      => 'nullable|in:clinical_visit,home_visit,online_visit,on_call_visit',
+                'blood_group'    => 'nullable|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
+                'bp'             => 'nullable|regex:/^\d{2,3}\/\d{2,3}$/',
+                'weight'         => 'nullable|numeric|min:0|max:500',
+                'height'         => 'nullable|numeric|min:0|max:300',
+                'remarks'        => 'nullable|string|max:1000',
+                'mobile_number'  => 'nullable|string|min:10|max:15',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'message' => $validator->errors()->first()], 422);
+            }
+
+            $appointment = Appointment::findOrFail($request->appointment_id);
+
+            if ($appointment->doctor_id !== auth()->id()) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            }
+
+            $newApptTime = \Carbon\Carbon::parse($request->date . ' ' . $request->time);
+            if (!$newApptTime->isAfter(now())) {
+                return response()->json(['success' => false, 'message' => 'Appointment must be in the future.'], 422);
+            }
+
+            $request->merge(['doctor_id' => auth()->id()]);
+
+            $clinic = DoctorClinic::where('doctor_id', auth()->id())
+                                ->where('is_active', true)
+                                ->orderBy('created_at', 'desc')
+                                ->first();
+
+            $updateData = $request->only([
+                'doctor_id', 'patient_id', 'patient_string', 'date', 'time',
+                'case_type', 'blood_group', 'bp', 'weight', 'height', 'remarks', 'mobile_number'
+            ]);
+
+            if ($clinic) {
+                $updateData['clinic_id'] = $clinic->id;
+            }
+
+            $appointment->update($updateData);
+            $doctor  = User::find(auth()->id());
+            $patient = User::find($request->patient_id);
+            $patientName = $patient ? $patient->name : $request->patient_string;
+            $mobileNo = $patient && !empty($patient->phone) 
+                        ? $patient->phone : ($request->mobile_number ?? null);
+
+            if ($mobileNo && !str_starts_with($mobileNo, '+')) {
+                $mobileNo = '+91' . $mobileNo;
+            }
+            if ($mobileNo) {
+                $clinicName    = $clinic ? $clinic->clinic_name : 'SkoraCares';
+                $clinicAddress = $clinic ? $clinic->address : 'Noida (UP), Ghaziabad';
+                $clinicPhone   = $clinic && $clinic->phone ? $clinic->phone : null;
+                $consultationFee = $clinic && $clinic->consultation_fee ? $clinic->consultation_fee : null;
+                $appointmentDate = \Carbon\Carbon::parse($request->date)->format('l, F d, Y');
+                $appointmentTime = \Carbon\Carbon::parse($request->time)->format('h:i A');
+                $message = "Dear $patientName,\n" .
+                        "Your appointment with Dr. " . ($doctor ? $doctor->name : 'Unknown') . " has been UPDATED.\n\n" .
+                        "📅 New Date: $appointmentDate\n" .
+                        "⏰ New Time: $appointmentTime\n" .
+                        "🏥 Clinic/Hospital: $clinicName\n" .
+                        "📍 Address: $clinicAddress\n";
+
+                if ($clinicPhone) {
+                    $message .= "📞 Contact: $clinicPhone\n";
+                }
+
+                if ($consultationFee) {
+                    $message .= "💰 Consultation Fee: ₹" . number_format($consultationFee, 2) . "\n";
+                }
+                $message .= "\nRegards,\nTeam SkoraCares";
+                try {
+                    $formData = [
+                        ['name' => 'appkey',   'contents' => config('services.whatsapp.appkey')],
+                        ['name' => 'authkey',  'contents' => config('services.whatsapp.authkey')],
+                        ['name' => 'to',       'contents' => $mobileNo],
+                        ['name' => 'message',  'contents' => $message],
+                        ['name' => 'sandbox',  'contents' => 'false']
+                    ];
+
+                    $response = Http::asMultipart()->post('https://whatsapp.rajatmarketingss.online/api/create-message', $formData);
+                    if (!$response->successful()) {
+                        // \Log::error('WhatsApp update failed', ['response' => $response->body()]);
+                    }
+                } catch (\Exception $e) {
+                    // \Log::error('WhatsApp update exception: ' . $e->getMessage());
+                }
+            } else {
+                // \Log::warning('No mobile number found for WhatsApp update', [
+                //     'appointment_id' => $appointment->id
+                // ]);
+            }
+            return response()->json([
+                'success'  => true,
+                'message'  => 'Appointment updated successfully!',
+                'redirect' => route('doctors.appointment')
+            ]);
+        }
+
+ 
+
+   public function filter_patients_appointments(Request $request)
+    {
+        $doctorId = Auth::id();
+        
+        $query = Appointment::where('doctor_id', $doctorId)->with('patient')->orderBy('date', 'desc')->orderBy('time', 'desc');
+
+        if ($request->filled('status')) {
+            if ($request->status === 'pending') {
+                $query->where('status', 'pending');
+            } else {
+                $query->where('status', $request->status); 
+            }
+        }
+
+        if ($request->filled('name')) {
+            $query->whereHas('patient', function ($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->name . '%');
+            });
+        }
+        if ($request->filled('phone')) {
+            $query->whereHas('patient', function ($q) use ($request) {
+                $q->where('phone', 'like', '%' . $request->phone . '%');
+            });
+        }
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start = Carbon::parse($request->start_date)->startOfDay();
+            $end = Carbon::parse($request->end_date)->endOfDay();
+            $query->whereBetween('date', [$start, $end]);
+        }
+
+        if (!$request->filled('start_date') && !$request->filled('end_date') && !$request->filled('name') && !$request->filled('phone')) {
+            $query->whereDate('date', today());  
+        }
+        $appointments = $query->paginate(10);
+        foreach ($appointments as $key => $appointment) {
+            $appointment->index = $appointments->firstItem() + $key;
+            
+            if ($appointment->patient) {
+                $appointment->patient->age = $appointment->patient->dob ? Carbon::parse($appointment->patient->dob)->age : 0;
+            }
+            
+            $appointment->encrypted_id = Crypt::encryptString($appointment->id);
+        }
+
+        $todayclinical_visit_count = Appointment::where('doctor_id', $doctorId)
+                ->whereDate('date', today())
+                ->where('case_type', 'clinical_visit')
+                ->where('status', 'pending')
+                ->count();
+
+        $todayhome_visit_count = Appointment::where('doctor_id', $doctorId)
+                ->whereDate('date', today())
+                ->where('case_type', 'home_visit')
+                ->where('status', 'pending')
+                ->count();
+
+        $todayonline_visit_count = Appointment::where('doctor_id', $doctorId)
+                ->whereDate('date', today())
+                ->where('case_type', 'online_visit')
+                ->where('status', 'pending')
+                ->count();
+
+        $todaycall_visit_count = Appointment::where('doctor_id', $doctorId)
+                ->whereDate('date', today())
+                ->where('case_type', 'on_call_visit')
+                ->where('status', 'pending')
+                ->count();
+
+        return response()->json([
+            'success' => true,
+            'appointments' => $appointments->items(),
+            'todayclinical_visit_count' => $todayclinical_visit_count,
+            'todayhome_visit_count' => $todayhome_visit_count,
+            'todayonline_visit_count' => $todayonline_visit_count,
+            'todaycall_visit_count' => $todaycall_visit_count,
+            'pagination' => [
+                'current_page' => $appointments->currentPage(),
+                'last_page' => $appointments->lastPage(),
+                'total' => $appointments->total(),
+                'links' => $appointments->links('pagination::bootstrap-5')->toHtml()
+            ]
+        ]);
+    }
+
+
+    public function cancelAppointment(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'appointment_id' => 'required|exists:appointments,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $appointment = Appointment::with('patient')->findOrFail($request->appointment_id);
+        
+        if ($appointment->doctor_id !== auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action'
+            ], 403);
+        }
+        
+        $apptTime = Carbon::parse($appointment->date . ' ' . $appointment->time);
+        if ($apptTime->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel past appointments'
+            ], 422);
+        }
+        
+        if ($appointment->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Appointment is already cancelled'
+            ], 422);
+        }
+
+        if ($appointment->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only Pending appointments can be cancelled'
+            ], 422);
+        }
+        
+        $appointment->update(['status' => 'cancelled']);
+        
+        // WhatsApp notification
+        $patient = $appointment->patient;
+        $doctor  = auth()->user();
+        $patientName = $patient ? $patient->name : $appointment->patient_string;
+        $mobileNo    = $patient && $patient->phone ? $patient->phone : $appointment->mobile_number;
+        
+        if ($mobileNo && !str_starts_with($mobileNo, '+')) {
+            $mobileNo = '+91' . $mobileNo;
+        }
+        
+        if ($mobileNo) {
+            $clinic = DoctorClinic::where('doctor_id', auth()->id())
+                                ->where('is_active', true)
+                                ->latest()
+                                ->first();
+
+            $clinicName    = $clinic ? $clinic->clinic_name : 'SkoraCares';
+            $clinicAddress = $clinic ? $clinic->address : 'Noida (UP), Ghaziabad';
+
+            $message = "Dear {$patientName},\n\n" .
+                    "Your appointment with Dr. {$doctor->name} on " .
+                    Carbon::parse($appointment->date)->format('l, F d, Y') .
+                    " at {$appointment->time} has been **CANCELLED** by the doctor.\n\n" .
+                    "If this was unintentional, please contact us immediately.\n\n" .
+                    "Clinic: {$clinicName}\nAddress: {$clinicAddress}\n\n" .
+                    "Regards,\nTeam SkoraCares";
+
+            try {
+                Http::asMultipart()->post('https://whatsapp.rajatmarketingss.online/api/create-message', [
+                    ['name' => 'appkey',   'contents' => config('services.whatsapp.appkey')],
+                    ['name' => 'authkey',  'contents' => config('services.whatsapp.authkey')],
+                    ['name' => 'to',       'contents' => $mobileNo],
+                    ['name' => 'message',  'contents' => $message],
+                    ['name' => 'sandbox',  'contents' => 'false']
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('WhatsApp cancellation failed: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Appointment cancelled successfully!'
+        ]);
+    }
+
+    public function completeAppointment(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'appointment_id' => 'required|exists:appointments,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $appointment = Appointment::findOrFail($request->appointment_id);
+        
+        if ($appointment->doctor_id !== auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action'
+            ], 403);
+        }
+        
+        if ($appointment->status === 'completed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Appointment is already completed'
+            ], 422);
+        }
+        
+        if ($appointment->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot complete cancelled appointments'
+            ], 422);
+        }
+        
+        // if ($appointment->status !== 'pending') {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Only confirmed appointments can be marked completed'
+        //     ], 422);
+        // }
+
+         if ($appointment->status !== 'pending') {
+        return response()->json([
+            'success' => false,
+            'message' => 'Only pending appointments can be marked completed'
+        ], 422);
+    }
+
+
+
+        
+        $appointment->update(['status' => 'completed']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Appointment marked as completed!'
+        ]);
+    }
+
+   
+
+    public function show_appointment($id)
+    {
+        try {
+            $appointment = Appointment::with('patient')
+                ->where('doctor_id', Auth::id())
+                ->findOrFail($id);
+
+            if ($appointment->patient) {
+                $appointment->patient->age = $appointment->patient->dob ? Carbon::parse($appointment->patient->dob)->age : 0;
+            }
+
+            return response()->json([
+                'success' => true,
+                'appointment' => $appointment
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Appointment not found.'
+            ], 404);
+        }
+    }
+
+    public function myConsent()
+    {
+        return view('doctor.my-consent');
+    }
+
+
+
+
+
+public function exportAppointments(Request $request)
+{
+    try {
+        $doctorId = Auth::id();
+        
+        // Get parameters
+        $status = $request->status;
+        $searchName = $request->search_name;
+        $searchPhone = $request->search_phone;
+        $startDate = $request->start_date;
+        $endDate = $request->end_date;
+        
+        // Handle selected IDs
+        $selectedIds = [];
+        if ($request->selected_ids) {
+            $selectedIds = json_decode($request->selected_ids, true);
+        }
+
+        // Create export instance
+        $export = new AppointmentsExport(
+            $doctorId, 
+            $status, 
+            $searchName, 
+            $searchPhone, 
+            $startDate, 
+            $endDate, 
+            $selectedIds
+        );
+
+        // Generate filename
+        $filename = 'appointments_' . date('Y-m-d_His') . '.xlsx';
+
+        // Download Excel file
+        return Excel::download($export, $filename);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Export failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    @extends('layouts.layout-doctor')
+@section('title', 'Doctor || Book Appointments')
+<link rel="stylesheet" href="{{ asset('assets-doctor/css/book-appointmet.css') }}">
+@section('content')
+<div class="main-wrapper">
+    <div class="page-wrapper">
+        <div class="content card">
+            <div class="card p-2">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0 color-doctorrx"> <i class="ti ti-calendar-plus"></i> Select an Appointment Slot</h4>
+                    <div>
+                        <select id="doctorSelect" class="form-select w-auto">
+                            <option selected>{{ Auth::user()->name }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="calendar-container">
+                    <div class="calendar-header">
+                        <button id="prevMonth" class="btn btn-sm btn-outline-primary">&larr; Prev</button>
+                        <h5 id="monthYear" class="text-center"></h5>
+                        <button id="nextMonth" class="btn btn-sm btn-outline-primary">Next &rarr;</button>
+                    </div>
+                    <div class="date-selector" id="dateSelector"></div>
+                </div>
+            </div>
+
+            <div class="container card">
+                <div class="mt-2 d-flex justify-content-between align-items-center mb-3">
+                    <ul class="nav nav-tabs form-label" id="timeTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active d-flex align-items-center gap-2" id="morning-tab" data-bs-toggle="tab" data-bs-target="#morning" type="button" role="tab">
+                                <i class="ti ti-sunrise"></i> Morning
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link d-flex align-items-center gap-2" id="afternoon-tab" data-bs-toggle="tab" data-bs-target="#afternoon" type="button" role="tab">
+                                <i class="ti ti-sun"></i> Afternoon
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link d-flex align-items-center gap-2" id="evening-tab" data-bs-toggle="tab" data-bs-target="#evening" type="button" role="tab">
+                                <i class="ti ti-sunset"></i> Evening
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link d-flex align-items-center gap-2" id="night-tab" data-bs-toggle="tab" data-bs-target="#night" type="button" role="tab">
+                                <i class="ti ti-moon"></i> Night
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="slot-interval ms-3">
+                        <label for="slotInterval" class="form-label mb-0 me-2"> <i class="ti ti-clock"></i> Slot Duration (minutes)</label>
+                        <select id="slotInterval" class="form-select d-inline-block w-auto">
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20">20</option>
+                            <option value="30">30</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="tab-content" id="timeTabContent">
+                    <div class="tab-pane fade show active" id="morning" role="tabpanel">
+                        <p id="morningInfo"></p>
+                        <div class="time-slots" id="morningSlots"></div>
+                    </div>
+                    <div class="tab-pane fade" id="afternoon" role="tabpanel">
+                        <p id="afternoonInfo"></p>
+                        <div class="time-slots" id="afternoonSlots"></div>
+                    </div>
+                    <div class="tab-pane fade" id="evening" role="tabpanel">
+                        <p id="eveningInfo"></p>
+                        <div class="time-slots" id="eveningSlots"></div>
+                    </div>
+                    <div class="tab-pane fade" id="night" role="tabpanel">
+                        <p id="nightInfo"></p>
+                        <div class="time-slots" id="nightSlots"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="appointmentModal" tabindex="-1" aria-labelledby="appointmentModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header rounded border-0">
+                    <h4 class="modal-title fw-bold d-flex align-items-center gap-2" id="appointmentModalLabel" style="color: #0e606e; font-weight: 700;">
+                        Confirm Appointment
+                    </h4>
+                    <button type="button" class="btn-close rounded-circle shadow bg-white me-2" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <form id="appointmentForm">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Doctor Name</label>
+                                    <input type="text" class="form-control" id="modalDoctorName" readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Date & Time</label>
+                                    <input type="text" class="form-control" id="modalDateTime" readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Visit type</label>
+                                    <select class="form-select" id="caseType">
+                                        <option value="clinical_visit">Clinical visit</option>
+                                        <option value="home_visit">Home visit</option>
+                                        <option value="online_visit">Online visit</option>
+                                        <option value="on_call_visit">On Call visit</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-9">
+                                <div class="mb-3 patient-search-container">
+                                    <label class="form-label">Patient Name, Mobile No</label>
+                                    <input type="text" class="form-control" id="patientSearch" placeholder="Search by name, mobile">
+                                    <input type="hidden" id="patientId">
+                                    <div class="patient-dropdown" id="patientDropdown"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label class="form-label">Blood Group</label>
+                                    <select class="form-select" id="bloodGroup">
+                                        <option value="">Select Blood ...</option>
+                                        <option value="A+">A+</option>
+                                        <option value="A-">A-</option>
+                                        <option value="B+">B+</option>
+                                        <option value="B-">B-</option>
+                                        <option value="AB+">AB+</option>
+                                        <option value="AB-">AB-</option>
+                                        <option value="O+">O+</option>
+                                        <option value="O-">O-</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">BP Level(e.g., 120/80)</label>
+                                    <input type="text" class="form-control" id="bp" placeholder="e.g., 120/80">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Weight (kg)</label>
+                                    <input type="number" class="form-control" id="weight" placeholder="e.g., 70">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Height (cm)</label>
+                                    <input type="number" class="form-control" id="height" placeholder="e.g., 170">
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label class="form-label">Remarks for Receptionist</label>
+                                    <textarea class="form-control" id="remarks" placeholder="Remarks for Receptionist" rows="3"></textarea>
+                                </div>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <span type="button" class="btn-link text-decoration-underline toggle-address-details"> Consent Form </span>
+                            </div>
+                            <div class="col-md-12 m-auto p-2 mb-3 details address-details" style="display: none;">
+                                <div class="card p-3">
+                                    <div class="row">
+                                        <h5 class="mb-3">Consent Form</h5>
+                                        <div class="col-md-3">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="consent" id="otpRadio" value="otp" onchange="toggleConsent('otp')">
+                                                <label class="form-check-label" for="otpRadio">Send message</label>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="consent" id="consentRadio" value="consent" onchange="toggleConsent('consent')">
+                                                <label class="form-check-label" for="consentRadio">Send Consent</label>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="consent" id="uploadRadio" value="upload" onchange="toggleConsent('upload')">
+                                                <label class="form-check-label" for="uploadRadio">Upload Image</label>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="consent" id="skipRadio" value="skip" onchange="toggleConsent('skip')">
+                                                <label class="form-check-label" for="skipRadio">Skip Consent Form</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-9" id="dynamicField"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer pt-1 pb-0">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" id="submitAppointment">Book Appointment</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warning Modal -->
+    <div class="modal fade" id="consentWarningModal" tabindex="-1" aria-labelledby="consentWarningLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-warning">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title" id="consentWarningLabel">Consent Warning</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-dark">
+                    Would you like to book the appointment without filling out the <b>Consent Form</b>?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                    <button type="button" id="confirmWithoutConsent" class="btn btn-warning">Yes, Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notificationContainer" style="position: fixed; top: 20px; right: 20px; z-index: 1050;"></div>
+
+    @include('doctor.inc.footer-links')
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+    $(document).ready(function(){
+        const IST_OFFSET = '+05:30';
+        const ymdFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
+        const weekdayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' });
+        const monthFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', month: 'long' });
+        const timeFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
+
+        function parseTime12To24(timeStr) {
+            const [time, period] = timeStr.split(' ');
+            const [hh, mm] = time.split(':').map(n => parseInt(n, 10));
+            let h = hh % 12;
+            if (period.toUpperCase() === 'PM' && hh !== 12) h += 12;
+            if (period.toUpperCase() === 'AM' && hh === 12) h = 0;
+            return { h, m: mm };
+        }
+
+        const periods = {
+            morning: { start: '05:00', end: '12:00', container: 'morningSlots', info: 'morningInfo', display: '05:00 AM to 12:00 PM' },
+            afternoon: { start: '12:00', end: '17:00', container: 'afternoonSlots', info: 'afternoonInfo', display: '12:00 PM to 05:00 PM' },
+            evening: { start: '17:00', end: '21:00', container: 'eveningSlots', info: 'eveningInfo', display: '05:00 PM to 09:00 PM' },
+            night: { start: '21:00', end: '23:59', container: 'nightSlots', info: 'nightInfo', display: '09:00 PM to 12:00 AM' }
+        };
+
+        let slotInterval = parseInt(localStorage.getItem('slotInterval')) || 10;
+        let selectedDate = null;
+        let selectedSlot = null;
+        let bookedTimes = [];
+        let currentYear, currentMonth;
+        let currentConsentType = null;
+        let mobileNumber = null;
+
+        const patients = @json($patient_details);
+
+        function generateSlots(start, end, interval) {
+            const slots = [];
+            const nowMs = Date.now();
+            const baseDateStr = selectedDate || ymdFormatter.format(new Date());
+            const isToday = baseDateStr === ymdFormatter.format(new Date());
+
+            let currentMs = new Date(`${baseDateStr}T${start}:00${IST_OFFSET}`).getTime();
+            const endMs = new Date(`${baseDateStr}T${end}:00${IST_OFFSET}`).getTime();
+
+            while (currentMs <= endMs) {
+                const timeParts = timeFormatter.formatToParts(new Date(currentMs));
+                const hour = timeParts.find(p => p.type === 'hour').value.padStart(2, '0');
+                const minute = timeParts.find(p => p.type === 'minute').value;
+                const period = timeParts.find(p => p.type === 'dayPeriod') ? timeParts.find(p => p.type === 'dayPeriod').value.toUpperCase() : '';
+                const timeStr = `${hour}:${minute} ${period}`;
+                const isPast = isToday && currentMs < nowMs;
+                slots.push({ time: timeStr, isPast });
+                currentMs += interval * 60 * 1000;
+            }
+            return slots;
+        }
+
+        function renderSlots(period) {
+            const container = $(`#${period.container}`);
+            const info = $(`#${period.info}`);
+            container.html('');
+            const slots = generateSlots(period.start, period.end, slotInterval);
+            let availableCount = 0;
+
+            $.each(slots, function(i, slot){
+                const btn = $('<button>').addClass('time-slot').text(slot.time);
+                const isBooked = bookedTimes.includes(slot.time);
+                if (slot.isPast || isBooked) {
+                    btn.addClass(slot.isPast ? 'disabled' : 'booked').prop('disabled', true);
+                } else {
+                    btn.on('click', function(){ openModal($(this), slot.time); });
+                    availableCount++;
+                }
+                container.append(btn);
+            });
+            info.text(`${availableCount} Slots Available (${period.display})`);
+        }
+
+        function openModal(btn, slotTimeStr) {
+            $('.time-slot').css('border','1px solid #6f42c1');
+            btn.css('border','2px solid #ffc107');
+            selectedSlot = slotTimeStr;
+            $('#modalDoctorName').val($('#doctorSelect').val());
+            $('#modalDateTime').val(`${selectedDate} ${slotTimeStr}`);
+            $('#patientSearch, #patientId, #remarks, #bloodGroup, #bp, #weight, #height').val('');
+            $('#caseType').val('clinical_visit');
+            $('#patientDropdown').hide();
+            $('#dynamicField').html('');
+            currentConsentType = null;
+            mobileNumber = null;
+            $('#appointmentModal').modal('show');
+        }
+
+        function selectDate(item, fullDate) {
+            $('.date-item').removeClass('active');
+            item.addClass('active');
+            selectedDate = fullDate;
+            loadAllSlots();
+            item[0].scrollIntoView({ behavior: 'smooth', inline: 'center' });
+        }
+
+        function fetchBookedTimes() {
+            return $.ajax({
+                url: '{{ route("doctor.appointments.booked_times") }}',
+                method: 'GET',
+                data: { date: selectedDate },
+                dataType: 'json'
+            }).then(function(data) {
+                return data.booked_times || [];
+            }).catch(function() {
+                return [];
+            });
+        }
+
+        async function loadAllSlots() {
+            if (!selectedDate) return;
+            bookedTimes = await fetchBookedTimes();
+            $.each(periods, function(_, p){ renderSlots(p); });
+        }
+
+        function generateMonthDates(year, month) {
+            const dates = [];
+            const todayStr = ymdFormatter.format(new Date());
+            const lastDay = new Date(Date.UTC(year, month + 1, 0));
+            const daysInMonth = lastDay.getDate();
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateUTCNoon = new Date(Date.UTC(year, month, day, 12, 0, 0));
+                const weekday = weekdayFormatter.format(dateUTCNoon);
+                const fullDate = ymdFormatter.format(dateUTCNoon);
+                const isDisabled = fullDate < todayStr;
+                dates.push({ day, weekday, fullDate, isDisabled });
+            }
+            return dates;
+        }
+
+        function renderDates(year, month) {
+            const selector = $('#dateSelector');
+            selector.html('');
+            const dates = generateMonthDates(year, month);
+            const todayStr = ymdFormatter.format(new Date());
+
+            $.each(dates, function(_, date){
+                const item = $('<div>').addClass('date-item').html(`
+                    <div class="date-square">${date.day}</div>
+                    <small>${date.weekday}</small>
+                `);
+                if (date.isDisabled) {
+                    item.addClass('disabled').css({pointerEvents:'none', opacity:'0.5'});
+                } else {
+                    item.on('click', function(){ selectDate($(this), date.fullDate); });
+                }
+                selector.append(item);
+                if (date.fullDate === todayStr && !selectedDate) {
+                    selectDate(item, date.fullDate);
+                }
+            });
+
+            const firstDayUTCNoon = new Date(Date.UTC(year, month, 1, 12, 0, 0));
+            $('#monthYear').text(`${monthFormatter.format(firstDayUTCNoon)} ${year}`);
+        }
+
+        const now = new Date();
+        currentYear = Number(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Kolkata',year:'numeric'}).format(now));
+        currentMonth = Number(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Kolkata',month:'numeric'}).format(now))-1;
+        renderDates(currentYear,currentMonth);
+
+        $('#prevMonth').on('click',function(){
+            currentMonth--;
+            if(currentMonth<0){ currentMonth=11; currentYear--; }
+            selectedDate=null; renderDates(currentYear,currentMonth);
+        });
+        $('#nextMonth').on('click',function(){
+            currentMonth++;
+            if(currentMonth>11){ currentMonth=0; currentYear++; }
+            selectedDate=null; renderDates(currentYear,currentMonth);
+        });
+
+        $('#slotInterval').val(slotInterval).on('change',function(){
+            slotInterval=parseInt($(this).val(),10);
+            localStorage.setItem('slotInterval',slotInterval);
+            loadAllSlots();
+        });
+
+        $('#doctorSelect').on('change',loadAllSlots);
+
+        const patientSearch = $('#patientSearch');
+        const patientDropdown = $('#patientDropdown');
+
+        function updateDropdown(query) {
+    patientDropdown.html('');
+    const filtered = patients.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.phone.includes(query) ||
+        p.id.toString().toLowerCase().includes(query)
+    );
+    if (filtered.length > 0) {
+        $.each(filtered, function(_, p) {
+            const div = $('<div>').addClass('patient-item').html(`
+                <div class="patient-name"> <span class="bg-light rounded-circle d-inline-flex justify-content-center align-items-center" 
+      style="width: 34px; height: 34px;">
+            <i class="fa-solid fa-user-circle text-primary"></i>
+        </span>
+        ${p.name}</div>
+                <div class="patient-details">Phone: ${p.phone} | ID: ${p.registration_id} | Gender: ${p.gender}</div>
+            `);
+            div.on('click', function() {
+                patientSearch.val(`${p.name} - Phone: ${p.phone} - ID: ${p.registration_id} - Gender: ${p.gender}`);
+                $('#patientId').val(p.id);
+                mobileNumber = p.phone;
+                patientDropdown.html(`
+                    <div class="selected-patient">
+                        <div class="patient-name">${p.name}</div>
+                        <div class="patient-details">Phone: ${p.phone}</div>
+                        <div class="patient-details">ID: ${p.registration_id}</div>
+                        <div class="patient-details">Gender: ${p.gender}</div>
+                    </div>
+                `);
+                patientDropdown.hide();
+            });
+            patientDropdown.append(div);
+        });
+    } else {
+        patientDropdown.html(`
+            <div class="no-patient">
+                <span class="fw-semibold text-dark">Register New Patient</span>
+                <a href="{{route('doctor.patient-registration')}}" target="_blank" class="btn btn-outline-primary btn-sm">Add New Patient</a>
+            </div>
+        `);
+    }
+}
+
+        patientSearch.on('focus input',function(){
+            updateDropdown($(this).val().toLowerCase());
+            patientDropdown.show();
+        });
+
+        patientSearch.on('blur',function(){
+            setTimeout(()=>{ patientDropdown.hide(); },150);
+        });
+
+        window.toggleConsent = function(type) {
+            currentConsentType = type;
+            const field = $('#dynamicField').html('');
+            if(type === 'otp'){
+                field.html(`
+                    <div class="mb-3">
+                        <label class="form-label">Enter Mobile Number (For predefined WhatsApp message)</label>
+                        <div class="input-group">
+                            <input type="tel" class="form-control" id="mobileNumber" placeholder="Enter 10-digit number" minlength="10" maxlength="10" value="${mobileNumber || ''}">
+                            <button type="button" class="btn btn-success" id="sendMessageBtn">Send Message</button>
+                        </div>
+                        <div class="mb-3 mt-2">
+                            <label class="form-label">Predefined Message (Edit if needed)</label>
+                            <textarea class="form-control" id="messageText" rows="4">Dear Patient,\nI hereby give my consent for the appointment and any necessary medical procedures.\nPlease reply 'YES' to confirm.\nRegards,\nDr. ${$('#modalDoctorName').val()}</textarea>
+                        </div>
+                        <div id="messageStatus" class="mt-2"></div>
+                        <input type="hidden" id="messageSent" value="">
+                    </div>
+                `);
+                $('#sendMessageBtn').on('click', sendMessage);
+            } else if(type === 'consent'){
+                const consentUrl = '{{ route('my-consent') }}';
+                field.html(`
+                    <div class="mb-3">
+                        <label class="form-label">Consent Link to Send via WhatsApp</label>
+                        <input type="text" class="form-control" id="consentLink" value="${consentUrl}" readonly>
+                        <div class="input-group mt-2">
+                            <input type="tel" class="form-control" id="mobileNumberConsent" placeholder="Enter 10-digit number" minlength="10" maxlength="10" value="${mobileNumber || ''}">
+                            <button type="button" class="btn btn-success" id="sendConsentBtn">Send Consent</button>
+                        </div>
+                        <div id="consentStatus" class="mt-2"></div>
+                        <input type="hidden" id="consentSent" value="">
+                    </div>
+                `);
+                $('#sendConsentBtn').on('click', sendConsent);
+            } else if(type === 'upload'){
+                field.html(`
+                    <div class="mb-3">
+                        <label class="form-label">Upload Image/PDF</label>
+                        <input type="file" class="form-control" name="consent_file" id="consentFile" accept="image/*,application/pdf">
+                        <div id="filePreview" class="mt-2"></div>
+                    </div>
+                `);
+                $('#consentFile').on('change', previewFile);
+            } else if(type === 'skip'){
+                field.html(`
+                    <div class="alert alert-warning" role="alert">
+                        You have chosen to proceed without filling out the consent form. A confirmation will be required before booking.
+                    </div>
+                `);
+            }
+        };
+
+        function sendMessage() {
+            const mobile = $('#mobileNumber').val();
+            if (!mobile || mobile.length !== 10) {
+                alert('Please enter a valid 10-digit mobile number.');
+                return;
+            }
+            mobileNumber = mobile;
+            const message = $('#messageText').val();
+
+            const $btn = $('#sendMessageBtn');
+            const originalText = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Sending...').prop('disabled', true);
+
+            $.ajax({
+                url: '{{ route("doctor.send-whatsapp") }}',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    mobile: mobile,
+                    message: message
+                },
+                success: function(data) {
+                    $btn.html(originalText).prop('disabled', false);
+                    if (data.success) {
+                        $('#messageStatus').html('<div class="alert alert-success">Message sent successfully via WhatsApp!</div>');
+                        $('#messageSent').val('sent');
+                    } else {
+                        alert('Error sending message: ' + data.message);
+                    }
+                },
+                error: function() {
+                    $btn.html(originalText).prop('disabled', false);
+                    alert('Error sending message.');
+                }
+            });
+        }
+
+        function sendConsent() {
+            const mobile = $('#mobileNumberConsent').val() || mobileNumber;
+            if (!mobile || mobile.length !== 10) {
+                alert('Please enter a valid 10-digit mobile number.');
+                return;
+            }
+            mobileNumber = mobile;
+            const message = `Doctor Consent Form Link: ${$('#consentLink').val()}`;
+
+            const $btn = $('#sendConsentBtn');
+            const originalText = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Sending...').prop('disabled', true);
+
+            $.ajax({
+                url: '{{ route("doctor.send-whatsapp") }}',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    mobile: mobile,
+                    message: message
+                },
+                success: function(data) {
+                    $btn.html(originalText).prop('disabled', false);
+                    if (data.success) {
+                        $('#consentStatus').html('<div class="alert alert-success">Consent link sent successfully via WhatsApp!</div>');
+                        $('#consentSent').val('sent');
+                    } else {
+                        alert('Error sending consent: ' + data.message);
+                    }
+                },
+                error: function() {
+                    $btn.html(originalText).prop('disabled', false);
+                    alert('Error sending consent.');
+                }
+            });
+        }
+
+        function previewFile(e) {
+            const file = e.target.files[0];
+            const preview = $("#filePreview").html('');
+            if (file) {
+                if (file.type.startsWith("image/")) {
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        preview.html(`<img src="${ev.target.result}" class="img-fluid rounded shadow file-preview">`);
+                    };
+                    reader.readAsDataURL(file);
+                } else if (file.type === "application/pdf") {
+                    preview.html(`<embed src="${URL.createObjectURL(file)}" width="250" height="200" type="application/pdf" class="file-preview">`);
+                }
+            }
+        }
+
+        $(document).on('click', '#submitAppointment', function() {
+            const patient = $('#patientSearch').val();
+            const patientId = $('#patientId').val();
+            const caseType = $('#caseType').val();
+
+            if (!patient || !caseType || !patientId) {
+                showAlert('Please fill all required fields including selecting a patient.', 'error');
+                return;
+            }
+
+            if (!selectedDate || !selectedSlot) {
+                showAlert('Please select a date and time slot.', 'error');
+                return;
+            }
+
+            if (!currentConsentType || currentConsentType === 'skip') {
+                $('#consentWarningModal').modal('show');
+                return;
+            }
+
+            submitAppointmentForm();
+        });
+
+        $(document).on('click', '#confirmWithoutConsent', function() {
+            $('#consentWarningModal').modal('hide');
+            currentConsentType = 'skipped';
+            submitAppointmentForm();
+        });
+
+        function submitAppointmentForm() {
+            const patient = $('#patientSearch').val() || '';
+            const patientId = $('#patientId').val() || '';
+            const remarks = $('#remarks').val() || '';
+            const bloodGroup = $('#bloodGroup').val() || '';
+            const bp = $('#bp').val() || '';
+            const weight = $('#weight').val() || '';
+            const height = $('#height').val() || '';
+            const caseType = $('#caseType').val() || '';
+            const mobile = $('#mobileNumber').val() || mobileNumber || '';
+
+            let isConsentValid = true;
+            let consentValue = '';
+
+            if (currentConsentType === 'otp') {
+                const sent = $('#messageSent').val();
+                if (sent !== 'sent') {
+                    alert('Please send the message first.');
+                    isConsentValid = false;
+                } else {
+                    consentValue = 'sent';
+                }
+            } else if (currentConsentType === 'consent') {
+                const sent = $('#consentSent').val();
+                if (sent !== 'sent') {
+                    alert('Please send the consent link first.');
+                    isConsentValid = false;
+                } else {
+                    consentValue = 'sent';
+                }
+            } else if (currentConsentType === 'upload') {
+                const file = $('#consentFile')[0].files[0];
+                if (!file) {
+                    alert('Please upload a file.');
+                    isConsentValid = false;
+                }
+            } else if (currentConsentType === 'skipped') {
+                consentValue = null;
+            }
+
+            if (!isConsentValid) return;
+
+            const $submitButton = $('#submitAppointment');
+            const originalButtonText = $submitButton.html();
+            $submitButton.html('<i class="fas fa-spinner fa-spin"></i> Booking Appointment...').prop('disabled', true);
+
+            const formData = new FormData();
+            formData.append('_token', '{{ csrf_token() }}');
+            formData.append('doctor_id', '{{ Auth::id() }}');
+            formData.append('patient_id', patientId);
+            formData.append('patient_string', patient);
+            formData.append('date', selectedDate || '');
+            formData.append('time', selectedSlot || '');
+            formData.append('case_type', caseType);
+            formData.append('blood_group', bloodGroup);
+            formData.append('bp', bp);
+            formData.append('weight', weight);
+            formData.append('height', height);
+            formData.append('remarks', remarks);
+            formData.append('consent_type', currentConsentType || 'skipped');
+            if (consentValue) formData.append('consent_value', consentValue);
+            if (currentConsentType === 'upload') {
+                const file = $('#consentFile')[0].files[0];
+                if (file) formData.append('consent_file', file);
+            }
+            if (mobile) formData.append('mobile_number', mobile);
+
+            $.ajax({
+                url: '{{ route("doctor.appointments.store") }}',
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(data) {
+                    $submitButton.html(originalButtonText).prop('disabled', false);
+                    if (data.success) {
+                        showAlert('Appointment booked successfully!', 'success');
+                        $('#appointmentModal').modal('hide');
+                        selectedSlot = null;
+                        loadAllSlots();
+                        currentConsentType = null;
+                    } else {
+                        showAlert('Error booking appointment: ' + (data.message || 'Unknown error'), 'error');
+                    }
+                },
+                error: function(xhr) {
+                    $submitButton.html(originalButtonText).prop('disabled', false);
+                    const err = xhr.responseJSON;
+                    showAlert('Error occurred: ' + (err.message || 'Server error'), 'error');
+                }
+            });
+        }
+
+        toggleConsent('otp');
+        $('input[name="consent"]').on('change', function(){ toggleConsent($(this).val()); });
+        loadAllSlots();
+
+        $(".toggle-address-details").on("click", function(){
+            $(".address-details").slideToggle();
+        });
+    });
+    </script>
+@endsection
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@extends('layouts.layout-doctor')
+@section('title', 'Doctor || Appointments')
+@section('content')
+@include('doctor.inc.custom')
+
+<div class="main-wrapper">
+    <!-- Search Modal -->
+    <div class="modal fade" id="searchModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content bg-transparent">
+                <div class="card shadow-none mb-0">
+                    <div class="px-3 py-2 d-flex flex-row align-items-center" id="search-top">
+                        <i class="ti ti-search fs-22"></i>
+                        <input type="search" class="form-control border-0" placeholder="Search">
+                        <button type="button" class="btn p-0" data-bs-dismiss="modal" aria-label="Close">
+                            <i class="ti ti-x fs-22"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-wrapper">
+        <div class="content">
+            <div>
+                <h4 class="fw-bold mb-3 color-doctorrx">Manage Appointments</h4>
+            </div>
+
+            <!-- Filters -->
+            <div class="mobile-horizontal-scroll mb-3">
+                <div class="d-flex align-items-center gap-2 flex-nowrap">
+                    <div class="input-icon-start position-relative">
+                        <span class="input-icon-addon text-dark">
+                            <i class="ti ti-calendar-event"></i>
+                        </span>
+                        <input type="text" class="form-control form-control-sm date-input bookingrange"
+                            value="Select Date Range" style="min-width: 180px;">
+                    </div>
+
+                    <input type="text" id="searchName" class="form-control form-control-sm"
+                        placeholder="Search by Name" style="min-width: 180px;">
+
+                    <input type="text" id="searchPhone" class="form-control form-control-sm"
+                        placeholder="Search by Phone" style="min-width: 180px;">
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="mobile-horizontal-scroll">
+                <div class="d-flex justify-content-between align-items-center flex-nowrap mb-3">
+                    <ul class="nav nav-tabs" id="statusTabs">
+                        <li class="nav-item cursor-pointer me-2">
+                            <a class="nav-link active rounded border border-primary-subtle fw-semibold px-3"
+                                data-status="pending">
+                                Confirmed
+                            </a>
+                        </li>
+                        <li class="nav-item cursor-pointer me-2">
+                            <a class="nav-link rounded border border-primary-subtle fw-semibold px-3"
+                                data-status="cancelled">
+                                Cancelled
+                            </a>
+                        </li>
+                        <li class="nav-item cursor-pointer">
+                            <a class="nav-link rounded border border-primary-subtle fw-semibold px-3"
+                                data-status="completed">
+                                Completed
+                            </a>
+                        </li>
+                    </ul>
+                    
+                    <div class="d-flex align-items-center flex-nowrap">
+                        {{-- <div class="dropdown me-2">
+                            <a href="javascript:void(0);"
+                                class="btn btn-sm border bg-white rounded text-dark d-inline-flex align-items-center"
+                                data-bs-toggle="dropdown">
+                                Export <i class="ti ti-chevron-down ms-2"></i>
+                            </a>
+                            <ul class="dropdown-menu p-2">
+                                <li><a class="dropdown-item" href="#">Download as Excel</a></li>
+                            </ul>
+                        </div> --}}
+
+                        <a href="{{ route('book-appointment') }}"
+                            class="btn btn-outline-primary btn-sm d-inline-flex align-items-center">
+                            <i class="ti ti-plus me-1"></i> Book Appointment
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Today's Counts -->
+            <span class="fw-semibold text-primary mb-0">Today Clinical Visit = <span id="today-clinical-visit"
+                    class="fw-semibold text-danger">0</span></span> &nbsp;&nbsp;
+            <span class="fw-semibold text-primary mb-0">Today Home Visit = <span id="today-home-visit"
+                    class="fw-semibold text-danger">0</span></span>
+            <p class="d-none fw-semibold text-primary mb-0">Today Online Visit = <span id="today-online-visit"
+                    class="fw-semibold text-danger">0</span></p>
+            <p class="d-none fw-semibold text-primary mb-0">Today Call Visit = <span id="today-call-visit"
+                    class="fw-semibold text-danger">0</span></p>
+
+            <!-- Appointments Table -->
+            <div class="tab-content card mt-3">
+                <div id="appointmentTable" class="tab-pane active table datatable table-responsive text-nowrap">
+                    <table class="table table-hover table-center mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Sr.</th>
+                                <th>Patient Name</th>
+                                <th>Contact</th>
+                                <th>Patient ID</th>
+                                <th>Visit Type</th>
+                                <th>Slot Time</th>
+                                <th>Consult</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="appointmentTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                                    <p class="mt-2">Loading appointments...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div id="pagination" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @include('doctor.inc.footer')
+</div>
+
+<!-- View Modal -->
+<div class="modal fade" id="viewModal" tabindex="-1" aria-labelledby="viewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-primary text-white">
+                <div class="d-flex align-items-center">
+                    <h5 class="modal-title mb-0" id="viewModalLabel">Appointment Details</h5>
+                </div>
+                <button type="button" class="btn-close rounded-circle shadow bg-white me-2" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="patient-profile-section bg-light p-3">
+                    <div class="row align-items-center">
+                        <div class="col-md-3 text-center">
+                            <div class="profile-image-container position-relative d-inline-block">
+                                <img id="modal-profile-image" src="" class="img-fluid rounded-circle shadow"
+                                    alt="Patient Profile" style="width: 120px; height: 120px; object-fit: cover;">
+                            </div>
+                        </div>
+                        <div class="col-md-9">
+                            <h4 id="modal-name" class="mb-1 fw-bold text-dark"></h4>
+                            <p class="text-muted mb-2" id="modal-patient-id"></p>
+                            <div class="d-flex flex-wrap gap-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="ti ti-user me-2 text-primary"></i>
+                                    <span id="modal-age"></span> years
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <i class="ti ti-gender-male me-2 text-primary"></i>
+                                    <span id="modal-gender"></span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <i class="ti ti-droplet me-2 text-primary"></i>
+                                    <span id="modal-blood-group"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="details-section p-4">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="section-title text-uppercase text-muted mb-3 fw-semibold">Appointment Information</h6>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-calendar me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Date & Time</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-date"></span> at <span id="modal-time"></span>
+                                </div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-stethoscope me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Visit Type</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-visit-type"></span>
+                                </div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-status-change me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Status</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-status" class="badge"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="section-title text-uppercase text-muted mb-3 fw-semibold">Medical Information</h6>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-heartbeat me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Blood Pressure</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-bp"></span>
+                                </div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-weight me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Weight & Height</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-weight"></span> kg / <span id="modal-height"></span> cm
+                                </div>
+                            </div>
+                            <div class="info-item mb-3">
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="ti ti-phone me-2 text-primary bg-light p-2 rounded"></i>
+                                    <span class="fw-medium">Contact</span>
+                                </div>
+                                <div class="ms-4">
+                                    <span id="modal-phone"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <h6 class="section-title text-uppercase text-muted mb-3 fw-semibold">Remarks</h6>
+                            <p id="modal-remarks"></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="section-title text-uppercase text-muted mb-3 fw-semibold">Note</h6>
+                            <p id="modal-note"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Appointment Modal -->
+<div class="modal fade" id="cancelAppointmentModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-danger">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title text-white" id="cancelModalLabel">
+                    <i class="ti ti-alert-triangle me-2"></i> Cancel Appointment
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-dark">
+                <p class="fw-bold mb-3">Are you sure you want to cancel this appointment?</p>
+                
+                <div class="patient-info bg-light p-3 rounded mb-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="ti ti-user me-2 text-primary"></i>
+                        <strong id="cancelPatientName"></strong>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="ti ti-phone me-2 text-primary"></i>
+                        <span id="cancelPatientPhone"></span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <i class="ti ti-id-badge me-2 text-primary"></i>
+                        <span id="cancelPatientRegId"></span>
+                    </div>
+                </div>
+
+                <div class="alert alert-warning mb-0">
+                    <strong>Warning:</strong> This action cannot be undone.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Keep</button>
+                <button type="button" id="confirmCancelBtn" class="btn btn-danger">Yes, Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Complete Appointment Modal -->
+<div class="modal fade" id="completeAppointmentModal" tabindex="-1" aria-labelledby="completeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-success">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title text-white" id="completeModalLabel">
+                    <i class="ti ti-check-circle me-2"></i> Complete Appointment
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-dark">
+                <p class="fw-bold mb-3">Mark this appointment as completed?</p>
+                
+                <div class="patient-info bg-light p-3 rounded mb-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="ti ti-user me-2 text-primary"></i>
+                        <strong id="completePatientName"></strong>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" id="confirmCompleteBtn" class="btn btn-success">Yes, Complete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" />
+
+<script>
+$(document).ready(function() {
+    let currentStatus = 'pending';
+    let currentPage = 1;
+    let selectedStartDate = null;
+    let selectedEndDate = null;
+    let currentCancelId = null;
+    let currentCompleteId = null;
+
+    // Initialize date range picker
+    $('.bookingrange').daterangepicker({
+        opens: 'right',
+        autoApply: false,
+        alwaysShowCalendars: true,
+        showDropdowns: true,
+        locale: {
+            format: 'DD MMM YYYY'
+        },
+        ranges: {
+            'Today': [moment(), moment()],
+            'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+            'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+            'This Month': [moment().startOf('month'), moment().endOf('month')]
+        }
+    }, function(start, end) {
+        $('.bookingrange').val(start.format('DD MMM YYYY') + ' - ' + end.format('DD MMM YYYY'));
+        selectedStartDate = start.format('YYYY-MM-DD');
+        selectedEndDate = end.format('YYYY-MM-DD');
+        currentPage = 1;
+        filterData();
+    });
+
+    // Tab switching
+    $('#statusTabs .nav-link').click(function() {
+        $('#statusTabs .nav-link').removeClass('active');
+        $(this).addClass('active');
+        currentStatus = $(this).data('status');
+        currentPage = 1;
+        filterData();
+    });
+
+    // Search with debounce
+    let searchTimer;
+    $('#searchName, #searchPhone').on('keyup', function() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            currentPage = 1;
+            filterData();
+        }, 500);
+    });
+
+    // Filter data function
+    function filterData() {
+        let data = {
+            page: currentPage,
+            status: currentStatus,
+            name: $('#searchName').val().trim(),
+            phone: $('#searchPhone').val().trim()
+        };
+
+        if (selectedStartDate && selectedEndDate) {
+            data.start_date = selectedStartDate;
+            data.end_date = selectedEndDate;
+        }
+
+        $('#appointmentTableBody').html(`
+            <tr>
+                <td colspan="8" class="text-center py-4">
+                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                    <p class="mt-2">Loading appointments...</p>
+                </td>
+            </tr>
+        `);
+
+        $.ajax({
+            url: '{{ route("doctor.filter_patients_appointments") }}',
+            type: 'GET',
+            data: data,
+            success: function(response) {
+                if (response.success) {
+                    renderTable(response);
+                    updateCounts(response);
+                } else {
+                    showError('Failed to load appointments');
+                }
+            },
+            error: function() {
+                showError('Error loading data');
+            }
+        });
+    }
+
+    // Render table
+    function renderTable(response) {
+        let html = '';
+        
+        if (response.appointments && response.appointments.length > 0) {
+            response.appointments.forEach(function(appointment) {
+                const patient = appointment.patient || {};
+                const profileImage = patient.profile_image 
+                    ? '{{ asset('storage/') }}' + patient.profile_image 
+                    : '{{ asset('assets-doctor/img/profiles/avatar-01.jpg') }}';
+                
+                const apptDatetime = moment(appointment.date + ' ' + appointment.time, 'YYYY-MM-DD hh:mm A');
+                const isFuture = apptDatetime.isAfter(moment());
+                const isConfirmed = (appointment.status === 'confirmed' || currentStatus === 'pending');
+
+                let editHtml = '';
+                let completeHtml = '';
+                let cancelHtml = '';
+
+                if (isConfirmed) {
+                    if (isFuture) {
+                        editHtml = `<li><a href="{{ route('edit-book-appointment') }}?appointment_id=${appointment.encrypted_id}" class="dropdown-item">Edit Appointment</a></li>`;
+                    }
+                    
+                    completeHtml = `<li><a href="#" class="dropdown-item complete-appointment" data-id="${appointment.id}" data-name="${patient.name || ''}">Mark Completed</a></li>`;
+                    
+                    if (isFuture) {
+                        cancelHtml = `<li><a href="#" class="dropdown-item cancel-appointment" data-id="${appointment.id}" data-name="${patient.name || ''}" data-phone="${patient.phone || ''}" data-gender="${patient.gender || ''}" data-age="${patient.age || ''}" data-regid="${patient.registration_id || ''}">Cancel Appointment</a></li>`;
+                    }
+                }
+
+                html += `
+                <tr>
+                    <td>${appointment.index}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <img src="${profileImage}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
+                            <div>
+                                <strong>${patient.name || 'N/A'}</strong><br>
+                                <small>${patient.gender || ''} ${patient.age || ''}y</small>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${patient.phone || appointment.mobile_number || 'N/A'}</td>
+                    <td>${patient.registration_id || ''}</td>
+                    <td>
+                        <span class="badge ${getVisitTypeClass(appointment.case_type)}">
+                            ${appointment.case_type ? appointment.case_type.replace('_', ' ') : 'N/A'}
+                        </span>
+                    </td>
+                    <td>
+                        ${moment(appointment.date).format('DD MMM YYYY')}<br>
+                        <small>${appointment.time}</small>
+                    </td>
+                    <td>
+                        ${isConfirmed ? 
+                            `<a href="{{ url('/doctor-consultation') }}/${appointment.patient_id}" class="btn btn-sm btn-outline-primary">Consult</a>` :
+                            `<span class="badge ${getStatusBadgeClass(appointment.status)}">${appointment.status}</span>`
+                        }
+                    </td>
+                    <td>
+                        <div class="dropdown">
+                            <a href="#" class="text-muted" data-bs-toggle="dropdown">
+                                <i class="ti ti-dots-vertical"></i>
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item view-appointment" href="#" data-id="${appointment.id}">View Details</a></li>
+                                ${editHtml}
+                                ${completeHtml}
+                                ${cancelHtml}
+                            </ul>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+        } else {
+            html = `
+            <tr>
+                <td colspan="8" class="text-center py-5">
+                    <i class="ti ti-calendar-x fs-48 text-muted mb-3"></i>
+                    <h5 class="text-muted">No appointments found</h5>
+                </td>
+            </tr>`;
+        }
+
+        $('#appointmentTableBody').html(html);
+        $('#pagination').html(response.pagination?.links || '');
+    }
+
+    // Helper functions
+    function getVisitTypeClass(type) {
+        const classes = {
+            'clinical_visit': 'bg-primary',
+            'home_visit': 'bg-success',
+            'online_visit': 'bg-info',
+            'on_call_visit': 'bg-secondary'
+        };
+        return classes[type] || 'bg-secondary';
+    }
+
+    function getStatusBadgeClass(status) {
+        const classes = {
+            'confirmed': 'bg-primary',
+            'completed': 'bg-success',
+            'cancelled': 'bg-danger'
+        };
+        return classes[status] || 'bg-secondary';
+    }
+
+    function updateCounts(data) {
+        $('#today-clinical-visit').text(data.todayclinical_visit_count || 0);
+        $('#today-home-visit').text(data.todayhome_visit_count || 0);
+        $('#today-online-visit').text(data.todayonline_visit_count || 0);
+        $('#today-call-visit').text(data.todaycall_visit_count || 0);
+    }
+
+    function showError(message) {
+        $('#appointmentTableBody').html(`
+            <tr>
+                <td colspan="8" class="text-center py-4 text-danger">
+                    <i class="ti ti-alert-circle fs-48 mb-3"></i>
+                    <p>${message}</p>
+                </td>
+            </tr>
+        `);
+    }
+
+    function showAlert(message, type) {
+        if (typeof window.showAlert === 'function') {
+            window.showAlert(message, type);
+        } else {
+            alert(message);
+        }
+    }
+
+    // Pagination
+    $(document).on('click', '.pagination a', function(e) {
+        e.preventDefault();
+        let url = new URL($(this).attr('href'));
+        currentPage = url.searchParams.get('page') || 1;
+        filterData();
+    });
+
+    // View appointment
+    $(document).on('click', '.view-appointment', function(e) {
+        e.preventDefault();
+        let id = $(this).data('id');
+        
+        $.ajax({
+            url: '/doctor-appointment/' + id,
+            type: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    let appt = response.appointment;
+                    let patient = appt.patient || {};
+                    
+                    $('#modal-profile-image').attr('src', 
+                        patient.profile_image 
+                            ? '{{ asset('storage/') }}' + patient.profile_image 
+                            : '{{ asset('assets-doctor/img/profiles/avatar-01.jpg') }}'
+                    );
+                    $('#modal-name').text('Patient: ' + (patient.name || 'N/A'));
+                    $('#modal-patient-id').text('ID: ' + (patient.registration_id || 'N/A'));
+                    $('#modal-age').text(patient.age || 'N/A');
+                    $('#modal-gender').text(patient.gender || 'N/A');
+                    $('#modal-phone').text(patient.phone || 'N/A');
+                    $('#modal-blood-group').text(appt.blood_group || 'N/A');
+                    $('#modal-date').text(moment(appt.date).format('DD MMM YYYY'));
+                    $('#modal-time').text(appt.time || 'N/A');
+                    $('#modal-visit-type').text(appt.case_type ? appt.case_type.replace('_', ' ') : 'N/A');
+                    
+                    let statusClass = getStatusBadgeClass(appt.status);
+                    $('#modal-status').text(appt.status).removeClass().addClass(`badge ${statusClass}`);
+                    
+                    $('#modal-bp').text(appt.bp || 'N/A');
+                    $('#modal-weight').text(appt.weight || 'N/A');
+                    $('#modal-height').text(appt.height || 'N/A');
+                    $('#modal-remarks').text(appt.remarks || 'No remarks');
+                    $('#modal-note').text(appt.note || 'No notes');
+                    
+                    $('#viewModal').modal('show');
+                }
+            }
+        });
+    });
+
+    // Cancel appointment
+    $(document).on('click', '.cancel-appointment', function(e) {
+        e.preventDefault();
+        currentCancelId = $(this).data('id');
+        $('#cancelPatientName').text(
+            $(this).data('name') + ' (' + $(this).data('gender') + ', ' + $(this).data('age') + 'y)'
+        );
+        $('#cancelPatientPhone').text($(this).data('phone') || 'N/A');
+        $('#cancelPatientRegId').text('ID: ' + ($(this).data('regid') || 'N/A'));
+        $('#cancelAppointmentModal').modal('show');
+    });
+
+    $('#confirmCancelBtn').on('click', function() {
+        if (!currentCancelId) return;
+        
+        const $btn = $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Cancelling...');
+        
+        $.ajax({
+            url: '{{ route("doctor.appointment.cancel") }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                appointment_id: currentCancelId
+            },
+            success: function(res) {
+                if (res.success) {
+                    $('#cancelAppointmentModal').modal('hide');
+                    showAlert(res.message, 'success');
+                    filterData();
+                } else {
+                    showAlert(res.message, 'error');
+                }
+            },
+            error: function(xhr) {
+                showAlert(xhr.responseJSON?.message || 'Error', 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html('Yes, Cancel');
+                currentCancelId = null;
+            }
+        });
+    });
+
+    // Complete appointment
+    $(document).on('click', '.complete-appointment', function(e) {
+        e.preventDefault();
+        currentCompleteId = $(this).data('id');
+        $('#completePatientName').text($(this).data('name'));
+        $('#completeAppointmentModal').modal('show');
+    });
+
+    $('#confirmCompleteBtn').on('click', function() {
+        if (!currentCompleteId) return;
+        
+        const $btn = $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        
+        $.ajax({
+            url: '{{ route("doctor.appointment.complete") }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                appointment_id: currentCompleteId
+            },
+            success: function(res) {
+                if (res.success) {
+                    $('#completeAppointmentModal').modal('hide');
+                    showAlert(res.message, 'success');
+                    filterData();
+                } else {
+                    showAlert(res.message, 'error');
+                }
+            },
+            error: function(xhr) {
+                showAlert(xhr.responseJSON?.message || 'Error', 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html('Yes, Complete');
+                currentCompleteId = null;
+            }
+        });
+    });
+
+    // Clear modals
+    $('#cancelAppointmentModal').on('hidden.bs.modal', function() {
+        currentCancelId = null;
+    });
+
+    $('#completeAppointmentModal').on('hidden.bs.modal', function() {
+        currentCompleteId = null;
+    });
+
+    // Initial load
+    filterData();
+});
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const menuToggles = document.querySelectorAll('.menu-toggle');
+    menuToggles.forEach(toggle => {
+        toggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const menuItem = this.parentElement;
+            const subMenu = menuItem.querySelector('.menu-sub');
+            menuItem.classList.toggle('open');
+            if (subMenu) {
+                subMenu.style.display = menuItem.classList.contains('open') ? 'block' : 'none';
+            }
+        });
+    });
+});
+</script>
+
+@endsection
+
+
+
+
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\SuperAdminController;
+use App\Http\Controllers\MailSettingController;
+use App\Http\Controllers\DoctordashboardController;
+use App\Http\Controllers\CompanySettingController;
+use App\Http\Controllers\LogoutController;
+use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\ConsulController;
+use App\Http\Controllers\MasterController;
+use App\Http\Controllers\DoctorSchedulingController;
+use App\Http\Controllers\IncomExpenceController;
+use App\Http\Controllers\BlogController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\IncomeTypeController;
+use App\Http\Controllers\ExpenseTypeController;
+use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\IncomeController;
+use App\Http\Controllers\HomevisitController;
+use App\Http\Controllers\RegistrationController;
+use App\Http\Controllers\PatientdashboardController;
+use App\Http\Controllers\TestBookingController;
+use App\Http\Controllers\ShopingController;
+use App\Http\Controllers\BillingController;
+use App\Http\Controllers\ChatController;
+use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\StaffPermissionController;
+
+
+
+    Route::get('/', function () {
+    return view('front.index');
+});
+
+
+
+Route::get('/about', function () { return view('front.about'); });
+Route::get('/contact', function () { return view('front.contact'); });
+
+
+Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
+Route::post('/login', [LoginController::class, 'authenticate']);
+
+Route::match(['get', 'post'], 'logout', [LogoutController::class, 'logout'])->name('doctor.logout');
+
+// Route::get('/signups', [RegistrationController::class, 'showRegistrationForm'])->name('register.show');
+// Route::post('/signup', [RegistrationController::class, 'register'])->name('register.submit');
+// Route::post('/send-otp', [RegistrationController::class, 'sendOtp'])->name('otp.send')
+//     ->middleware('throttle:3,1'); // Limit OTP sends to 3 per minute
+// // OTP verification endpoint
+// Route::post('/verify-otp', [RegistrationController::class, 'verifyOtp'])->name('otp.verify')
+//     ->middleware('throttle:5,1'); // Limit verification attempts to 5 per minute
+
+Route::get('/signup', [RegistrationController::class, 'showRegistrationForm'])->name('register.show');
+Route::post('/signup', [RegistrationController::class, 'register'])->name('register.submit');
+
+Route::get('/my-consent', [AppointmentController::class, 'myConsent'])->name('my-consent');
+
+
+
+
+// auth:sanctum', 'verified ----- iska matlab hai ki user ka email verified hoga and sanctum se login kia hua hoga
+
+Route::middleware(['auth:sanctum', 'verified', 'role:super_admin'])
+    ->group(function () {
+        Route::get('/super-admin-dashboard', [SuperAdminController::class, 'index'])->name('super-admin.dashboard');
+        Route::get('/dashboard-settings', [SuperAdminController::class, 'setings'])->name('super-admin.dashboard-settings');
+        Route::get('/faqs', [SuperAdminController::class, 'faqs'])->name('super-admin.faqs');
+     
+        Route::get('/email-setup', [MailSettingController::class, 'mailsetup'])->name('super-admin.email-setup');
+        Route::get('/mail-settings', [MailSettingController::class, 'edit'])->name('mail.settings.edit');
+        Route::post('/mail-settings', [MailSettingController::class, 'update'])->name('mail.settings.update');
+
+        Route::get('/super-admin/settings/company/data', [CompanySettingController::class, 'fetch'])->name('company.settings.fetch');
+        Route::post('/super-admin/settings/company', [CompanySettingController::class, 'save'])->name('company.settings.save');
+
+
+
+        Route::get('/patient-registration', [SuperAdminController::class, 'testingsd'])->name('super-admin.patient-registration');
+
+
+    //  Doctor Consult created Master   
+    Route::get('/Consult-masters', [MasterController::class, 'index'])->name('super-admin.Consult-master');
+    Route::get('admin/symptoms', [MasterController::class, 'getSymptoms']);
+    Route::post('admin/symptoms/store', [MasterController::class, 'storeSymptom']);
+    Route::get('admin/symptoms/{id}/edit', [MasterController::class, 'editSymptom']);
+    Route::put('admin/symptoms/{id}', [MasterController::class, 'updateSymptom']);
+    Route::delete('admin/symptoms/{id}', [MasterController::class, 'destroySymptom']);
+    Route::get('admin/symptoms/export', [MasterController::class, 'exportSymptoms']);
+    Route::post('admin/symptoms/import', [MasterController::class, 'importSymptoms']);
+
+    // Examinations routes
+    Route::get('admin/examinations', [MasterController::class, 'getExaminations']);
+    Route::post('admin/examinations/store', [MasterController::class, 'storeExamination']);
+    Route::get('admin/examinations/{id}/edit', [MasterController::class, 'editExamination']);
+    Route::put('admin/examinations/{id}', [MasterController::class, 'updateExamination']);
+    Route::delete('admin/examinations/{id}', [MasterController::class, 'destroyExamination']);
+    Route::get('admin/examinations/export', [MasterController::class, 'exportExaminations']);
+    Route::post('admin/examinations/import', [MasterController::class, 'importExaminations']);
+
+    // Diagnoses routes
+    Route::get('admin/diagnoses', [MasterController::class, 'getDiagnoses']);
+    Route::post('admin/diagnoses/store', [MasterController::class, 'storeDiagnosis']);
+    Route::get('admin/diagnoses/{id}/edit', [MasterController::class, 'editDiagnosis']);
+    Route::put('admin/diagnoses/{id}', [MasterController::class, 'updateDiagnosis']);
+    Route::delete('admin/diagnoses/{id}', [MasterController::class, 'destroyDiagnosis']);
+    Route::get('admin/diagnoses/export', [MasterController::class, 'exportDiagnoses']);
+    Route::post('admin/diagnoses/import', [MasterController::class, 'importDiagnoses']);
+    // Lab Tests routes
+    Route::get('admin/lab_tests', [MasterController::class, 'getLabTests']);
+    Route::post('admin/lab_tests/store', [MasterController::class, 'storeLabTest']);
+    Route::get('admin/lab_tests/{id}/edit', [MasterController::class, 'editLabTest']);
+    Route::put('admin/lab_tests/{id}', [MasterController::class, 'updateLabTest']);
+    Route::delete('admin/lab_tests/{id}', [MasterController::class, 'destroyLabTest']);
+    Route::get('admin/lab_tests/export', [MasterController::class, 'exportLabTests']);
+    Route::post('admin/lab_tests/import', [MasterController::class, 'importLabTests']);
+
+
+    Route::get('/categories', [CategoryController::class, 'index'])->name('super-admin.blog-category');
+    Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
+    Route::get('/categories/{id}/edit', [CategoryController::class, 'edit'])->name('categories.edit');
+    Route::patch('/categories/{id}', [CategoryController::class, 'update'])->name('categories.update');
+    Route::delete('/categories/{id}', [CategoryController::class, 'destroy'])->name('categories.destroy');
+    
+    // start Blogs
+    Route::get('/super-admin-blogs', [BlogController::class, 'index'])->name('super-admin.blogs');
+    Route::post('/super-admin-blogs', [BlogController::class, 'store'])->name('blogs.store');
+    Route::get('/edit/{blogs_id}',[BlogController::class,'editBlog'])->name('super-admin.Blog-edit');
+    Route::put('/super-admin/blogs/{id}', [BlogController::class, 'update'])->name('super-admin.blogs.update');
+    Route::delete('super-admin/blogs/{id}', [BlogController::class, 'destroy'])->name('super-admin.blogs.destroy');
+
+
+    // Medicine routes
+    Route::get('admin/medicines', [MasterController::class, 'getMedicines']);
+    Route::post('admin/medicines/store', [MasterController::class, 'storeMedicine']);
+    Route::get('admin/medicines/{id}/edit', [MasterController::class, 'editMedicine']);
+    Route::put('admin/medicines/{id}', [MasterController::class, 'updateMedicine']);
+    Route::delete('admin/medicines/{id}', [MasterController::class, 'destroyMedicine']);
+    Route::get('admin/medicines/export', [MasterController::class, 'exportMedicines']);
+    Route::post('admin/medicines/import', [MasterController::class, 'importMedicines']);
+
+    });
+
+
+
+
+    Route::middleware(['auth:sanctum', 'verified', 'role:doctor'])
+    ->group(function () {
+
+        Route::get('/profile', function () {   return view('doctor.doctor-profile');  })->name('doctor.profile');
+        Route::post('/update-profile/{id}', [DoctordashboardController::class, 'updateProfile'])->name('update.profile');
+   
+
+          // Route::get('/consult-pdf', function () {   return view('doctor.doctor-consult-pdf');  })->name('doctor.consult-pdf');
+          // Route::post('/update-consult-pdf/{id}', [DoctordashboardController::class, 'updateConsultPdf'])->name('update.consult-pdf');
+    
+      // Replace your old routes with these
+      Route::get('/consult-pdf', [DoctordashboardController::class, 'consultPdf'])->name('doctor.consult-pdf');
+      Route::post('/update-consult-pdf/{id}', [DoctordashboardController::class, 'updateConsultPdf'])->name('update.consult-pdf');
+
+
+        Route::get('/doctor-dashboard', [DoctordashboardController::class, 'index'])->name('doctor.dashboard');
+        Route::get('/patient-registrations', [DoctordashboardController::class, 'register_patient'])->name('doctor.patient-registration');
+        Route::get('show-detail-appointment/{id}', [DoctordashboardController::class, 'showAppointment'])->name('doctor.appointment.show');
+
+        // AJAX Routes for CRUD
+        Route::post('/patients', [DoctordashboardController::class, 'store'])->name('patients.store');
+        Route::get('/show-patients/{id}', [DoctordashboardController::class, 'show'])->name('patients.show');
+        Route::put('/update-patients/{id}', [DoctordashboardController::class, 'update'])->name('patients.update');
+        Route::delete('/patients/{id}', [DoctordashboardController::class, 'destroy'])->name('patients.destroy');
+        Route::get('/doctor-filter-patients', [DoctordashboardController::class, 'filter_patients'])->name('doctor.filter_patients');
+        Route::get('/export-users', [DoctordashboardController::class, 'exportUsers'])->name('export.users');
+
+        Route::get('/doctors-appointments', [AppointmentController::class, 'showappointment'])->name('doctors.appointment');
+        Route::get('/book-appointments', [AppointmentController::class, 'bookappointment'])->name('book-appointment');
+        Route::get('/doctor/book-appointment', [AppointmentController::class, 'bookappointment'])->name('doctor.bookappointment');
+        Route::get('/doctor/appointments/booked-times', [AppointmentController::class, 'getBookedTimes'])->name('doctor.appointments.booked_times');
+
+        
+        Route::post('/doctor/send-otp', [AppointmentController::class, 'sendOtp'])->name('doctor.send-otp');
+        Route::post('/doctor/verify-otp', [AppointmentController::class, 'verifyOtp'])->name('doctor.verify-otp');
+        Route::post('/doctor/appointments', [AppointmentController::class, 'store'])->name('doctor.appointments.store');
+       
+            
+        Route::get('/edit-book-appointments', [AppointmentController::class, 'editappointment'])->name('edit-book-appointment');
+        Route::POST('/booked-times', [AppointmentController::class, 'bookedTimes'])->name('doctors.appointment.booked_times');
+        Route::post('/update-book-appointment', [AppointmentController::class, 'updateappointment'])->name('update-book-appointment');
+        Route::get('/consent/form/{appointment_id}', [AppointmentController::class, 'showConsentForm'])->name('consent.form');
+         Route::post('/doctor/appointment/cancel', [AppointmentController::class, 'cancelAppointment'])
+        ->name('doctor.appointment.cancel');
+        
+        Route::post('/doctor/appointment/complete', [AppointmentController::class, 'completeAppointment'])->name('doctor.appointment.complete');
+
+
+        Route::get('/doctor-filter-patients-appointments', [AppointmentController::class, 'filter_patients_appointments'])->name('doctor.filter_patients_appointments');
+        Route::get('/doctor-appointment/{id}', [AppointmentController::class, 'show_appointment'])->name('doctor.appointment.show');
+
+        
+
+          // Doctor Income & Expense Routes
+    Route::get('/income-expence', [IncomExpenceController::class, 'index'])->name('doctor.income-expence');
+
+    Route::resource('income-types', IncomeTypeController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::resource('expense-types', ExpenseTypeController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Main CRUD
+    Route::resource('incomes', IncomeController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
+    Route::resource('expenses', ExpenseController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
+
+    // Edit Data (for modal)
+    Route::get('incomes/{id}/edit-data', [IncomeController::class, 'getForEdit'])->name('incomes.getForEdit');
+    Route::get('expenses/{id}/edit-data', [ExpenseController::class, 'getForEdit'])->name('expenses.getForEdit');
+
+    // Transactions (Data + Export)
+    Route::get('/transactions/data', [TransactionController::class, 'getTransactionData']);
+    Route::get('/transactions/totals', [TransactionController::class, 'getTotals']); // optional
+    Route::post('/transactions/export-selected', [TransactionController::class, 'exportSelected']);
+    Route::get('/transactions/export-all', [TransactionController::class, 'exportAll']);
+
+
+    // Route::get('/doctor-consultation/{id}', [ConsulController::class, 'showconsultation'])->name('doctors.consultation');
+    Route::get('/doctor-consultation/{id}', [ConsulController::class, 'showconsultation'])->name('doctors.consultation');
+    Route::get('/medicines/search', [ConsulController::class, 'searchMedicines'])->name('medicines.search');
+    Route::post('/consultation/save', [ConsulController::class, 'saveConsultation'])->name('consultation.save');
+    
+
+
+    // ====================== DOCTOR STAFF PERMISSIONS ======================
+      Route::get('/staff-permissions', [StaffPermissionController::class, 'index'])
+          ->name('staff-permissions.index');
+
+      // AJAX Routes
+      Route::get('/doctor/staff/receptionists', [StaffPermissionController::class, 'getReceptionists'])
+          ->name('staff.receptionists');
+
+
+          
+      Route::get('/staff/receptionist/{user}/permissions', [StaffPermissionController::class, 'getPermissions'])
+          ->name('staff.receptionist.permissions');
+
+      Route::post('/staff/receptionist/{user}/permissions', [StaffPermissionController::class, 'savePermissions'])
+          ->name('staff.receptionist.save-permissions');
+
+
+
+});
+
+
+
+ Route::middleware(['auth:sanctum', 'verified', 'role:doctor'])
+    ->group(function () {
+    Route::get('/appointment', [DoctordashboardController::class, 'appointment'])->name('appointment');
+    Route::get('/prescription', [DoctordashboardController::class, 'prescription'])->name('prescription');
+    Route::get('/expense', [DoctordashboardController::class, 'expense'])->name('expense');
+    Route::get('/home-visit', [DoctordashboardController::class, 'homeVisit'])->name('home-visit');
+    Route::get('/faq', [DoctordashboardController::class, 'faq'])->name('faq');
+    Route::get('/chat', [DoctordashboardController::class, 'chat'])->name('chat');
+    Route::get('/video-call', [DoctordashboardController::class, 'videoCall'])->name('video-call');
+    Route::get('/shop', [DoctordashboardController::class, 'shop'])->name('shop');
+    Route::get('/setting', [DoctordashboardController::class, 'setting'])->name('setting');
+    Route::get('/appointment-setting', [DoctordashboardController::class, 'appointmentSetting'])->name('appointment-setting');
+
+    Route::post('/send-whatsapp', [AppointmentController::class, 'sendWhatsapp'])->name('doctor.send-whatsapp');
+
+
+    Route::get('/working-hours', [DoctordashboardController::class, 'workingHours'])->name('working-hours');
+    Route::get('/cancellation-reason', [DoctordashboardController::class, 'cancellationReason'])->name('cancellation-reason');
+    Route::get('/roles-permission', [DoctordashboardController::class, 'rolesPermission'])->name('roles-permission');
+    Route::get('/profile-settings', [DoctordashboardController::class, 'profileSettings'])->name('profile-settings');
+    Route::get('/change-password', [DoctordashboardController::class, 'changePassword'])->name('change-password');
+    Route::get('/notifications', [DoctordashboardController::class, 'notifications'])->name('notifications');
+    Route::get('/support', [DoctordashboardController::class, 'support'])->name('support');
+    
+
+    Route::get('/schedule', [DoctorSchedulingController::class, 'index'])->name('doctor.doctor-schedule');
+    Route::post('/schedule', [DoctorSchedulingController::class, 'storeSchedule'])->name('doctor.schedule.store');
+    Route::get('/schedule/{id}', [DoctorSchedulingController::class, 'show'])->name('doctor.schedule.show');
+    Route::get('/schedule/{id}/edit', [DoctorSchedulingController::class, 'getSchedule'])->name('doctor.schedule.get');
+    Route::put('/schedule/{id}', [DoctorSchedulingController::class, 'updateSchedule'])->name('doctor.schedule.update');
+    Route::delete('/schedule/{id}', [DoctorSchedulingController::class, 'destroySchedule'])->name('doctor.schedule.destroy');
+
+    
+   
+    Route::post('/schedule/clinic', [DoctorSchedulingController::class, 'storeClinic'])->name('doctor.clinic.store');
+    Route::delete('/clinic/{id}', [DoctorSchedulingController::class, 'destroyClinic'])->name('doctor.clinic.destroy');
+    Route::get('/clinic/{id}', [DoctorSchedulingController::class, 'getClinic'])->name('doctor.clinic.get');
+    Route::put('/clinic/{id}', [DoctorSchedulingController::class, 'updateClinic'])->name('doctor.clinic.update');
+    
+
+    Route::get('/home-visit', [HomevisitController::class,'ShowHomevisit'])->name('doctor-home-visit');         
+    Route::get('/home-visit-patient-details/{id}', [HomevisitController::class,'patientDetailshowing'])->name('doctor.patient-details');         
+
+
+
+
+
+    // ------------------------
+    // main Test Booking  CRUD Routes
+    // ------------------------
+    
+    Route::get('/test-booking', [TestBookingController::class,'Showtestbooking'])->name('doctor-test-booking');         
+  Route::get('/show-test-bookings/{id}', [TestBookingController::class, 'show'])->name('doctor.show-test-bookings');
+    Route::get('/test-booking', [TestBookingController::class, 'Showtestbooking'])->name('doctor-test-booking');
+    Route::get('/test-bookings/filter', [TestBookingController::class, 'filterTestBookings'])->name('doctor.test-bookings.filter');
+   Route::delete('/test-bookings/delete', [TestBookingController::class, 'deleteTestBooking'])->name('doctor.test-bookings.delete');
+   // Patient Search Routes (if not already added)
+    // Route::get('/get-mobile-suggestions', [TestBookingController::class, 'getMobileSuggestions'])->name('get.mobile.suggestions');
+    // Route::get('/get-registration-suggestions', [TestBookingController::class, 'getRegistrationSuggestions'])->name('get.registration.suggestions');
+    
+  
+    // ------------------------
+    // Test Booking  CRUD Routes
+    // ------------------------
+    // Route::get('add-test-booking', [TestBookingController::class, 'create'])->name('doctor.test-bookings.create');
+    Route::get('/add-test-booking', [TestBookingController::class, 'Addtestbooking'])->name('doctor-add-test-booking');
+    Route::post('test-bookings', [TestBookingController::class, 'store'])->name('doctor.test-bookings.store');
+    Route::get('test-bookings', [TestBookingController::class, 'index'])->name('doctor.test-bookings.index');
+    Route::get('test-bookings/{id}/edit', [TestBookingController::class, 'edit'])->name('doctor.test-bookings.edit');
+    Route::put('test-bookings/{id}', [TestBookingController::class, 'update'])->name('doctor.test-bookings.update');
+    Route::delete('test-bookings/{id}', [TestBookingController::class, 'destroy'])->name('doctor.test-bookings.destroy');
+
+    
+    
+    
+    
+    
+    Route::get('/search-user', [TestBookingController::class, 'searchUser'])->name('search-user');
+    Route::get('/get-user-details', [TestBookingController::class, 'getUserDetails'])->name('get-user-details');
+
+    // ------------------------
+    // Patient Search Routes
+    // ------------------------
+    Route::get('/get-mobile-suggestions', [TestBookingController::class, 'getMobileSuggestions'])->name('get.mobile.suggestions');
+    Route::get('/get-registration-suggestions', [TestBookingController::class, 'getRegistrationSuggestions'])->name('get.registration.suggestions');
+    Route::get('/get-patient-details', [TestBookingController::class, 'getPatientDetails'])->name('get.patient.details');
+
+    // ------------------------
+    // Vendor CRUD Routes
+    // ------------------------
+    Route::get('/doctor/vendors', [TestBookingController::class, 'getVendors'])->name('doctor.vendors');
+    Route::post('/doctor/vendors', [TestBookingController::class, 'addVendor'])->name('doctor.vendors.add');
+    Route::put('/doctor/vendors/{id}', [TestBookingController::class, 'updateVendor'])->name('doctor.vendors.update');
+    Route::delete('/doctor/vendors/{id}', [TestBookingController::class, 'deleteVendor'])->name('doctor.vendors.delete');
+
+    // ------------------------
+    // Test CRUD Routes
+    // ------------------------
+    Route::get('/doctor/tests', [TestBookingController::class, 'getTests'])->name('doctor.tests');
+    Route::post('/doctor/tests', [TestBookingController::class, 'addTest'])->name('doctor.tests.add');
+    Route::put('/doctor/tests/{id}', [TestBookingController::class, 'updateTest'])->name('doctor.tests.update');
+    Route::delete('/doctor/tests/{id}', [TestBookingController::class, 'deleteTest'])->name('doctor.tests.delete');
+    
+    
+ 
+
+    
+   
+    Route::get('/doctor-billing', [BillingController::class, 'index'])->name('doctor-billing');
+    
+    // Route::post('/billing-typesss', [BillingController::class, 'storeBillingType'])->name('doctor.save-consultation');
+    // Route::post('/billing-types', [BillingController::class, 'storeBillingType'])->name('doctor.save-billing');
+
+    // Route::get('/billing-types', [BillingController::class, 'getBillingTypes'])->name('doctor.get-billing-types');
+    
+      // Billing Type Routes
+    Route::post('/billing-types', [BillingController::class, 'storeBillingType'])->name('billing-types.store');
+    Route::get('/billing-types', [BillingController::class, 'getBillingTypes'])->name('billing-types.get');
+
+    // Billing Routes
+    Route::post('/billings', [BillingController::class, 'storeBilling'])->name('billings.store');
+    Route::get('/billings-data', [BillingController::class, 'getBillings'])->name('billings.get');
+    Route::get('/billings/{id}', [BillingController::class, 'show'])->name('billings.show');
+    Route::put('/billings/{id}', [BillingController::class, 'update'])->name('billings.update');
+    Route::delete('/billings/{id}', [BillingController::class, 'destroy'])->name('billings.destroy');    
+
+
+    // save consultation Billing Routes
+    Route::post('/consultation-billings', [BillingController::class, 'storeBillingConsultpage'])->name('billingsConsultpage.store');
+
+
+    
+    // ------------------------
+    // CRUD shoping
+    // ------------------------
+    Route::get('/shoping', [ShopingController::class, 'index'])->name('doctors.shoping');
+
+
+    Route::get('/billings/{id}/print-pdf', [BillingController::class, 'printPDF'])->name('billings.print-pdf');
+    
+    // ------------------------
+    // CRUD chats
+    // ------------------------
+
+    Route::get('/chat', [ChatController::class, 'index'])->name('doctor.chat');
+    Route::get('/chat/new-messages', [ChatController::class, 'getNewMessages']);
+    Route::post('/chat/send', [ChatController::class, 'send']);
+    Route::post('/chat/reply/{message}', [ChatController::class, 'reply']);
+    Route::post('/chat/favorite/{message}', [ChatController::class, 'favorite']);
+    Route::delete('/chat/delete/{message}', [ChatController::class, 'delete']);
+    Route::get('/chat/search', [ChatController::class, 'search']);
+    Route::post('/chat/mute', [ChatController::class, 'mute']);
+    Route::post('/chat/clear', [ChatController::class, 'clear']);
+    Route::delete('/chat/delete', [ChatController::class, 'deleteChat']);
+    Route::put('/chat/update/{message}', [ChatController::class, 'update']);
+
+
+    Route::get('/support', [DoctordashboardController::class, 'doctorsupport'])->name('doctor.supports');
+
+
+});
+
+
+  Route::middleware(['auth:sanctum', 'verified', 'role:patient'])
+    ->group(function () {
+        Route::get('/patient-dashboard', [PatientdashboardController::class, 'index'])->name('patient.dashboard');
+       
+    });

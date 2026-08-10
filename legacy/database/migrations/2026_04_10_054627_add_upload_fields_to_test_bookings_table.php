@@ -1,0 +1,29 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('test_bookings', function (Blueprint $table) {
+            $table->string('upload_link_token')->nullable()->after('notes');
+            $table->string('uploaded_file_path')->nullable()->after('upload_link_token');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('test_bookings', function (Blueprint $table) {
+            $table->dropColumn(['upload_link_token', 'uploaded_file_path']);
+        });
+    }
+};

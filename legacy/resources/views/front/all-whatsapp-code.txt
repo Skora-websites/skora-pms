@@ -1,0 +1,2299 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\RegistrationRequest;
+use App\Jobs\SendRegistrationWhatsApp;
+use App\Models\User;
+use App\Services\WhatsAppService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+
+class RegistrationController extends Controller
+{
+    protected $whatsappService;
+    private $appKey;
+    private $authKey;
+
+    // public function __construct(WhatsAppService $whatsappService)
+    // {
+    //     $this->whatsappService = $whatsappService;
+         
+    // }
+
+      public function __construct()
+    {
+        $this->appKey = config('services.whatsapp.appkey');
+        $this->authKey = config('services.whatsapp.authkey');
+    }
+  
+
+    public function showRegistrationForm()
+    {
+        return view('auth.register');
+    }
+   
+ public function sendOtp(Request $request)
+{
+
+// for Extra security code ok
+//   $key = 'otp_request_' . $request->ip();
+//     $requests = Cache::get($key, 0);
+    
+//     if ($requests >= 3) {
+//         return response()->json([
+//             'success' => false, 
+//             'message' => 'Too many OTP requests. Please try again later.'
+//         ], 429);
+//     }
+//     Cache::put($key, $requests + 1, now()->addMinutes(10));
+
+
+
+
+    $request->validate(['mobile' => 'required|digits:10']);
+    $mobile = $request->mobile;
+    $fullMobile = '+91' . $mobile; 
+    $otp = rand(100000, 999999);
+    Cache::put("otp_{$mobile}", $otp, now()->addMinutes(5));
+    Log::info("OTP for {$fullMobile}: {$otp}");
+
+    $message = "Dear Patient,\nYour OTP for registration is: {$otp}\nThis OTP is valid for 5 minutes.";
+    try {
+        $formData = [
+            [
+                'name' => 'appkey',
+                'contents' => env('WHATSAPP_APP_KEY', $this->appKey) 
+            ],
+            [
+                'name' => 'authkey',
+                'contents' => env('WHATSAPP_AUTH_KEY', $this->authKey) 
+            ],
+            [
+                'name' => 'to',
+                'contents' => $fullMobile 
+            ],
+            [
+                'name' => 'message',
+                'contents' => $message
+            ],
+            [
+                'name' => 'sandbox',
+                'contents' => 'false'
+            ]
+        ];
+        $response = Http::asMultipart()
+            ->timeout(30) 
+            ->post('https://whatsapp.rajatmarketingss.online/api/create-message', $formData);
+        \Log::info('WhatsApp API Request: ', $formData);
+        \Log::info('WhatsApp API response: status=' . $response->status() . ', body=' . $response->body());
+
+        if ($response->successful()) {
+            $responseData = $response->json();
+            if (isset($responseData['message_status']) && $responseData['message_status'] === 'Success') {
+                return response()->json([
+                    'success' => true, 
+                    'message' => 'OTP sent successfully via WhatsApp'
+                ]);
+            } else {
+                // \Log::error('WhatsApp API returned error: ' . $response->body());
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Failed to send OTP via WhatsApp'
+                ], 500);
+            }
+        } else {
+            // \Log::error('WhatsApp API failed: ' . $response->body());
+            return response()->json([
+                'success' => false, 
+                'message' => 'WhatsApp service temporarily unavailable'
+            ], 500);
+        }
+        
+    } catch (\Exception $e) {
+        // \Log::error('Error sending WhatsApp message: ' . $e->getMessage());
+        return response()->json([
+            'success' => false, 
+            'message' => 'Error sending OTP: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+    
+    public function verifyOtp(Request $request)
+    {
+        $key = 'otp_attempts_' . $request->ip();
+        $attempts = Cache::get($key, 0);
+        if ($attempts >= 5) {
+            return response()->json([
+                'success' => false, 
+                'message' => 'Too many attempts. Try again after 15 minutes.'
+            ], 429);
+        }
+        
+        $mobile = $request->mobile;
+        $cachedOtp = Cache::get("otp_{$mobile}");
+
+        if ($cachedOtp && $cachedOtp == $request->otp) {
+            Cache::forget("otp_{$mobile}");
+            Cache::forget($key); // Reset attempts on success
+            return response()->json(['success' => true, 'message' => 'OTP verified successfully']);
+        }
+        Cache::put($key, $attempts + 1, now()->addMinutes(15));
+        return response()->json(['success' => false, 'message' => 'Invalid OTP'], 400);
+    }
+
+public function register(Request $request)
+{
+    // dd($request->all());
+    $request->validate([
+        'name' => 'required|string|max:255',
+        'mobile' => 'required|digits:10',
+        'email' => 'required|email|unique:users,email',
+        'password' => 'required|string|min:8|confirmed', 
+        'role' => 'required|in:doctor,patient',
+        'gender' => 'nullable|in:Male,Female,Other',
+
+        // Optional fields
+        'clinic_name' => 'nullable|string|max:255',
+        'degrees' => 'nullable|array|max:100',
+        'specializations' => 'nullable|array|max:100',
+        'country' => 'nullable|string|max:255',
+        'state' => 'nullable|string|max:255',
+        'city' => 'nullable|string|max:255',
+        'address' => 'nullable|string|max:500',
+        'current_address' => 'nullable|string|max:500',
+    ]);
+
+    try {
+        $mobile = $request->mobile;
+
+        $data = $request->only([
+            'name','email','password',
+            'clinic_name','country','state','city','address',
+            'current_address','role','gender'
+        ]);
+
+        // convert arrays into comma separated strings
+        $data['degrees'] = $request->degrees ? implode(',', $request->degrees) : null;
+        $data['specializations'] = $request->specializations ? implode(',', $request->specializations) : null;
+
+        $data['phone'] = $mobile;
+        $data['password'] = Hash::make($request->password);
+
+        // Create user
+        $user = User::create($data);
+
+        // Dispatch WhatsApp notification (optional)
+        // SendRegistrationWhatsApp::dispatch($mobile, $request->name, $request->email);
+
+        // Login user
+        auth()->login($user);
+
+        $redirectUrl = $user->role === 'patient' 
+            ? route('patient.dashboard')   // named route (recommended)
+            : route('doctor.dashboard');   // ya phir direct '/doctor-dashboard'
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registration successfully!',
+            'redirect' => $redirectUrl
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Registration failed: ' . $e->getMessage(), ['request' => $request->all()]);
+        return response()->json([
+            'success' => false,
+            'message' => 'Registration failed. Please try again.'
+        ], 500);
+    }
+}
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkoraCares || Login</title>
+    @include('front.inc.header-links')
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --primary-color: #0e606e;
+            --primary-light: #4a9aa5;
+            --primary-dark: #0b4d56;
+            --bg-light: #f8f9fa;
+            --bg-dark: #1a1a1a;
+            --text-light: #333;
+            --text-dark: #f0f0f0;
+            --shadow-sm: 0 2px 10px rgba(14, 96, 110, 0.1);
+            --shadow-md: 0 8px 25px rgba(14, 96, 110, 0.15);
+            --transition-smooth: 3s cubic-bezier(0.25, 0.46, 0.45, 0.94); /* Even slower transition for very gradual fade - increased to 3s */
+        }
+
+        [data-theme="dark"] {
+            --bg-light: #1a1a1a;
+            --bg-dark: #f8f9fa;
+            --text-light: #f0f0f0;
+            --text-dark: #333;
+        }
+
+        body {
+            background: radial-gradient(circle at top left, var(--primary-light) 0%, transparent 40%), 
+                        radial-gradient(circle at top right, var(--primary-color) 0%, transparent 40%), 
+                        radial-gradient(circle at bottom left, #37b68e1d 0%, transparent 40%), 
+                        radial-gradient(circle at bottom right, #37b68d3f 0%, transparent 40%);
+            color: var(--text-light);
+            transition: all var(--transition-smooth);
+        }
+
+        [data-theme="dark"] body {
+            background: radial-gradient(circle at top left, var(--primary-dark) 0%, transparent 40%), 
+                        radial-gradient(circle at top right, var(--primary-color) 0%, transparent 40%), 
+                        radial-gradient(circle at bottom left, #0eca8e3f 0%, transparent 40%), 
+                        radial-gradient(circle at bottom right, #19a2773f 0%, transparent 40%);
+            color: var(--text-light);
+        }
+
+        .ul-header-2 .ul-header-bottom-wrapper {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            border-radius: 30px;
+            transition: all var(--transition-smooth);
+        }
+
+        .input-group-text {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            border-color: var(--primary-color);
+            color: white;
+            transition: all var(--transition-smooth);
+        }
+
+        .login-btn {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            color: white;
+            border: none;
+            position: relative;
+            transition: all var(--transition-smooth);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .login-btn:disabled {
+               background: linear-gradient(135deg, #0e606e, #5aaab5);
+            cursor: not-allowed;
+            opacity: 0.8;
+        }
+
+        .login-btn .spinner-border {
+            display: none;
+            width: 1.5rem;
+            height: 1.5rem;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        .login-btn.loading .spinner-border {
+            display: inline-block;
+        }
+
+        .login-btn.loading span {
+            display: none;
+        }
+
+        .ul-header-nav a {
+            color: #fcf6f6 !important;
+            transition: all var(--transition-smooth) !important;
+        }
+
+        .ul-header-nav a:hover {
+            color: var(--primary-light) !important;
+            transform: translateY(-1px);
+        }
+
+        /* Transparent cards with specified gradient background only in captions */
+        .Skoracares-shadow-lg {
+            background: rgba(255, 255, 255, 0.1); /* Highly transparent main card */
+            backdrop-filter: blur(20px);
+            transition: all var(--transition-smooth);
+            box-shadow: var(--shadow-md);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        [data-theme="dark"] .Skoracares-shadow-lg {
+            background: rgba(26, 26, 26, 0.1);
+            color: var(--text-light);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+
+        /* Enhanced Carousel Styles: Ultra-slow fade in/out for slow motion effect, no buttons, no outer shadow */
+        #loginCarousel {
+            background: radial-gradient(circle at top left, var(--primary-light) 0%, transparent 40%), 
+                        radial-gradient(circle at top right, var(--primary-color) 0%, transparent 40%), 
+                        radial-gradient(circle at bottom left, #45c2c215 0%, transparent 40%), 
+                        radial-gradient(circle at bottom right, #46efd0 0%, transparent 40%);
+        }
+
+        [data-theme="dark"] #loginCarousel {
+            background: radial-gradient(circle at top left, var(--primary-dark) 0%, transparent 40%), 
+                        radial-gradient(circle at top right, var(--primary-color) 0%, transparent 40%), 
+                        radial-gradient(circle at bottom left, #1ec48d3f 0%, transparent 40%), 
+                        radial-gradient(circle at bottom right, #1ed6c03f 0%, transparent 40%);
+        }
+
+        #loginCarousel .carousel-inner {
+         background: radial-gradient(circle at top left, #4a9aa517 0%, transparent 40%), radial-gradient(circle at top right, #d1e5e914 0%, transparent 40%), radial-gradient(circle at bottom left, #11d8d82e 0%, transparent 40%), radial-gradient(circle at bottom right, #24ccc11a 0%, transparent 40%);
+            min-height: 400px;
+        }
+
+        [data-theme="dark"] #loginCarousel .carousel-inner {
+            background: radial-gradient(circle at top left, var(--primary-dark) 0%, transparent 40%), 
+                        radial-gradient(circle at top right, var(--primary-color) 0%, transparent 40%), 
+                        radial-gradient(circle at bottom left, #2edde666 0%, transparent 40%), 
+                        radial-gradient(circle at bottom right, #19d4c83d 0%, transparent 40%);
+        }
+
+        .carousel-inner img {
+            width: 100%;
+            height: 400px;
+            object-fit: cover;
+            border-radius: 10px;
+            transition: opacity var(--transition-smooth) !important; /* Slower fade for images - now 3s with !important */
+        }
+
+        .carousel-item {
+            height: 400px;
+            overflow: hidden;
+            border-radius: 10px;
+            transition: opacity var(--transition-smooth) !important; /* Gradual opacity change - slower with !important */
+            opacity: 1 !important;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 0;
+        }
+
+        .carousel-item.active {
+            opacity: 1 !important;
+            z-index: 1;
+        }
+
+        .carousel-item-next,
+        .carousel-item-prev {
+            z-index: 0;
+        }
+
+        /* Fade effect: Ultra-slow hide/show for images - slow motion */
+        .carousel-fade .carousel-item {
+            opacity: 1 !important;
+            transition-property: opacity !important;
+            transform: none !important;
+            transition-duration: 3s ease-in-out !important; /* Explicit ultra-slow motion duration with ease-in-out for smoothness */
+        }
+
+        .carousel-fade .carousel-item.active,
+        .carousel-fade .carousel-item-next.carousel-item-start,
+        .carousel-fade .carousel-item-prev.carousel-item-end {
+            opacity: 1 !important;
+        }
+
+        .carousel-fade .carousel-item-next.carousel-item-start,
+        .carousel-fade .carousel-item-prev.carousel-item-end,
+        .carousel-fade .carousel-item.active.carousel-item-start,
+        .carousel-fade .carousel-item.active.carousel-item-end {
+            opacity: 0 !important;
+        }
+
+        .carousel {
+            border-radius: 10px;
+            overflow: hidden;
+            /* No outer shadow */
+            transition: all var(--transition-smooth);
+            position: relative;
+            min-height: 400px;
+        }
+
+        /* Hide navigation controls completely */
+        .carousel-control-prev,
+        .carousel-control-next,
+        .carousel-indicators {
+            display: none !important;
+        }
+
+        /* Carousel captions with specified gradient, short content, transparent */
+        .carousel-caption {
+            background: linear-gradient(135deg, rgba(14, 96, 110, 0.8), rgba(74, 154, 165, 0.8)); /* Specified gradient only here */
+            border-radius: 8px;
+            padding: 15px; /* Reduced padding for shorter look */
+            bottom: 15%;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all var(--transition-smooth) !important; /* Slow fade for caption - now 3s with !important */
+            animation: slideUp 0.01s ease forwards 8.9s; /* Delayed slow slide */
+        }
+
+        .carousel-item.active .carousel-caption {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @keyframes slideUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .carousel-caption h5 {
+            font-size: 1.4rem; /* Slightly smaller for short content */
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 5px; /* Reduced margin */
+            transition: all var(--transition-smooth);
+        }
+
+        .carousel-caption p {
+            font-size: 0.9rem; /* Smaller text */
+            color: #fff;
+            margin-bottom: 10px; /* Reduced */
+            transition: all var(--transition-smooth);
+        }
+
+        .carousel-caption .btn {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            border: none;
+            padding: 8px 16px; /* Smaller button */
+            font-size: 0.9rem;
+            transition: all var(--transition-smooth);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .carousel-caption .btn:hover {
+            background: linear-gradient(135deg, #0e606eb1, #0e606e54);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        @media (max-width: 992px) {
+            .carousel-item, .carousel-inner img {
+                height: 300px;
+            }
+            .carousel, .carousel-inner {
+                min-height: 300px;
+            }
+            .carousel-caption {
+                bottom: 10%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .carousel-item, .carousel-inner img {
+                height: 250px;
+            }
+            .carousel, .carousel-inner {
+                min-height: 250px;
+            }
+            .carousel-caption {
+                bottom: 5%;
+                padding: 10px;
+            }
+            .carousel-caption h5 {
+                font-size: 1.1rem;
+            }
+            .carousel-caption p {
+                font-size: 0.8rem;
+            }
+            .carousel-caption .btn {
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+        }
+
+        /* Notification Styles with Color Integration */
+        .notification-sidebar {
+            position: fixed;
+            top: 45px;
+            right: -340px;
+            width: 330px;
+            z-index: 99999;
+            transition: right 0.5s ease-in-out, opacity 0.5s ease;
+        }
+
+        .notification-sidebar.show-notification {
+            right: 4px;
+        }
+
+        .custom-alert-box {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            border-left: 5px solid var(--primary-color);
+            overflow: hidden;
+            display: flex;
+            padding: 9px !important;
+            width: 100%;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            box-shadow: var(--shadow-md);
+            transition: all var(--transition-smooth);
+            animation: fadeInRight 0.5s ease;
+        }
+
+        @keyframes fadeInRight {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .custom-alert-box.alert-success {
+            border-left: 5px solid #28a745;
+            background: rgba(237, 255, 243, 0.95);
+        }
+
+        .custom-alert-box.alert-error {
+            border-left: 5px solid #dc3545;
+            background: rgba(255, 228, 230, 0.95);
+        }
+
+        .custom-alert-box.alert-info {
+            border-left: 5px solid #17a2b8;
+            background: rgba(230, 247, 249, 0.95);
+        }
+
+        .custom-alert-box.alert-warning {
+            border-left: 5px solid #ffc107;
+            background: rgba(255, 251, 235, 0.95);
+        }
+
+        [data-theme="dark"] .custom-alert-box {
+            background: rgba(26, 26, 26, 0.95);
+            color: var(--text-light);
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-light);
+            font-size: 20px;
+            cursor: pointer;
+            position: absolute;
+            right: 10px;
+            top: 8px;
+            transition: all var(--transition-smooth);
+        }
+
+        .close-btn:hover {
+            color: var(--primary-color);
+            transform: scale(1.1);
+        }
+
+        .p-custom {
+            padding: 11px 44px 11px 16px;
+            flex-grow: 1;
+        }
+
+        .icon {
+            font-size: 22px;
+            transition: all var(--transition-smooth);
+        }
+
+        /* Remember Me Checkbox Styling */
+        .form-check-input:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .form-check-input:focus {
+            box-shadow: 0 0 0 0.2rem rgba(14, 96, 110, 0.25);
+        }
+
+        /* Form Animations */
+        .card {
+            animation: fadeInUp 1s ease forwards; /* Slower entrance */
+            opacity: 0;
+            transform: translateY(30px);
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(14, 96, 110, 0.25);
+            transform: scale(1.02);
+            transition: all var(--transition-smooth);
+        }
+
+        .form-label {
+            color: var(--primary-dark);
+            transition: all var(--transition-smooth);
+        }
+
+        /* Theme Toggle */
+        .theme-toggle {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all var(--transition-smooth);
+        }
+
+        .theme-toggle:hover {
+            background: var(--primary-dark);
+            transform: rotate(180deg);
+        }
+    </style>
+
+    <!-- Session-based Notifications -->
+    @if(session('success') || session('error') || $errors->any())
+        <div class="notification-sidebar position-fixed top-2 mt-3 Skoracares-shadow-lg rounded" id="alertContainer">
+            @if(session('success'))
+                <div class="custom-alert-box alert-success p-custom">
+                    <i class="fas fa-check-circle text-success icon"></i>
+                    {{ session('success') }}
+                    <button type="button" class="close-btn" onclick="closeAlert(this)">&times;</button>
+                </div>
+            @endif
+            @if(session('error'))
+                <div class="custom-alert-box alert-error p-custom">
+                    <i class="fas fa-exclamation-circle text-danger icon"></i>
+                    {{ session('error') }}
+                    <button type="button" class="close-btn" onclick="closeAlert(this)">&times;</button>
+                </div>
+            @endif
+            @if($errors->any())
+                @foreach($errors->all() as $error)
+                    <div class="custom-alert-box alert-error p-custom">
+                        <i class="fas fa-exclamation-circle text-danger icon"></i>
+                        {{ $error }}
+                        <button type="button" class="close-btn" onclick="closeAlert(this)">&times;</button>
+                    </div>
+                @endforeach
+            @endif
+        </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                let alertContainer = document.getElementById("alertContainer");
+                if (alertContainer) {
+                    setTimeout(() => {
+                        alertContainer.classList.add("show-notification");
+                    }, 500);
+                    let alerts = alertContainer.querySelectorAll(".custom-alert-box");
+                    alerts.forEach(alert => {
+                        setTimeout(() => {
+                            closeAlert(alert.querySelector(".close-btn"));
+                        }, 80000);
+                    });
+                }
+            });
+
+            function closeAlert(btn) {
+                let alertBox = btn.parentElement;
+                alertBox.style.transition = "all 0.5s ease";
+                alertBox.style.opacity = "0";
+                alertBox.style.transform = "translateX(20px)";
+                setTimeout(() => {
+                    alertBox.remove();
+                    let alertContainer = document.getElementById("alertContainer");
+                    if (alertContainer && !alertContainer.querySelector(".custom-alert-box")) {
+                        alertContainer.style.display = "none";
+                    }
+                }, 500);
+            }
+        </script>
+    @endif
+
+</head>
+<body class="ul-footer ul-footer-2" data-theme="light">
+    <main>
+        <div class="preloader" id="preloader">
+            <div class="loader"></div>
+        </div>
+        <div class="ul-sidebar">
+            <div class="ul-sidebar-header">
+                <div class="ul-sidebar-header-logo">
+                    <a href="{{ url('/') }}">
+                        <img src="{{ asset('assets/img/logo-new.png')}}" height="40" alt="skora cares logo" class="logo">
+                    </a>
+                </div>
+                <!-- sidebar closer -->
+                <button class="ul-sidebar-closer"><i class="flaticon-close-1"></i></button>
+            </div>
+
+            <div class="ul-sidebar-header-nav-wrapper d-block d-lg-none">
+            </div>
+            <div class="ul-header-bottom-right">
+                <div class="ul-header-2-bottom-btns">
+                    <a href="{{ route('login')}}" class="ul-2-btn border-dark text-dark">Log In</a>
+                    <a href="{{ route('register')}}" class="ul-2-btn border border-dark">Sign up</a>
+                </div>
+            </div>
+
+            <!-- sidebar footer -->
+            <div class="ul-sidebar-footer">
+                <span class="ul-sidebar-footer-title">Follow us</span>
+
+                <div class="ul-sidebar-footer-social">
+                    <a href="#"><i class="flaticon-facebook"></i></a>
+                    <a href="#"><i class="flaticon-twitter"></i></a>
+                    <a href="#"><i class="flaticon-instagram"></i></a>
+                    <a href="#"><i class="flaticon-linkedin-big-logo"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- HEADER SECTION START -->
+        <header class="ul-header ul-header-2 ul-header-3">
+            <div class="ul-header-bottom to-be-sticky wow animate__slideInDown">
+                <div class="ul-header-bottom-wrapper ul-header-container">
+                    <div class="logo-container">
+                        <a href="{{ url('/') }}" class="d-inline-block">
+                            <img src="{{ asset('front-assets/img/logo-new.png')}}" height="40" alt="logo" class="logo" style="filter: brightness(0) invert(1) !important; transition: all var(--transition-smooth);">
+                        </a>
+                    </div>
+
+                    <div class="ul-header-bottom-center">
+                        <!-- header nav -->
+                        <div class="ul-header-nav-wrapper">
+                            <div class="to-go-to-sidebar-in-mobile">
+                                <nav class="ul-header-nav">
+                                    <a href="{{ url('/') }}" class="active">Home</a>
+                                    <a href="{{ url('/about') }}">About</a>
+                                    <a href="{{ url('/contact') }}">Contact</a>
+                                </nav>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ul-header-bottom-right">
+                        <div class="ul-header-2-bottom-btns">
+                            @auth
+                                @if(auth()->user()->role === 'admin')
+                                    <a href="{{ url('/admin-dashboard') }}" class="ul-2-btn d-xxs-none">Dashboard</a>
+                                @elseif(auth()->user()->role === 'doctor')
+                                    <a href="{{ url('/doctor-dashboard') }}" class="ul-2-btn d-xxs-none">Dashboard</a>
+                                @elseif(auth()->user()->role === 'super_admin')
+                                    <a href="{{ url('/super-admin.dashboard') }} " class="ul-2-btn d-xxs-none">Dashboard</a>
+                                @else
+                                    <a href="{{ url('/patient-dashboard') }}" class="ul-2-btn d-xxs-none">Dashboard</a>
+                                @endif
+                            @endauth
+                            @guest
+                                <a href="{{ route('login') }}" class="ul-2-btn d-xxs-none">Log In</a>
+                            @endguest
+                            <a href="{{ route('register')}}" class="ul-2-btn d-xxs-none">Sign up</a>
+                        </div>
+                        <button class="ul-header-sidebar-opener d-lg-none d-inline-flex"><i class="flaticon-right-arrow"></i></button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- HEADER SECTION END -->
+        <div class="container py-5">
+            <div class="row align-items-center justify-content-center py-5">
+                <div class="card Skoracares-shadow border-0 rounded-5">
+                    <div class="card-body p-4">
+                        <form method="POST" action="{{ route('login') }}" id="loginForm">
+                            @csrf
+                            <div class="form-step">
+                                <div class="row align-items-center">
+                                    <div class="col-lg-7 mb-3 mb-lg-0">
+                                        <div id="loginCarousel" class="carousel slide carousel-fade" data-bs-ride="carousel" data-bs-interval="12000"> <!-- Further increased auto timer to 12s for slower pace matching 3s transition -->
+                                            <div class="carousel-inner">
+                                                <div class="carousel-item active">
+                                                    <img src="front-assets/img/login-1.png" class="d-block w-100" alt="Slide 1">
+                                                    <div class="carousel-caption d-none d-md-block">
+                                                        <h5>Welcome to SkoraCares</h5>
+                                                        <p>Your secure health portal - login for personalized care.</p> <!-- Short user-related content added -->
+                                                        <a href="#" class="btn">Explore</a>
+                                                    </div>
+                                                </div>
+                                                {{-- <div class="carousel-item">
+                                                    <img src="front-assets/img/login-2.png" class="d-block w-100" alt="Slide 2">
+                                                    <div class="carousel-caption d-none d-md-block">
+                                                        <h5>Doctor Login</h5>
+                                                        <p>Manage patients & treatments seamlessly.</p> <!-- Short doctor-specific content -->
+                                                        <a href="#" class="btn">Access Dashboard</a>
+                                                    </div>
+                                                </div> --}}
+                                                <div class="carousel-item">
+                                                    <img src="front-assets/img/login-3.png" class="d-block w-100" alt="Slide 3">
+                                                    <div class="carousel-caption d-none d-md-block">
+                                                        <h5>Patient Login</h5>
+                                                        <p>Track your health & appointments easily.</p> <!-- Short patient-specific content, design-aligned -->
+                                                        <a href="{{ route('register') }}" class="btn">Sign Up</a>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- No navigation buttons -->
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-1"></div>
+                                    <div class="col-lg-4">
+                                        <div class="align-items-center d-flex justify-content-center">
+                                            <img src="front-assets/img/logo-new.png" height="60" alt="" style="transition: all var(--transition-smooth);">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="email" class="form-label">Your Email</label>
+                                            <div class="input-group">
+                                                <span class="input-group-text text-white">
+                                                    <i class="bi bi-envelope"></i>
+                                                </span>
+                                                <input id="email" class="form-control shadow-none" type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="username" placeholder="admin@example.com">
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="password" class="form-label">Password</label>
+                                            <div class="input-group">
+                                                <span class="input-group-text text-white">
+                                                    <i class="bi bi-key"></i>
+                                                </span>
+                                                <input id="password" class="form-control shadow-none" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+                                                <span class="input-group-text text-white toggle-password" style="cursor:pointer;">
+                                                    <i class="bi bi-eye"></i>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="block mt-4">
+                                            <label for="remember_me" class="flex items-center">
+                                                <input id="remember_me" type="checkbox" name="remember" class="form-check-input" {{ old('remember') ? 'checked' : '' }}>
+                                                <span class="ms-2 text-sm text-gray-600">{{ __('Remember me') }}</span>
+                                            </label>
+                                        </div>
+                                        <div class="d-flex justify-content-between mt-4">
+                                            <div>
+                                                <p class="mb-0 text-muted">Don't have an account?</p>
+                                                <a href="{{ route('register') }}" class="text-primary" style="color: var(--primary-color); transition: all var(--transition-smooth);">Register Here</a>
+                                            </div>
+                                            @if (Route::has('password.request'))
+                                                <a class="text-decoration-none" style="color: var(--primary-color); transition: all var(--transition-smooth);" href="{{ route('password.request') }}">
+                                                    {{ __('Forgot your password?') }}
+                                                </a>
+                                            @endif
+                                        </div>
+                                        <div class="mt-4">
+                                            <button type="submit" class="btn btn-sm login-btn w-100" id="loginBtn">
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                <span>Log in</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+    <script>
+        // Custom JS to ensure smooth slow transitions on carousel without disappearing/gaps, and immediate next show at interval
+        document.addEventListener('DOMContentLoaded', function() {
+            var carouselElement = document.querySelector('#loginCarousel');
+            
+            // Force preload all images immediately
+            var images = carouselElement.querySelectorAll('img');
+            images.forEach(function(img) {
+                if (img.complete) {
+                    img.style.opacity = '1';
+                } else {
+                    img.addEventListener('load', function() {
+                        this.style.opacity = '1';
+                    });
+                }
+            });
+
+            var bootstrapCarousel = new bootstrap.Carousel(carouselElement, {
+                interval: 12000, // Reinforce the slow interval
+                ride: 'carousel',
+                wrap: true
+            });
+
+            // Listen to slide events to ensure seamless overlap - no gaps, immediate next visibility at interval start
+            carouselElement.addEventListener('slide.bs.carousel', function (e) {
+                // Immediately set the next item to full opacity to start showing without delay
+                var nextItem = carouselElement.querySelector('.carousel-item-next');
+                if (nextItem) {
+                    nextItem.style.opacity = '1'; // Immediate show for next
+                    nextItem.style.zIndex = '2'; // Higher z-index for overlap during fade
+                }
+                // Slow fade out for current active
+                var activeItem = carouselElement.querySelector('.carousel-item.active');
+                if (activeItem) {
+                    activeItem.style.transition = 'opacity 3s ease-in-out';
+                    activeItem.style.opacity = '0'; // Start slow fade out
+                }
+            });
+
+            carouselElement.addEventListener('slid.bs.carousel', function (e) {
+                // Reset z-index and ensure full setup after transition
+                var activeItem = carouselElement.querySelector('.carousel-item.active');
+                if (activeItem) {
+                    activeItem.style.opacity = '1';
+                    activeItem.style.zIndex = '1';
+                }
+                var nextItem = carouselElement.querySelector('.carousel-item-next');
+                if (nextItem) {
+                    nextItem.style.zIndex = '0';
+                }
+                // Force reflow to apply styles
+                carouselElement.offsetHeight;
+            });
+        });
+
+        // Theme Toggle Function
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            body.setAttribute('data-theme', newTheme);
+            const icon = document.querySelector('.theme-toggle i');
+            icon.classList.toggle('bi-moon-stars-fill');
+            icon.classList.toggle('bi-sun-fill');
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Load saved theme
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.setAttribute('data-theme', savedTheme);
+            const icon = document.querySelector('.theme-toggle i');
+            if (savedTheme === 'dark') {
+                icon.classList.remove('bi-moon-stars-fill');
+                icon.classList.add('bi-sun-fill');
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", function () {
+            // Handle form submission for loading animation
+            const loginForm = document.getElementById('loginForm');
+            const loginBtn = document.getElementById('loginBtn');
+
+            loginForm.addEventListener('submit', function (e) {
+                loginBtn.disabled = true;
+                loginBtn.classList.add('loading');
+            });
+
+            // Password toggle functionality
+            document.querySelectorAll('.toggle-password').forEach(el => {
+                el.addEventListener('click', () => {
+                    const input = el.previousElementSibling;
+                    input.type = input.type === 'password' ? 'text' : 'password';
+                    el.querySelector('i').classList.toggle('bi-eye');
+                    el.querySelector('i').classList.toggle('bi-eye-slash');
+                });
+            });
+
+            // Preloader
+            const preloader = document.getElementById('preloader');
+            if (preloader) {
+                setTimeout(() => {
+                    preloader.style.opacity = '0.9';
+                    setTimeout(() => {
+                        preloader.style.display = 'none';
+                    }, 9000);
+                }, 100);
+            }
+        });
+    </script>
+    @include('front.inc.footer-links')
+</body>
+</html>
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkoraCares || SignUp</title>
+    @include('front.inc.header-links')
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places" async defer></script>
+    <style>
+        .ul-header-2 .ul-header-bottom-wrapper {
+            background-color: #0e606e;
+            border-radius: 30px;
+            color: white;
+        }
+        .ul-header-nav a {
+            color: #ffffff !important;
+            transition: color 0.3s ease !important;
+        }
+        .Skoracares-shadow {
+            background: #ffffff87;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        .input-group-text {
+               background-color: #b493f2;
+               color: #fcfafa;
+        }
+      .login-btn {
+            background-color: transparent;
+            color: #0e606edf; 
+            border: 1px solid #0e606edf;
+            transition: background-color 0.3s ease, color 0.3s ease, outline 0.3s ease;
+            position: relative;
+            outline: none; 
+        }
+
+        .login-btn:hover {
+            background-color: #0e606edf; 
+            color: #fff; 
+            outline: 2px solid #ffffff; 
+            outline-offset: 3px; 
+        }
+
+
+        .login-btn:focus {
+            outline: 2px solid #ffcc00; /* focus (tab press) par yellow outline */
+            outline-offset: 3px;
+        }
+
+        .login-btn:disabled {
+            background-color: #6b3cc9;
+            cursor: not-allowed;
+        }
+        .login-btn .spinner-border {
+            display: none;
+            width: 1.5rem;
+            height: 1.5rem;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        .login-btn.loading .spinner-border {
+            display: inline-block;
+        }
+        .login-btn.loading span {
+            display: none;
+        }
+        /* Step Progress Bar */
+        .step-progress {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            margin: 20px 0;
+        }
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            background-color: #e0e0e0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #333;
+            transition: all 0.3s ease;
+            z-index: 2;
+            cursor: pointer;
+        }
+        .step-circle.active {
+            background-color: #0e606e;
+            color: white;
+        }
+        .step-progress::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background-color: #e0e0e0;
+            z-index: 1;
+        }
+        .step-progress::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 0;
+            height: 4px;
+            background-color: #0e606e;
+            transition: width 0.5s ease;
+            z-index: 1;
+        }
+        .step-progress.three-steps.step-0::after { width: 0%; }
+        .step-progress.three-steps.step-1::after { width: 50%; }
+        .step-progress.three-steps.step-2::after { width: 100%; }
+        .step-progress.five-steps.step-0::after { width: 0%; }
+        .step-progress.five-steps.step-1::after { width: 25%; }
+        .step-progress.five-steps.step-2::after { width: 50%; }
+        .step-progress.five-steps.step-3::after { width: 75%; }
+        .step-progress.five-steps.step-4::after { width: 100%; }
+        /* Notification Styles */
+        .notification-sidebar {
+            position: fixed;
+            top: 45px;
+            right: -320px;
+            width: 300px;
+            z-index: 99999;
+            transition: right 0.5s ease-in-out, opacity 0.5s ease;
+        }
+        .notification-sidebar.show-notification {
+            right: 4px;
+        }
+        .custom-alert-box {  
+            background: white;
+            border-radius: 10px;
+            border-left: 5px solid #28a745;
+            overflow: hidden;
+            padding: 12px;
+            display: flex;
+            width: auto;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .custom-alert-box.alert-success {
+            border-left: 5px solid #28a745;
+            background: #edfff3;
+        }
+        .custom-alert-box.alert-error {
+            border-left: 5px solid #dc3545;
+            background: #ffebed;
+        }
+        .custom-alert-box.alert-info {
+            border-left: 5px solid #17a2b8;
+            background: #e6f7f9;
+        }
+        .custom-alert-box.alert-warning {
+            border-left: 5px solid #ffc107;
+            background: #fffbeb;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            color: #333;
+            font-size: 20px;
+            cursor: pointer;
+            position: absolute;
+            right: 10px;
+            top: 8px;
+        }
+        .p-custom {
+            padding: 2px 44px 3px 16px;
+            flex-grow: 1;
+        }
+        .icon {
+            font-size: 22px;
+        }
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+        .loader {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #0e606e;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Form Styling */
+        .form-control:focus, .form-select:focus {
+            border-color: #0e606e;
+            box-shadow: 0 0 0 0.2rem rgba(135, 76, 245, 0.25);
+        }
+        .form-check-input:checked {
+            background-color: #0e606e;
+            border-color: #0e606e;
+        }
+        .form-check-input:focus {
+            box-shadow: 0 0 0 0.2rem rgba(135, 76, 245, 0.25);
+        }
+        /* Select2 Styling */
+        .select2-container--default .select2-selection--multiple {
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--multiple:focus {
+            border-color: #0e606e;
+            box-shadow: 0 0 0 0.2rem rgba(135, 76, 245, 0.25);
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: #0e606e;
+            color: white;
+            border: none;
+        }
+        /* Google Sign-In Button Styling */
+        .google-signin-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            border-left: 1px solid #dee2e6;
+            padding-left: 20px;
+        }
+        @media (max-width: 767px) {
+            .google-signin-container {
+                border-left: none;
+                border-top: 1px solid #dee2e6;
+                padding-left: 0;
+                padding-top: 20px;
+                margin-top: 20px;
+            }
+        }
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            .step-circle {
+                width: 30px;
+                height: 30px;
+                font-size: 0.9rem;
+            }
+            .notification-sidebar {
+                width: 90%;
+                top: 50px;
+            }
+            .col-lg-5 {
+                width: 100%;
+            }
+        }
+
+        .select2-container--default.select2-container--focus .select2-selection--multiple {
+            background-color: #e2e1e5c2;
+            color: #211e1e;
+            border: none;
+            font-size: 10px;
+            height: 25px;
+            line-height: 2.4;
+        }
+
+        .select2-container--default .select2-selection--multiple {
+              background-color: white;
+            border: 1px solid #aaa;
+            border-radius: 4px;
+            cursor: text;
+            padding-bottom: 36px;
+            padding-right: 5px;
+            line-height: 2.1;
+            position: relative;
+        }
+
+        .select2-container--default .select2-selection--multiple.select2-selection--clearable {
+            padding-right: 5px;
+            /* height: 36px !important; */
+            line-height: 1.9;
+        }
+
+        .btn-format{
+            background: #c7aef7;
+            border-radius: 7px;
+            padding: 10px 31px;
+            cursor: pointer;
+        }
+
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: #0e606e;
+            color: white;
+            border: none;
+            height: 26px;
+            line-height: 2;
+        }
+
+
+        .select2-container .select2-search--inline .select2-search__field {
+                font-size: 12px !important;
+            }
+
+    </style>
+</head>
+<body class="ul-footer ul-footer-2" style="radial-gradient(circle at left top, rgba(255, 154, 255, 0.06), rgba(0, 0, 0, 0) 40%), radial-gradient(circle at right top, rgb(135 76 245 / 16%), transparent 40%), radial-gradient(circle at left bottom, rgb(248 215 86 / 40%), transparent 40%), radial-gradient(circle at right bottom, rgb(238 236 122 / 19%), transparent 40%)">
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loader"></div>
+    </div>
+    @if(session('success') || session('error') || $errors->any())
+        <div class="custom-alert-box notification-sidebar position-fixed top-2 mt-3 shadow-lg rounded" id="alertContainer">
+            @if(session('success'))
+                <div class="alert-success p-custom">
+                    <i class="fas fa-check-circle text-success icon"></i>
+                    {{ session('success') }}
+                    <button type="button" class="close-btn" onclick="closeAlert()">&times;</button>
+                </div>
+            @endif
+            @if(session('error'))
+                <div class="alert-error p-custom">
+                    <i class="fas fa-exclamation-circle text-danger icon"></i>
+                    {{ session('error') }}
+                    <button type="button" class="close-btn" onclick="closeAlert()">&times;</button>
+                </div>
+            @endif
+            @if ($errors->any())
+                <div class="alert-error p-custom">
+                    <ul class="list-unstyled mb-0">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                    <button type="button" class="close-btn" onclick="closeAlert()">&times;</button>
+                </div>
+            @endif
+        </div>
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                let alertBox = document.getElementById("alertContainer");
+                if (alertBox) {
+                    alertBox.classList.add("show-notification");
+                    setTimeout(() => closeAlert(), 7000);
+                }
+            });
+
+            function closeAlert() {
+                let alertBox = document.getElementById("alertContainer");
+                if (alertBox) {
+                    alertBox.style.transition = "right 0.5s ease-in-out, opacity 0.5s ease";
+                    alertBox.style.opacity = "0";
+                    setTimeout(() => alertBox.style.display = "none", 500);
+                }
+            }
+        </script>
+    @endif
+    <main>
+        <div class="preloader" id="preloader">
+            <div class="loader"></div>
+        </div>
+
+
+        <!-- SIDEBAR SECTION START -->
+<div class="ul-sidebar">
+    <!-- header -->
+    <div class="ul-sidebar-header">
+        <div class="ul-sidebar-header-logo">
+            <a href="{{ url('/') }}">
+                <img src="{{ asset('front-assets/img/logo-new.png')}}" height="40" alt="skora cares logo" class="logo">
+            </a>
+        </div>
+        <!-- sidebar closer -->
+        <button class="ul-sidebar-closer"><i class="flaticon-close-1"></i></button>
+    </div>
+
+    <div class="ul-sidebar-header-nav-wrapper d-block d-lg-none">
+    </div>
+    <div class="ul-header-bottom-right">
+        <div class="ul-header-2-bottom-btns">
+            <a href="{{ route('login')}}" class="ul-2-btn border-dark text-dark">Log In</a>
+            <a href="{{ route('register')}}" class="ul-2-btn border border-dark">Sign up</a>
+        </div>
+    </div>
+
+    <!-- sidebar footer -->
+    <div class="ul-sidebar-footer">
+        <span class="ul-sidebar-footer-title">Follow us</span>
+
+        <div class="ul-sidebar-footer-social">
+            <a href="#"><i class="flaticon-facebook"></i></a>
+            <a href="#"><i class="flaticon-twitter"></i></a>
+            <a href="#"><i class="flaticon-instagram"></i></a>
+            <a href="#"><i class="flaticon-linkedin-big-logo"></i></a>
+        </div>
+    </div>
+</div>
+<!-- SIDEBAR SECTION END -->
+
+<!-- HEADER SECTION START -->
+<header class="ul-header ul-header-2 ul-header-3">
+    <div class="ul-header-bottom to-be-sticky wow animate__slideInDown">
+        <div class="ul-header-bottom-wrapper ul-header-container">
+            <div class="logo-container">
+                <a href="{{ url('/') }}" class="d-inline-block">
+                    <img src="{{ asset('front-assets/img/logo-new.png')}}" height="40" alt="logo" class="logo" style="filter: brightness(0) invert(1) !important;">
+                    <!-- <h4 class="fw-bold text-white">Skoracares</h4> -->
+                </a>
+            </div>
+
+            <div class="ul-header-bottom-center">
+                <!-- header nav -->
+                <div class="ul-header-nav-wrapper">
+                    <div class="to-go-to-sidebar-in-mobile">
+                        <nav class="ul-header-nav">
+                            <a href="{{ url('/') }}" class="active">Home</a>
+                            <a href="{{ url('/about') }}">About</a>
+                            <a href="{{ url('/contact') }}">Contact</a>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+           <div class="ul-header-bottom-right">
+                <div class="ul-header-2-bottom-btns">
+                        @auth
+                            @if(auth()->user()->role === 'admin')
+                                <a href="{{ url('/admin-dashboard') }}"    class="ul-2-btn d-xxs-none">Dashboard</a>
+                            @elseif(auth()->user()->role === 'doctor')
+                                <a href="{{ url('/doctor-dashboard') }}"   class="ul-2-btn d-xxs-none">Dashboard</a>
+                            @elseif(auth()->user()->role === 'super_admin')
+                                <a href="{{ url('/super-admin.dashboard') }} "  class="ul-2-btn d-xxs-none">Dashboard</a>
+                            @else
+                                <a href="{{ url('/patient-dashboard') }}"   class="ul-2-btn d-xxs-none">Dashboard</a>
+                            @endif
+                        @endauth
+                        @guest
+                            <a href="{{ route('login') }}" class="ul-2-btn d-xxs-none">Log In</a>
+                        @endguest
+                    <a href="{{ route('register')}}" class="ul-2-btn d-xxs-none">Sign up</a>
+                </div>
+                <button class="ul-header-sidebar-opener d-lg-none d-inline-flex"><i class="flaticon-right-arrow"></i></button>
+            </div>
+        </div>
+    </div>
+</header>
+        
+
+
+
+
+
+
+        
+        <section class="container py-5">
+                <div class="row align-items-center justify-content-center py-5">
+                        <div class=" border-0 rounded-5">
+                            <div class="card-body pt-4">
+                               
+                                <div class="d-flex justify-content-center">
+                                    <div class="col-6 d-flex justify-content-between position-relative" id="stepProgressContainer">
+                                        <div class="step-progress step-0 five-steps"></div>
+                                        <div class="text-center">
+                                            <div class="step-circle active" data-step="0">1</div>
+                                            <small class="d-none d-md-block">Mobile & OTP</small>
+                                        </div>
+                                        <div class="text-center">
+                                            <div class="step-circle" data-step="1">2</div>
+                                            <small class="d-none d-md-block">Role</small>
+                                        </div>
+                                        <div class="text-center">
+                                            <div class="step-circle" data-step="2">3</div>
+                                            <small class="d-none d-md-block">Details</small>
+                                        </div>
+                                        <div class="text-center">
+                                            <div class="step-circle" data-step="3">4</div>
+                                            <small class="d-none d-md-block">Address</small>
+                                        </div>
+                                        <div class="text-center">
+                                            <div class="step-circle" data-step="4">5</div>
+                                            <small class="d-none d-md-block">Account</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="border-0 mt-3 rounded-3" style="background: #fcf9f447;">
+                                    <form id="multiStepForm" method="POST" action="{{ route('register.submit') }}">
+                                        @csrf
+                                        <input type="hidden" name="google_token" id="google_token">
+                                        <div class="form-step">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-7 d-none d-lg-block">
+                                                    <div class="gif">
+                                                        <img src="front-assets/img/login-gif.gif" class="w-100 rounded-3" alt="">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-1"></div>
+                                                <div class="col-lg-4">
+
+                                                     <div class="text-center mb-4">
+                                                        <img src="front-assets/img/logo-new.png" height="60" alt="">
+                                                        {{-- <h4 class="fw-bold pt-2" style="color: #0e606e;">Skora Cares SignUp</h4> --}}
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <label for="mobile" class="form-label">Enter Whatsapp  Number</label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text"><i class="bi bi-phone"></i></span>
+                                                            <input type="tel" class="form-control" id="mobile" name="mobile" placeholder="Whatsapp number">
+                                                        </div>
+                                                    </div>
+                                                    <div class="d-flex justify-content-between">
+                                                       <button type="button" class="btn btn-sm login-btn" id="sendOtpBtn"><i class="bi bi-send me-1"></i> Send OTP</button>
+                                                      
+                                                    </div>
+                                                    <div class="mb-3 mt-3 d-none" id="otpSection">
+                                                        <label for="otp" class="form-label">Enter OTP</label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text"><i class="bi bi-shield-check"></i></span>
+                                                            <input type="text" class="form-control" id="otp" placeholder="Enter OTP" maxlength="6">
+                                                        </div>
+                                                    </div>
+
+                                                      <button type="button" class="btn btn-sm login-btn next-btn d-none" id="verifyOtpBtn">
+                                                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                           <i class="bi bi-check-circle me-1"></i> <span>Verify OTP</span>
+                                                        </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Step Role Selection -->
+                                        <div class="form-step d-none">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-7 d-none d-lg-block">
+                                                    <div class="gif">
+                                                        <img src="front-assets/img/login-gif.gif" class="w-100 rounded-3" alt="">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-1"></div>
+                                                <div class="col-lg-4">
+                                                    <div class="text-center mb-4">
+                                                        <img src="{{ asset('front-assets/img/logo-new.png')}}" height="30" alt="">
+                                                        <h4 class="fw-bold pt-2" style="color: #0e606e;">Select Role</h4>
+                                                    </div>
+                                                    <div class="d-flex justify-content-center gap-3 mb-3">
+                                                        <div class="form-check btn-format">
+                                                            <input class="form-check-input" type="radio" name="role" id="roleDoctor" value="doctor">
+                                                            <label class="form-check-label" for="roleDoctor">Doctor</label>
+                                                        </div>
+                                                        <div class="form-check btn-format">
+                                                            <input class="form-check-input" type="radio" name="role" id="rolePatient" value="patient">
+                                                            <label class="form-check-label" for="rolePatient">Patient</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="d-flex justify-content-between mt-4">
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary prev-btn">Previous</button>
+                                                        <button type="button" class="btn btn-sm login-btn next-btn">Go Next</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Step 2: Doctor Details -->
+                                        <div class="form-step d-none col-md-9 m-auto">
+                                            <div class="row">
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="doctor_name" class="form-label">Doctor Name</label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                                        <input type="text" class="form-control" id="doctor_name" name="name" placeholder="Full  Name">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label class="form-label">Degree</label>
+                                                    <select class="js-example-basic-multiple w-100 form-control" name="degrees[]" multiple="multiple">
+                                                        <option value="MBBS">MBBS</option>
+                                                        <option value="MD">MD</option>
+                                                        <option value="MS">MS</option>
+                                                        <option value="BDS">BDS</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="clinic_name" class="form-label">Clinic Name (optional)</label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-hospital"></i></span>
+                                                        <input type="text" class="form-control" id="clinic_name" name="clinic_name" placeholder="Clinic Name">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="specializations" class="form-label">Area of Specialization</label>
+                                                    <select class="js-example-basic-multiple w-100" name="specializations[]" multiple="multiple">
+                                                        <option value="Cardiology">Cardiology</option>
+                                                        <option value="Dermatology">Dermatology</option>
+                                                        <option value="Neurology">Neurology</option>
+                                                        <option value="Pediatrics">Pediatrics</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-4">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary prev-btn">Previous</button>
+                                                <button type="button" class="btn btn-sm login-btn next-btn">Go Next</button>
+                                            </div>
+                                        </div>
+                                        <!-- Step 3: Address -->
+                                        <div class="form-step d-none col-md-9  m-auto">
+                                            <div class="row">
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="country" class="form-label">Country</label>
+                                                    <select class="form-select" id="country" name="country">
+                                                        <option value="">Select Country</option>
+                                                        <option value="India">India</option>
+                                                        <option value="USA">USA</option>
+                                                        <option value="UK">UK</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="state" class="form-label">State</label>
+                                                    <select class="form-select" id="state" name="state">
+                                                        <option value="">Select State</option>
+                                                        <option value="Uttar Pradesh">Uttar Pradesh</option>
+                                                        <option value="Maharashtra">Maharashtra</option>
+                                                        <option value="Delhi">Delhi</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="city" class="form-label">City</label>
+                                                    <select class="form-select" id="city" name="city">
+                                                        <option value="">Select City</option>
+                                                        <option value="Noida">Noida</option>
+                                                        <option value="Mumbai">Mumbai</option>
+                                                        <option value="Delhi">Delhi</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="address" class="form-label">Address</label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                                                        <input type="text" class="form-control" id="address" name="address" placeholder="Address">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="current_address" class="form-label">Current Address</label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                                                        <input type="text" class="form-control" id="current_address" name="current_address" placeholder="Search or select address">
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm login-btn mt-2" id="useCurrentLocation">
+                                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                        <span>Use Current Location</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-4">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary prev-btn">Previous</button>
+                                                <div class="d-flex gap-2">
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary skip-btn">Skip</button>
+                                                    <button type="button" class="btn btn-sm login-btn next-btn">Go Next</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Step 4: Account Details -->
+                                        <div class="form-step d-none col-md-9  m-auto">
+                                            <div class="row">
+                                                <div class="col-md-7">
+                                                    <div class="mb-3">
+                                                        <label for="doctor_email" class="form-label">Email <span class="text-danger">*</span></label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                                            <input type="email" class="form-control" id="doctor_email" name="email" placeholder="Email address">
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="doctor_password" class="form-label">Password <span class="text-danger ms-1"> * At least 8 characters </span></label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                                            <input type="password" class="form-control" id="doctor_password" name="password" placeholder="password">
+                                                            <span class="input-group-text toggle-password" style="cursor:pointer;">
+                                                                <i class="bi bi-eye"></i>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="doctor_password_confirmation" class="form-label">Confirm Password <span class="text-danger">*</span></label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                                            <input type="password" class="form-control" id="doctor_password_confirmation" name="password_confirmation" placeholder="confirm password">
+                                                            <span class="input-group-text toggle-password" style="cursor:pointer;">
+                                                                <i class="bi bi-eye"></i>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                        <button type="submit" class="btn btn-md login-btn " id="doctorSubmitBtn">
+                                                            <span class="spinner-border spinner-border-sm " role="status" aria-hidden="true"></span>
+                                                            <i class="bi bi-box-arrow-in-right me-1"></i> <span>Submit Details</span>
+                                                        </button>
+                                                </div>
+                                               <div class="col-md-5 google-signin-container d-flex flex-column justify-content-center align-items-center">
+                                                <h5 class="mb-3 text-center">Or Sign up with Google</h5>
+                                                <div id="g_id_onload"
+                                                    data-client_id="YOUR_GOOGLE_CLIENT_ID_HERE"
+                                                    data-callback="handleCredentialResponse">
+                                                </div>
+                                                <div class="g_id_signin"
+                                                    data-type="standard"
+                                                    data-size="large"
+                                                    data-theme="outline"
+                                                    data-text="sign_up_with"
+                                                    data-shape="rectangular"
+                                                    data-logo_alignment="left">
+                                                </div>
+                                            </div>
+
+                                            </div>
+                                            <div class="d-flex justify-content-start mt-4">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary prev-btn">Previous</button>
+                                            </div>
+                                        </div>
+                                        <!-- Patient Details Step -->
+                                        <div class="form-step d-none col-md-7 m-auto">
+                                            <div class="row">
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="patient_name" class="form-label">Name</label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                                        <input type="text" class="form-control" id="patient_name" name="name" placeholder="Name">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="gender" class="form-label">Gender</label>
+                                                    <select class="form-select" id="gender" name="gender">
+                                                        <option value="">Select Gender</option>
+                                                        <option value="Male">Male</option>
+                                                        <option value="Female">Female</option>
+                                                        <option value="Other">Other</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="patient_email" class="form-label">Email <span class="text-danger">*</span></label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                                        <input type="email" class="form-control" id="patient_email" name="email" placeholder="Email address">
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="patient_password" class="form-label">Password <span class="text-danger">* (At least 8 characters)</span> </label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                                        <input type="password" class="form-control" id="patient_password" name="password" placeholder="password">
+                                                        <span class="input-group-text toggle-password" style="cursor:pointer;">
+                                                            <i class="bi bi-eye"></i>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-lg-6 mb-3">
+                                                    <label for="patient_password_confirmation" class="form-label">Confirm Password<span class="text-danger">*</span></label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                                        <input type="password" class="form-control" id="patient_password_confirmation" name="password_confirmation" placeholder="confirm password">
+                                                        <span class="input-group-text toggle-password" style="cursor:pointer;">
+                                                            <i class="bi bi-eye"></i>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="btn btn-md login-btn" id="patientSubmitBtn">
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                <i class="bi bi-box-arrow-in-right me-1"></i> <span>Submit</span>
+                                            </button>
+                                            <div class="d-flex justify-content-start mt-4">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary prev-btn">Previous</button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                </div>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+    <script>
+        $(document).ready(function() {
+            $('.js-example-basic-multiple').select2({
+                placeholder: "Search and select items...",
+                allowClear: true,
+                closeOnSelect: false,
+                templateSelection: function(data) {
+                    return data.text || data.id;
+                }
+            });
+            $('.js-example-basic-multiple').on('change', function() {
+                let selectedValues = $(this).val();
+                console.log('Selected:', selectedValues);
+            });
+
+            // Initialize Google Places Autocomplete
+            let autocomplete;
+            function initAutocomplete() {
+                autocomplete = new google.maps.places.Autocomplete(
+                    document.getElementById('current_address'),
+                    { types: ['geocode'] }
+                );
+                autocomplete.addListener('place_changed', function() {
+                    const place = autocomplete.getPlace();
+                    if (place.formatted_address) {
+                        $('#current_address').val(place.formatted_address);
+                    }
+                });
+            }
+
+            // Initialize autocomplete when Google Maps API is loaded
+            if (typeof google !== 'undefined' && google.maps) {
+                initAutocomplete();
+            } else {
+                window.addEventListener('load', initAutocomplete);
+            }
+        });
+
+        const formSteps = document.querySelectorAll('.form-step');
+        const nextBtns = document.querySelectorAll('.next-btn');
+        const prevBtns = document.querySelectorAll('.prev-btn');
+        const skipBtns = document.querySelectorAll('.skip-btn');
+        const stepProgressContainer = document.getElementById('stepProgressContainer');
+        const initialProgressHtml = stepProgressContainer.innerHTML;
+        let stepCircles = document.querySelectorAll('.step-circle');
+        let stepProgress = document.querySelector('.step-progress');
+        let currentStep = 0;
+        let isOtpVerified = false;
+        let selectedRole = '';
+        let isPatient = false;
+
+        function showStep(step) {
+            let formIndex = step;
+            if (step >= 2) {
+                if (isPatient) {
+                    formIndex = 5;
+                } else {
+                    formIndex = step;
+                }
+            }
+            formSteps.forEach((s, i) => s.classList.toggle('d-none', i !== formIndex));
+            stepProgress = document.querySelector('.step-progress');
+            stepProgress.className = `step-progress step-${step} ${isPatient ? 'three-steps' : 'five-steps'}`;
+            stepCircles = document.querySelectorAll('.step-circle');
+            stepCircles.forEach((circle, i) => circle.classList.toggle('active', i <= step));
+        }
+
+        function showLoader(show) {
+            $('#loadingOverlay').css('display', show ? 'flex' : 'none');
+        }
+
+        function showNotification(msg, type = 'success') {
+            let alertClass = `alert-${type}`;
+            let iconClass = '';
+            let textClass = '';
+            switch (type) {
+                case 'success':
+                    iconClass = 'fas fa-check-circle text-success';
+                    textClass = 'text-success';
+                    break;
+                case 'error':
+                    iconClass = 'fas fa-exclamation-circle text-danger';
+                    textClass = 'text-danger';
+                    break;
+                case 'info':
+                    iconClass = 'fas fa-info-circle text-info';
+                    textClass = 'text-info';
+                    break;
+                case 'warning':
+                    iconClass = 'fas fa-exclamation-triangle text-warning';
+                    textClass = 'text-warning';
+                    break;
+                default:
+                    iconClass = 'fas fa-check-circle text-success';
+                    textClass = 'text-success';
+            }
+            var alertBox = document.createElement("div");
+            alertBox.className = `custom-alert-box ${alertClass} notification-sidebar position-fixed top-2 mt-3 shadow-lg rounded`;
+            alertBox.innerHTML = `
+                <div class="${textClass} p-custom">
+                    <i class="${iconClass} icon"></i>
+                    ${msg}
+                    <button type="button" class="close-btn" onclick="this.parentElement.parentElement.remove()">&times;</button>
+                </div>
+            `;
+            document.body.appendChild(alertBox);
+            setTimeout(() => {
+                alertBox.classList.add('show-notification');
+            }, 10);
+            setTimeout(() => {
+                alertBox.style.transition = "right 0.5s ease-in-out, opacity 0.5s ease";
+                alertBox.style.opacity = "0";
+                setTimeout(() => alertBox.remove(), 500);
+            }, 8000);
+        }
+
+        $('#sendOtpBtn').on('click', function() {
+            const mobile = $('#mobile').val();
+            if (!mobile) {
+                showNotification('Please enter mobile number', 'error');
+                return;
+            }
+            $(this).prop('disabled', true);
+            showLoader(true);
+            $.ajax({
+                url: '{{ route("otp.send") }}',
+                type: 'POST',
+                data: { mobile: mobile, _token: '{{ csrf_token() }}' },
+                success: function(response) {
+                    showLoader(false);
+                    $('#sendOtpBtn').prop('disabled', false);
+                    if (response.success) {
+                        showNotification(response.message, 'success');
+                        $('#otpSection').removeClass('d-none');
+                        $('#sendOtpBtn').addClass('d-none');
+                        $('#verifyOtpBtn').removeClass('d-none');
+                    } else {
+                        showNotification(response.message || 'Failed to send OTP', 'error');
+                    }
+                },
+                error: function() {
+                    showLoader(false);
+                    $('#sendOtpBtn').prop('disabled', false);
+                    showNotification('Error sending OTP', 'error');
+                }
+            });
+        });
+
+        $('#verifyOtpBtn').on('click', function() {
+            const mobile = $('#mobile').val();
+            const otp = $('#otp').val();
+            if (!otp) {
+                showNotification('Please enter OTP', 'error');
+                return;
+            }
+            $(this).addClass('loading').prop('disabled', true);
+            showLoader(true);
+            $.ajax({
+                url: '{{ route("otp.verify") }}',
+                type: 'POST',
+                data: { mobile: mobile, otp: otp, _token: '{{ csrf_token() }}' },
+                success: function(response) {
+                    showLoader(false);
+                    $('#verifyOtpBtn').removeClass('loading').prop('disabled', false);
+                    if (response.success) {
+                        showNotification(response.message, 'success');
+                        isOtpVerified = true;
+                        currentStep = 1;
+                        showStep(currentStep);
+                    } else {
+                        showNotification(response.message || 'Invalid OTP', 'error');
+                    }
+                },
+                error: function() {
+                    showLoader(false);
+                    $('#verifyOtpBtn').removeClass('loading').prop('disabled', false);
+                    showNotification('Error verifying OTP', 'error');
+                }
+            });
+        });
+
+        $('#useCurrentLocation').on('click', function() {
+            if (!navigator.geolocation) {
+                showNotification('Geolocation is not supported by your browser', 'error');
+                return;
+            }
+            $(this).addClass('loading').prop('disabled', true);
+            showLoader(true);
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const geocoder = new google.maps.Geocoder();
+                    const latlng = { lat: parseFloat(lat), lng: parseFloat(lng) };
+                    geocoder.geocode({ location: latlng }, (results, status) => {
+                        showLoader(false);
+                        $('#useCurrentLocation').removeClass('loading').prop('disabled', false);
+                        if (status === 'OK' && results[0]) {
+                            $('#current_address').val(results[0].formatted_address);
+                            showNotification('Current location fetched successfully', 'success');
+                        } else {
+                            showNotification('Unable to fetch location', 'error');
+                        }
+                    });
+                },
+                (error) => {
+                    showLoader(false);
+                    $('#useCurrentLocation').removeClass('loading').prop('disabled', false);
+                    showNotification('Error fetching location: ' + error.message, 'error');
+                }
+            );
+        });
+
+        // Make steps clickable
+        document.addEventListener('click', function(event) {
+            if (event.target.closest('.step-circle')) {
+                const clickedStep = parseInt(event.target.closest('.step-circle').dataset.step);
+                if (clickedStep > 0 && !isOtpVerified) {
+                    showNotification('Please verify mobile first', 'error');
+                    return;
+                }
+                if (clickedStep > 1 && !selectedRole) {
+                    showNotification('Please select role first', 'error');
+                    return;
+                }
+                currentStep = clickedStep;
+                showStep(currentStep);
+            }
+        });
+
+        nextBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (currentStep === 0 && !isOtpVerified) {
+                    showNotification('Please verify OTP first', 'error');
+                    return;
+                }
+                if (currentStep === 1) {
+                    selectedRole = document.querySelector('input[name="role"]:checked')?.value;
+                    if (!selectedRole) {
+                        showNotification('Please select a role', 'error');
+                        return;
+                    }
+                    if (selectedRole === 'patient') {
+                        isPatient = true;
+                        stepProgressContainer.innerHTML = `
+                            <div class="step-progress step-1 three-steps"></div>
+                            <div class="text-center">
+                                <div class="step-circle active" data-step="0">1</div>
+                                <small class="d-none d-md-block" >Mobile & OTP</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle active" data-step="1">2</div>
+                                <small class="d-none d-md-block">Role</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle" data-step="2">3</div>
+                                <small class="d-none d-md-block">Personal Details</small>
+                            </div>
+                        `;
+                    } else {
+                        isPatient = false;
+                        stepProgressContainer.innerHTML = `
+                            <div class="step-progress step-1 five-steps"></div>
+                            <div class="text-center">
+                                <div class="step-circle active" data-step="0">1</div>
+                                <small class="d-none d-md-block">Mobile & OTP</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle active" data-step="1">2</div>
+                                <small class="d-none d-md-block">Role</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle" data-step="2">3</div>
+                                <small class="d-none d-md-block">Doctor Details</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle" data-step="3">4</div>
+                                <small class="d-none d-md-block">Address</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="step-circle" data-step="4">5</div>
+                                <small class="d-none d-md-block">Account</small>
+                            </div>
+                        `;
+                    }
+                    currentStep = 2;
+                    showStep(currentStep);
+                    return;
+                }
+                // Get current form index for validation
+                let currentFormIndex = currentStep;
+                if (currentStep >= 2) {
+                    currentFormIndex = isPatient ? 5 : currentStep;
+                }
+                let valid = true;
+                if (currentStep === 2 && !isPatient) {
+                    // Doctor details: check name
+                    if (!$('#doctor_name').val()) {
+                        $('#doctor_name').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#doctor_name').removeClass('is-invalid');
+                    }
+                } else if (currentStep === 4 && !isPatient) {
+                    // Account: check email, password, confirmation
+                    if (!$('#doctor_email').val()) {
+                        $('#doctor_email').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#doctor_email').removeClass('is-invalid');
+                    }
+                    if (!$('#doctor_password').val()) {
+                        $('#doctor_password').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#doctor_password').removeClass('is-invalid');
+                    }
+                    if (!$('#doctor_password_confirmation').val() || $('#doctor_password').val() !== $('#doctor_password_confirmation').val()) {
+                        $('#doctor_password_confirmation').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#doctor_password_confirmation').removeClass('is-invalid');
+                    }
+                } else if (currentStep === 2 && isPatient) {
+                    // Patient details: check name, email, password, confirmation
+                    if (!$('#patient_name').val()) {
+                        $('#patient_name').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#patient_name').removeClass('is-invalid');
+                    }
+                    if (!$('#patient_email').val()) {
+                        $('#patient_email').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#patient_email').removeClass('is-invalid');
+                    }
+                    if (!$('#patient_password').val()) {
+                        $('#patient_password').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#patient_password').removeClass('is-invalid');
+                    }
+                    if (!$('#patient_password_confirmation').val() || $('#patient_password').val() !== $('#patient_password_confirmation').val()) {
+                        $('#patient_password_confirmation').addClass('is-invalid');
+                        valid = false;
+                    } else {
+                        $('#patient_password_confirmation').removeClass('is-invalid');
+                    }
+                }
+                if (!valid) {
+                    showNotification('Please fill all required fields', 'error');
+                    return;
+                }
+                currentStep = Math.min(currentStep + 1, isPatient ? 2 : 4);
+                showStep(currentStep);
+            });
+        });
+
+        prevBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentStep = Math.max(currentStep - 1, 0);
+                showStep(currentStep);
+                if (currentStep === 0) {
+                    isOtpVerified = false;
+                    $('#otpSection').addClass('d-none');
+                    $('#sendOtpBtn').removeClass('d-none');
+                    $('#verifyOtpBtn').addClass('d-none');
+                }
+                if (currentStep === 1) {
+                    stepProgressContainer.innerHTML = initialProgressHtml;
+                    selectedRole = '';
+                    isPatient = false;
+                }
+            });
+        });
+
+        skipBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                showNotification('Address step skipped', 'info');
+                currentStep = Math.min(currentStep + 1, formSteps.length - 1);
+                showStep(currentStep);
+            });
+        });
+
+        $('#multiStepForm').on('submit', function(e) {
+            e.preventDefault();
+            let valid = true;
+            const role = selectedRole;
+            if (!role) {
+                showNotification('Please select a role', 'error');
+                return;
+            }
+            if (role === 'doctor') {
+                if (!$('#doctor_name').val()) valid = false;
+                if (!$('#doctor_email').val()) valid = false;
+                if (!$('#doctor_password').val()) valid = false;
+                if ($('#doctor_password').val() !== $('#doctor_password_confirmation').val()) valid = false;
+            } else if (role === 'patient') {
+                if (!$('#patient_name').val()) valid = false;
+                if (!$('#patient_email').val()) valid = false;
+                if (!$('#patient_password').val()) valid = false;
+                if ($('#patient_password').val() !== $('#patient_password_confirmation').val()) valid = false;
+            }
+            if (!valid) {
+                showNotification('Please fill all required fields', 'error');
+                return;
+            }
+            if (role === 'doctor') {
+                $('#patient_name').prop('disabled', true);
+                $('#gender').prop('disabled', true);
+                $('#patient_email').prop('disabled', true);
+                $('#patient_password').prop('disabled', true);
+                $('#patient_password_confirmation').prop('disabled', true);
+                var submitBtn = $('#doctorSubmitBtn');
+            } else if (role === 'patient') {
+                $('#doctor_name').prop('disabled', true);
+                $('select[name="degrees[]"]').prop('disabled', true);
+                $('#clinic_name').prop('disabled', true);
+                $('select[name="specializations[]"]').prop('disabled', true);
+                $('#country').prop('disabled', true);
+                $('#state').prop('disabled', true);
+                $('#city').prop('disabled', true);
+                $('#address').prop('disabled', true);
+                $('#current_address').prop('disabled', true);
+                $('#doctor_email').prop('disabled', true);
+                $('#doctor_password').prop('disabled', true);
+                $('#doctor_password_confirmation').prop('disabled', true);
+                var submitBtn = $('#patientSubmitBtn');
+            }
+            submitBtn.addClass('loading').prop('disabled', true);
+            showLoader(true);
+            $.ajax({
+                url: '{{ route("register.submit") }}',
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function(response) {
+                    showLoader(false);
+                    submitBtn.removeClass('loading').prop('disabled', false);
+                    if (response.success) {
+                        showNotification(response.message, 'success');
+                        setTimeout(() => window.location.href = response.redirect, 2000);
+                    } else {
+                        showNotification(response.message, 'error');
+                    }
+                },
+                error: function(xhr) {
+                    showLoader(false);
+                    submitBtn.removeClass('loading').prop('disabled', false);
+                    let errors = xhr.responseJSON.errors || {};
+                    let errorMsg = Object.values(errors).flat().join('<br>');
+                    showNotification(errorMsg || 'Registration failed', 'error');
+                }
+            });
+        });
+
+        document.querySelectorAll('.toggle-password').forEach(el => {
+            el.addEventListener('click', () => {
+                const input = el.previousElementSibling;
+                input.type = input.type === 'password' ? 'text' : 'password';
+                el.querySelector('i').classList.toggle('bi-eye');
+                el.querySelector('i').classList.toggle('bi-eye-slash');
+            });
+        });
+
+        // Google Sign-In Callback
+        function handleCredentialResponse(response) {
+            $('#google_token').val(response.credential);
+            $('#multiStepForm').submit();
+        }
+    </script>
+    @include('front.inc.footer-links')
+</body>
+</html>

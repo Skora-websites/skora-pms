@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Doctor Consultation Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    @include('doctor.inc.header-links')
+    <link rel="stylesheet" href="{{ asset('assets-doctor/css/custom.css') }}" id="app-style">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        table tbody tr td {
+           padding: 2px 4px 2px 8px !important;
+        }
+        .form-controls {
+            color: var(--pr-body-color);
+            background-color: var(--pr-secondary-bg);
+            outline: 0;
+            box-shadow: 0px 1px 8px -1px rgb(135 76 245) !important;
+        }
+        table td {
+            font-weight: 600 !important;
+        }
+        .text-white-dark{
+            color: #b6d0ffb5 !important;
+        }
+        .selection-table input, .selection-table select, .selection-table textarea {
+            font-size: 0.85em !important;
+        }
+        .medications-header {
+            background: linear-gradient(135deg, #7b68ee, #9370db);
+            color: white;
+            padding: 10px;
+            border-radius: 8px 8px 0 0;
+            margin: -15px -15px 15px -15px;
+        }
+        .medications-header h5 {
+            color: white;
+            margin: 0;
+            display: inline-block;
+        }
+        .med-search-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .med-btn-group .btn {
+            font-size: 0.8em;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        .action-buttons .btn {
+            padding: 2px 6px;
+            font-size: 0.7em;
+        }
+        .drag-handle {
+            cursor: move;
+            color: #6c757d;
+        }
+        .drag-handle:hover {
+            color: #495057;
+        }
+        .dragging {
+            opacity: 0.5;
+            background-color: #f8f9fa;
+        }
+        /* Modal Styles */
+        .submit-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 380px;
+            height: 100%;
+            background: white;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            z-index: 1050;
+            transition: right 0.3s ease;
+        }
+        .submit-modal.show {
+            right: 0;
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1040;
+        }
+        .modal-overlay.show {
+            display: block;
+        }
+        .submit-modal .modal-header {
+            background: linear-gradient(135deg, #7b68ee, #9370db);
+            color: white;
+            padding: 15px;
+        }
+        .submit-modal .modal-body {
+            padding: 20px;
+        }
+        .submit-modal .modal-footer {
+            padding: 15px;
+            border-top: 1px solid #dee2e6;
+        }
+        .action-btn {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 12px;
+            font-size: 1em;
+        }
+
+
+        /* Medicine Selection Styles */
+.medicine-selection-row {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.input-group .btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* Toast Notifications */
+.toast-notification {
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    border: none;
+}
+
+/* Table Improvements */
+.selection-table td {
+    vertical-align: middle;
+}
+
+.drag-handle {
+    cursor: move;
+    text-align: center;
+    color: #6c757d;
+    font-size: 1.2em;
+}
+
+.drag-handle:hover {
+    color: #495057;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .medicine-selection-row .col-md-6 {
+        margin-bottom: 10px;
+    }
+    
+    .med-search-group {
+        flex-direction: column;
+    }
+    
+    .med-search-group .btn-group {
+        margin-top: 10px;
+        justify-content: center;
+    }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        @include('doctor.inc.header1')
+        <div class="page-wrapper patient-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-4 left-box">
+                    <div class="card info-card">
+                       
+                       <h5 class="section-title mt-1 ms-2">Basic Info</h5>
+
+                        <table class="table table-bordered table-sm mb-0">
+                            <tbody>
+                                <tr>
+                                    <th>Patient Registration ID</th>
+                                    <td>{{ $patient->registration_id ?? 'PAT7623903' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Mobile</th>
+                                    <td>{{ $patient->phone ?? '7080320980' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Consultation for Patient</th>
+                                    <td>{{ $patient->name ?? 'Gita Devi' }} ({{ ucfirst($patient->gender ?? 'Male') }})</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="info-card mt-3 animate__animated animate__fadeIn" style="margin-bottom: 13px !important;">
+                            <h5><i class="fas fa-heartbeat me-2"></i>Vitals & Body Composition</h5>
+                            <div class="row">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-sm">
+                                        <tbody>
+                                            <tr>
+                                                <th>Blood Group</th>
+                                                <td>{{ $appointments->blood_group ?? 'N/A' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Weight</th>
+                                                <td>{{ $appointments->weight ?? 'N/A' }} kg</td>
+                                            </tr>
+                                            <tr>
+                                                <th>BP Level</th>
+                                                <td>{{ $appointments->bp ?? 'N/A' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Height</th>
+                                                <td>{{ $appointments->height ?? 'N/A ' }}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Age</th>
+                                                <td>{{ \Carbon\Carbon::parse($patient->dob)->age ?? 'N/A' }} years</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-history me-2"></i>Medical History <i class="ti ti-microphone voice-mic" data-target="medicalHistoryNotes"></i><span class="voice-indicator"></span></h5>
+                            <textarea id="medicalHistoryNotes" class="form-control" rows="4" placeholder="Speak or type history..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-sticky-note me-2"></i>Private Notes <i class="ti ti-microphone voice-mic" data-target="privateNotes"></i><span class="voice-indicator"></span></h5>
+                            <textarea id="privateNotes" class="form-control" rows="4" placeholder="Speak or type notes..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-file-medical me-2"></i>Medical Records <i class="ti ti-microphone voice-mic" data-target="medicalRecordsNotes"></i><span class="voice-indicator"></span></h5>
+                            <textarea id="medicalRecordsNotes" class="form-control"rows="4" placeholder="Speak or type records..."></textarea>
+                        </div>
+                        <div class="info-card animate__animated animate__fadeIn">
+                            <h5><i class="fas fa-vial me-2"></i>Lab Results <i class="ti ti-microphone voice-mic" data-target="labResultsNotes"></i><span class="voice-indicator"></span></h5>
+                            <textarea id="labResultsNotes" class="form-control"rows="4" placeholder="Speak or type results..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-8 right-box">
+                    <div class="card">
+                        <h5 class="section-title mt-3 mb-2 ms-2">Consultation Details</h5>
+                        <div class="form-section">
+                            <h5>Symptoms <i class="ti ti-microphone voice-mic" data-target="symptomsNote"></i><span class="voice-indicator"></span></h5>
+                             <select id="symptoms" class="form-select" multiple>
+                             @foreach($Allsymptoms->slice(0, 5) as $index => $symptoms)
+                                    <option value="{{ $symptoms->name }}">{{ $symptoms->name }}</option>
+                             @endforeach
+                            </select>
+
+
+                            <table id="symptomsTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Symptom</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="symptomsNote" class="form-control form-controls mt-2" rows="3" placeholder="Speak symptoms..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Examination <i class="ti ti-microphone voice-mic" data-target="examinationNote"></i><span class="voice-indicator"></span></h5>
+                            <select id="examination" class="form-select" multiple>
+                                @foreach($Allexamination as $examination)
+                                    <option value="{{ $examination->name }}">{{ $examination->name }}</option>
+                              @endforeach
+                            </select>
+                            <table id="examinationTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Examination</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="examinationNote" class="form-control form-controls mt-2" rows="3" placeholder="Speak examination findings..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Diagnosis <i class="ti ti-microphone voice-mic" data-target="diagnosisNote"></i><span class="voice-indicator"></span></h5>
+                            <select id="diagnosis" class="form-select" multiple>
+                                @foreach($Alldignolisis as $dignolisis)
+                                    <option value="{{ $dignolisis->name }}">{{ $dignolisis->name }}</option>
+                                 @endforeach
+                            </select>
+                            <table id="diagnosisTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Diagnosis</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="diagnosisNote" class="form-control form-controls mt-2" rows="3" placeholder="Speak diagnosis..."></textarea>
+                        </div>
+                        <div class="form-section">
+                            <h5>Lab Tests <i class="ti ti-microphone voice-mic" data-target="labNote"></i><span class="voice-indicator"></span></h5>
+                            <select id="labTests" class="form-select" multiple>
+                                 @foreach($Alllabtest as $labtest)
+                                    <option value="{{ $labtest->name }}">{{ $labtest->name }}</option>
+                                 @endforeach
+                            </select>
+                            <table id="labTestsTable" class="selection-table mt-2">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">Sr.</th>
+                                        <th width="35%">Lab Test</th>
+                                        <th width="60%">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <textarea id="labNote" class="form-control form-controls mt-2" rows="4" placeholder="Speak lab tests..."></textarea>
+                        </div>
+                        {{-- New Medications Section --}}
+                      {{-- New Medications Section --}}
+                        <div class="form-section">
+                            <div class="medications-header">
+                                <h5 class="me-3">Medications (Rx)</h5>
+                                <i class="ti ti-microphone voice-mic" data-target="medicationsNote"></i><span class="voice-indicator"></span>
+                            </div>
+                            
+                            <!-- Medicine Selection Methods -->
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <input type="text" id="searchMedicines" class="form-control" placeholder="Search Medicines by Name">
+                                        <button class="btn btn-primary" type="button" id="addSearchedMedicine">
+                                            <i class="fas fa-plus"></i> Add
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <select id="medicines" class="form-select">
+                                        <option value="">Select from Medicine List</option>
+                                        @foreach($Allmedicines as $medicine)
+                                            <option value="{{ $medicine->name }}">{{ $medicine->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table id="medicinesTable" class="table table-bordered table-sm selection-table mt-2">
+                                    <thead>
+                                        <tr>
+                                            <th width="3%"></th>
+                                            <th width="5%">Sr.</th>
+                                            <th width="22%">Medicine</th>
+                                            <th width="10%">Unit/Dose</th>
+                                            <th width="10%">Frequency</th>
+                                            <th width="10%">When</th>
+                                            <th width="10%">Duration</th>
+                                            <th width="25%">Note</th>
+                                            <th width="5%">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Rows will be added dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <textarea id="medicationsNote" class="form-control form-controls mt-2" rows="3" placeholder="Speak or type additional medications instructions..."></textarea>
+                        </div>
+                        <button class="btn btn-outline-primary me-2 p-2 col-md-2 mb-4 ms-auto" id="submitConsultation"> <i class="fas fa-print"></i> Submit</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @include('doctor.inc.footer')
+
+    <!-- Submit Modal -->
+    <div class="modal-overlay" id="submitModalOverlay"></div>
+    <div class="submit-modal" id="submitModal">
+        <div class="modal-header">
+            <h5 class="modal-title">Consultation Actions</h5>
+            <button type="button" class="btn-close btn-close-white" id="closeModal"></button>
+        </div>
+        <div class="modal-body">
+            <p class="mb-3">Choose an action for the current consultation:</p>
+            
+            <button class="btn btn-primary action-btn" id="printPrescription">
+                <i class="fas fa-print me-2"></i>Print Prescription
+            </button>
+            
+            <button class="btn btn-success action-btn" id="saveContinue">
+                <i class="fas fa-save me-2"></i>Save & Continue
+            </button>
+            
+            <button class="btn btn-info action-btn" id="generateBill">
+                <i class="fas fa-file-invoice me-2"></i>Generate Bill
+            </button>
+            
+            <button class="btn btn-warning action-btn" id="saveClose">
+                <i class="fas fa-times me-2"></i>Save & Close
+            </button>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary w-100" id="cancelAction">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Voice Modal -->
+    <div id="voiceModal" class="voice-modal">
+        <div class="voice-modal-content">
+            <h5>Voice Input Active <i class="fas fa-microphone"></i></h5>
+            <div class="voice-animation">
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+            </div>
+            <p id="transcriptPreview">Listening... Speak now.</p>
+            <button id="stopVoiceBtn">Stop Voice</button>
+            <button id="closeModalBtn">Cancel</button>
+        </div>
+    </div>
+
+    @include('doctor.inc.footer-links')
+    <script src="{{ asset('assets-doctor/js/select2.min.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+
+    {{-- {{ route("doctors.consultation.save", $patient->id ?? 0) }} --}}
+    <script>
+   $(document).ready(function() {
+    // Initialize Sortable for table rows
+    const medicinesTable = document.getElementById('medicinesTable');
+    if (medicinesTable) {
+        new Sortable(medicinesTable.getElementsByTagName('tbody')[0], {
+            handle: '.drag-handle',
+            animation: 150,
+            onEnd: function() {
+                updateRowNumbers();
+            }
+        });
+    }
+
+    // Function to update row numbers
+    function updateRowNumbers() {
+        $('#medicinesTable tbody tr').each(function(index) {
+            $(this).find('td:eq(1)').text(index + 1);
+        });
+    }
+
+    // Function to add medicine to table
+    function addMedicineToTable(medicineName) {
+        if (!medicineName || medicineName.trim() === '') {
+            alert('Please enter a medicine name');
+            return;
+        }
+
+        // Check if medicine already exists in table
+        let medicineExists = false;
+        $('#medicinesTable tbody tr').each(function() {
+            const existingMedicine = $(this).find('td:eq(2)').text().trim();
+            if (existingMedicine === medicineName.trim()) {
+                medicineExists = true;
+                return false; // break loop
+            }
+        });
+
+        if (medicineExists) {
+            alert('This medicine is already added to the list!');
+            return;
+        }
+
+        const rowCount = $('#medicinesTable tbody tr').length + 1;
+        const newRow = `
+            <tr>
+                <td class="drag-handle">≡</td>
+                <td>${rowCount}</td>
+                <td>${medicineName}</td>
+                <td><input type="text" class="form-control dose-input" placeholder="e.g. 1 Tablet"></td>
+                <td>
+                    <select class="form-control freq-select">
+                        <option value="">Select</option>
+                        <option value="1-0-0">1-0-0 (Once daily)</option>
+                        <option value="0-1-0">0-1-0 (Once daily)</option>
+                        <option value="0-0-1">0-0-1 (Once daily)</option>
+                        <option value="1-0-1">1-0-1 (Twice daily)</option>
+                        <option value="1-1-1">1-1-1 (Thrice daily)</option>
+                        <option value="SOS">SOS (When required)</option>
+                    </select>
+                </td>
+                <td>
+                    <select class="form-control when-select">
+                        <option value="">Select</option>
+                        <option value="Before Food">Before Food</option>
+                        <option value="After Food">After Food</option>
+                        <option value="With Food">With Food</option>
+                        <option value="Empty Stomach">Empty Stomach</option>
+                    </select>
+                </td>
+                <td>
+                    <select class="form-control dur-select">
+                        <option value="">Select</option>
+                        <option value="1 Day">1 Day</option>
+                        <option value="3 Days">3 Days</option>
+                        <option value="5 Days">5 Days</option>
+                        <option value="7 Days">7 Days</option>
+                        <option value="10 Days">10 Days</option>
+                        <option value="2 Weeks">2 Weeks</option>
+                        <option value="1 Month">1 Month</option>
+                        <option value="To Be Continued">To Be Continued</option>
+                    </select>
+                </td>
+                <td><textarea class="form-control note-input" rows="1" placeholder="Special instructions..."></textarea></td>
+                <td class="action-buttons">
+                    <button type="button" class="btn btn-sm btn-outline-danger delete-row">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        $('#medicinesTable tbody').append(newRow);
+        updateRowNumbers();
+        
+        // Show success message
+        showToast('Medicine added successfully!', 'success');
+    }
+
+    // Add medicine from search input
+    $('#addSearchedMedicine').on('click', function() {
+        const medicineName = $('#searchMedicines').val().trim();
+        if (medicineName) {
+            addMedicineToTable(medicineName);
+            $('#searchMedicines').val(''); // Clear input
+            $('#searchMedicines').focus(); // Focus back to search
+        } else {
+            alert('Please enter a medicine name to add');
+            $('#searchMedicines').focus();
+        }
+    });
+
+    // Add medicine on Enter key in search
+    $('#searchMedicines').on('keypress', function(e) {
+        if (e.which === 13) { // Enter key
+            const medicineName = $(this).val().trim();
+            if (medicineName) {
+                addMedicineToTable(medicineName);
+                $(this).val('');
+            }
+        }
+    });
+
+    // Add medicine from dropdown select
+    $('#medicines').on('change', function() {
+        const medicineName = $(this).val();
+        if (medicineName) {
+            addMedicineToTable(medicineName);
+            $(this).val(''); // Reset dropdown
+        }
+    });
+
+    // Delete row
+    $(document).on('click', '.delete-row', function() {
+        const medicineName = $(this).closest('tr').find('td:eq(2)').text();
+        if (confirm(`Are you sure you want to remove "${medicineName}"?`)) {
+            $(this).closest('tr').remove();
+            updateRowNumbers();
+            showToast('Medicine removed!', 'warning');
+        }
+    });
+
+    // Clear all medications
+    $('#clearMedications').on('click', function() {
+        if ($('#medicinesTable tbody tr').length > 0) {
+            if (confirm('Are you sure you want to clear all medications?')) {
+                $('#medicinesTable tbody').empty();
+                showToast('All medications cleared!', 'info');
+            }
+        } else {
+            alert('No medications to clear!');
+        }
+    });
+
+    // Save medications
+    $('#saveMedications').on('click', function() {
+        const medicineCount = $('#medicinesTable tbody tr').length;
+        if (medicineCount > 0) {
+            showToast(`${medicineCount} medications saved successfully!`, 'success');
+        } else {
+            alert('No medications to save!');
+        }
+    });
+
+    // Load previous prescription
+    $('#loadPrevRx').on('click', function() {
+        // Sample previous medications (you can replace with actual API call)
+        const sampleMeds = ['Paracetamol', 'Ibuprofen', 'Amoxicillin', 'Omeprazole'];
+        
+        if (confirm('Load sample previous prescription?')) {
+            sampleMeds.forEach(med => addMedicineToTable(med));
+            showToast('Previous prescription loaded!', 'info');
+        }
+    });
+
+    // Templates button
+    $('#templatesBtn').on('click', function() {
+        // Sample templates
+        const templates = {
+            'Fever': ['Paracetamol', 'Ibuprofen'],
+            'Cold & Cough': ['Cetirizine', 'Amoxicillin', 'Syrup'],
+            'Hypertension': ['Amlodipine', 'Losartan']
+        };
+        
+        const templateName = prompt('Select template: Fever, Cold & Cough, Hypertension');
+        if (templateName && templates[templateName]) {
+            templates[templateName].forEach(med => addMedicineToTable(med));
+            showToast(`${templateName} template applied!`, 'info');
+        }
+    });
+
+    // Toast notification function
+    function showToast(message, type = 'info') {
+        // Remove existing toast
+        $('.toast-notification').remove();
+        
+        const toast = $(`
+            <div class="toast-notification alert alert-${type} alert-dismissible fade show position-fixed" 
+                 style="top: 20px; right: 20px; z-index: 1060; min-width: 250px;">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `);
+        
+        $('body').append(toast);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            toast.alert('close');
+        }, 3000);
+    }
+
+
+
+
+
+
+        // Submit consultation - show modal
+        $('#submitConsultation').on('click', function() {
+            $('#submitModal').addClass('show');
+            $('#submitModalOverlay').addClass('show');
+        });
+
+        // Close modal
+        $('#closeModal, #cancelAction, #submitModalOverlay').on('click', function() {
+            $('#submitModal').removeClass('show');
+            $('#submitModalOverlay').removeClass('show');
+        });
+
+        // Modal actions
+        $('#printPrescription').on('click', function() {
+            generatePDF();
+            $('#submitModal').removeClass('show');
+            $('#submitModalOverlay').removeClass('show');
+        });
+
+        $('#saveContinue').on('click', function() {
+            saveConsultation();
+            alert('Consultation saved successfully!');
+            $('#submitModal').removeClass('show');
+            $('#submitModalOverlay').removeClass('show');
+        });
+
+        $('#generateBill').on('click', function() {
+            saveConsultation();
+            alert('Bill generated successfully!');
+            $('#submitModal').removeClass('show');
+            $('#submitModalOverlay').removeClass('show');
+        });
+
+        $('#saveClose').on('click', function() {
+            saveConsultation();
+            alert('Consultation saved and closed!');
+            window.location.href = '/doctor-dashboard';
+        });
+
+        // Save consultation function
+        function saveConsultation() {
+            const consultationData = {
+                patient_id: {{ $patient->id ?? 'null' }},
+                symptoms: getTableData('#symptomsTable'),
+                examination: getTableData('#examinationTable'),
+                diagnosis: getTableData('#diagnosisTable'),
+                medications: getMedicationsData(),
+                lab_tests: getTableData('#labTestsTable'),
+                symptoms_note: $('#symptomsNote').val(),
+                examination_note: $('#examinationNote').val(),
+                diagnosis_note: $('#diagnosisNote').val(),
+                medications_note: $('#medicationsNote').val(),
+                lab_note: $('#labNote').val(),
+                medical_history: $('#medicalHistoryNotes').val(),
+                private_notes: $('#privateNotes').val(),
+                medical_records: $('#medicalRecordsNotes').val(),
+                lab_results: $('#labResultsNotes').val()
+            };
+
+            // Send data to server
+            $.ajax({
+                url: '',
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    consultation_data: consultationData
+                },
+                success: function(response) {
+                    console.log('Consultation saved:', response);
+                },
+                error: function(xhr) {
+                    console.error('Error saving consultation:', xhr);
+                }
+            });
+        }
+
+        // Helper function to get table data
+        function getTableData(tableSelector) {
+            const data = [];
+            $(`${tableSelector} tbody tr`).each(function() {
+                const item = $(this).find('td').eq(1).text();
+                const note = $(this).find('.note-input').val() || '';
+                data.push({ item, note });
+            });
+            return data;
+        }
+
+        // Helper function to get medications data
+        function getMedicationsData() {
+            const medications = [];
+            $('#medicinesTable tbody tr').each(function() {
+                const medicine = $(this).find('td:eq(2)').text();
+                const dose = $(this).find('.dose-input').val() || '';
+                const frequency = $(this).find('.freq-select').val() || '';
+                const when = $(this).find('.when-select').val() || '';
+                const duration = $(this).find('.dur-select').val() || '';
+                const note = $(this).find('.note-input').val() || '';
+                
+                medications.push({
+                    medicine,
+                    dose,
+                    frequency,
+                    when,
+                    duration,
+                    note
+                });
+            });
+            return medications;
+        }
+
+        // Select2 initialization for other sections
+        $('.form-select').not('#medicines').select2({
+            placeholder: 'Select or type new options...',
+            allowClear: true,
+            closeOnSelect: false,
+            tags: true
+        }).on('change', function() {
+            const dropdownId = '#' + this.id;
+            const tableId = dropdownId + 'Table';
+            const selectedValues = $(this).val() || [];
+            const tableBody = $(tableId + ' tbody');
+
+            tableBody.empty();
+            selectedValues.forEach((value, index) => {
+                const rowNumber = index + 1;
+                tableBody.append(`
+                    <tr data-value="${value}">
+                        <td>${rowNumber}</td>
+                        <td>${value}</td>
+                        <td><textarea class="form-control note-input" rows="2" placeholder="Add note for ${value}..." autocomplete="off" style="border-radius: 3px !important; padding: 15px 6px; margin: 2px -3px;"></textarea></td>
+                    </tr>
+                `);
+            });
+        });
+
+        // Voice Recognition Code
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        let currentTargetId = '';
+        let fullTranscript = '';
+        const modal = $('#voiceModal');
+        const transcriptPreview = $('#transcriptPreview');
+        const stopBtn = $('#stopVoiceBtn');
+        const closeBtn = $('#closeModalBtn');
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onresult = (event) => {
+                let interim = '';
+                let final = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        final += event.results[i][0].transcript + ' ';
+                    } else {
+                        interim += event.results[i][0].transcript;
+                    }
+                }
+                fullTranscript += final; 
+                transcriptPreview.text(interim ? interim : fullTranscript || 'Listening... Speak now.');
+                $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('Recording...');
+            };
+
+            recognition.onend = () => {
+                if (!stopBtn.data('stopped')) {
+                    recognition.start();
+                } else {
+                    $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+                }
+            };
+
+            recognition.onerror = (event) => {
+                transcriptPreview.text('Error: ' + event.error + '. Try again.');
+                $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+                setTimeout(() => closeModal(), 3000);
+            };
+
+            $('.voice-mic').on('click', function() {
+                currentTargetId = $(this).data('target');
+                fullTranscript = '';
+                transcriptPreview.text('Listening... Speak now.');
+                modal.css('display', 'flex');
+                stopBtn.data('stopped', false);
+                recognition.start();
+            });
+
+            stopBtn.on('click', function() {
+                $(this).data('stopped', true);
+                recognition.stop();
+                const input = $('#' + currentTargetId);
+                
+                // For medications note, append to existing text
+                if (currentTargetId === 'medicationsNote') {
+                    const currentText = input.val();
+                    input.val(currentText + (currentText ? ' ' : '') + fullTranscript.trim());
+                } else {
+                    input.val(fullTranscript.trim());
+                }
+                
+                closeModal();
+            });
+
+            closeBtn.on('click', function() {
+                recognition.stop();
+                closeModal();
+            });
+
+            function closeModal() {
+                modal.css('display', 'none');
+                fullTranscript = '';
+                $(`.voice-mic[data-target="${currentTargetId}"]`).siblings('.voice-indicator').text('');
+            }
+        } else {
+            $('.voice-mic').hide();
+            alert('Speech Recognition not supported in this browser. Please use Chrome or Edge.');
+        }
+
+        // PDF Generation Function
+        function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setDrawColor(135, 76, 245);
+            doc.setLineWidth(0.7);
+            doc.rect(5, 5, 200, 287);
+
+            // Add logo to PDF
+            const logoUrl = "{{ asset('assets-doctor/img/prescription.png') }}";
+            fetch(logoUrl)
+                .then(response => response.blob())
+                .then(blob => {
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        const imgData = reader.result;
+                        doc.addImage(imgData, 'PNG', 10, 10, 30, 25);
+
+                        // Helper functions for PDF generation
+                        function estimateTableHeight(data, doc) {
+                            let height = 8;
+                            height += 8;
+                            
+                            data.forEach((row) => {
+                                const noteText = row.note && row.note.trim() !== '' ? row.note : '---';
+                                const lines = doc.splitTextToSize(noteText, 120);
+                                const rowHeight = Math.max(8, lines.length * 5);
+                                height += rowHeight;
+                            });
+
+                            height += 10;
+                            return height;
+                        }
+
+                        function drawTable(data, title, startY, doc) {
+                            let yPos = startY;
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(13);
+                            doc.text(title, 10, yPos);
+                            yPos += 8;
+                            
+                            if (data.length === 0) {
+                                doc.setFont("helvetica", "normal");
+                                doc.setFontSize(11);
+                                doc.text("None", 10, yPos);
+                                return yPos + 6;
+                            }
+
+                            doc.setFillColor(245, 245, 245);
+                            doc.rect(10, yPos, 15, 8, 'F');
+                            doc.rect(25, yPos, 45, 8, 'F');
+                            doc.rect(70, yPos, 125, 8, 'F');
+                            
+                            doc.setDrawColor(200, 200, 200);
+                            doc.setLineWidth(0.4);
+                            doc.rect(10, yPos, 15, 8);
+                            doc.rect(25, yPos, 45, 8);
+                            doc.rect(70, yPos, 125, 8);
+                            
+                            doc.setFontSize(10);
+                            doc.text("Sr.", 13, yPos + 6, { align: 'center' });
+                            doc.text("Item", 47.5, yPos + 6, { align: 'center' });
+                            doc.text("Note", 132.5, yPos + 6, { align: 'center' });
+                            yPos += 8;
+
+                            doc.setFont("helvetica", "normal");
+                            doc.setFontSize(9);
+
+                            data.forEach((row, index) => {
+                                if (yPos > 270) {
+                                    doc.addPage();
+                                    doc.setDrawColor(135, 76, 245);
+                                    doc.setLineWidth(0.7);
+                                    doc.rect(5, 5, 200, 287);
+                                    yPos = 20;
+                                }
+                                
+                                const noteText = row.note && row.note.trim() !== '' ? row.note : '---';
+                                const lines = doc.splitTextToSize(noteText, 120);
+                                const rowHeight = Math.max(8, lines.length * 4.5);
+                                
+                                doc.setDrawColor(200, 200, 200);
+                                doc.setLineWidth(0.4);
+                                doc.rect(10, yPos, 15, rowHeight);
+                                doc.rect(25, yPos, 45, rowHeight);
+                                doc.rect(70, yPos, 125, rowHeight);
+                                
+                                doc.text(`${index + 1}`, 17.5, yPos + (rowHeight/2), { align: 'center', baseline: 'middle' });
+                                
+                                const itemLines = doc.splitTextToSize(row.item, 40);
+                                doc.text(itemLines, 27, yPos + 4);
+                                
+                                doc.text(lines, 72, yPos + 4);
+                                
+                                yPos += rowHeight;
+                            });
+
+                            doc.setFontSize(11);
+                            return yPos + 10;
+                        }
+
+                        function drawMedicationsTable(data, title, startY, doc) {
+                            let yPos = startY;
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(13);
+                            doc.text(title, 10, yPos);
+                            yPos += 8;
+                            
+                            if (data.length === 0) {
+                                doc.setFont("helvetica", "normal");
+                                doc.setFontSize(11);
+                                doc.text("None", 10, yPos);
+                                return yPos + 6;
+                            }
+
+                            doc.setFillColor(245, 245, 245);
+                            doc.rect(10, yPos, 10, 8, 'F');
+                            doc.rect(20, yPos, 50, 8, 'F');
+                            doc.rect(70, yPos, 15, 8, 'F');
+                            doc.rect(85, yPos, 15, 8, 'F');
+                            doc.rect(100, yPos, 15, 8, 'F');
+                            doc.rect(115, yPos, 15, 8, 'F');
+                            doc.rect(130, yPos, 65, 8, 'F');
+                            
+                            doc.setDrawColor(200, 200, 200);
+                            doc.setLineWidth(0.4);
+                            doc.rect(10, yPos, 10, 8);
+                            doc.rect(20, yPos, 50, 8);
+                            doc.rect(70, yPos, 15, 8);
+                            doc.rect(85, yPos, 15, 8);
+                            doc.rect(100, yPos, 15, 8);
+                            doc.rect(115, yPos, 15, 8);
+                            doc.rect(130, yPos, 65, 8);
+                            
+                            doc.setFontSize(8);
+                            doc.text("Sr.", 15, yPos + 6, { align: 'center' });
+                            doc.text("Medicine", 45, yPos + 6, { align: 'center' });
+                            doc.text("Dose", 77.5, yPos + 6, { align: 'center' });
+                            doc.text("Freq", 92.5, yPos + 6, { align: 'center' });
+                            doc.text("When", 107.5, yPos + 6, { align: 'center' });
+                            doc.text("Dur", 122.5, yPos + 6, { align: 'center' });
+                            doc.text("Note", 162.5, yPos + 6, { align: 'center' });
+                            yPos += 8;
+
+                            doc.setFont("helvetica", "normal");
+                            doc.setFontSize(7);
+
+                            data.forEach((row, index) => {
+                                if (yPos > 270) {
+                                    doc.addPage();
+                                    doc.setDrawColor(135, 76, 245);
+                                    doc.setLineWidth(0.7);
+                                    doc.rect(5, 5, 200, 287);
+                                    yPos = 20;
+                                }
+                                
+                                const noteLines = doc.splitTextToSize(row.note || '---', 60);
+                                const medLines = doc.splitTextToSize(row.medicine, 45);
+                                const maxLines = Math.max(1, noteLines.length, medLines.length);
+                                const rowHeight = maxLines * 4;
+                                
+                                doc.setDrawColor(200, 200, 200);
+                                doc.setLineWidth(0.4);
+                                doc.rect(10, yPos, 10, rowHeight);
+                                doc.rect(20, yPos, 50, rowHeight);
+                                doc.rect(70, yPos, 15, rowHeight);
+                                doc.rect(85, yPos, 15, rowHeight);
+                                doc.rect(100, yPos, 15, rowHeight);
+                                doc.rect(115, yPos, 15, rowHeight);
+                                doc.rect(130, yPos, 65, rowHeight);
+                                
+                                doc.text((index + 1).toString(), 15, yPos + 2, { align: 'center' });
+                                doc.text(medLines, 22, yPos + 2);
+                                doc.text(row.dose || '---', 77.5, yPos + rowHeight / 2, { align: 'center', baseline: 'middle' });
+                                doc.text(row.frequency || '---', 92.5, yPos + rowHeight / 2, { align: 'center', baseline: 'middle' });
+                                doc.text(row.when || '---', 107.5, yPos + rowHeight / 2, { align: 'center', baseline: 'middle' });
+                                doc.text(row.duration || '---', 122.5, yPos + rowHeight / 2, { align: 'center', baseline: 'middle' });
+                                doc.text(noteLines, 132, yPos + 2);
+                                
+                                yPos += rowHeight;
+                            });
+
+                            doc.setFontSize(11);
+                            return yPos + 10;
+                        }
+
+                        // Rest of PDF generation code...
+                        const doctorName = "{{ auth()->user()->name ?? 'Dr. Anil Kumar' }}";
+                        doc.setTextColor(200, 200, 200);
+                        doc.setFontSize(30);
+                        doc.setFont("helvetica", "bold");
+                        doc.saveGraphicsState();
+                        doc.setGState(new doc.GState({ opacity: 0.2 }));
+                        doc.text(doctorName, 60, 180, { angle: 45 });
+                        doc.restoreGraphicsState();
+                        doc.setTextColor(0);
+
+                        // Doctor Info
+                        doc.setTextColor(135, 76, 245);
+                        doc.setFontSize(16);
+                        doc.setFont("helvetica", "bold");
+                        doc.text("{{ auth()->user()->name ?? 'Dr. Anil Kumar' }}", 10, 40);
+                        doc.setTextColor(0);
+                        doc.setFontSize(10);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("Cardiology | MBBS, MD, DM (Cardiology)", 10, 46);
+                        doc.text("Mobile: {{ auth()->user()->phone ?? '+91 9876543210' }}", 10, 52);
+                        doc.text("Address: {{ auth()->user()->address ?? '123 Medical Center, City' }}", 10, 58);
+
+                        // Patient Info
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(11);
+                        doc.text("Patient Information", 150, 40);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(10);
+                        doc.text("ID: {{ $patient->registration_id ?? 'PAT12345' }}", 150, 46);
+                        doc.text("Name: {{ $patient->name ?? 'John Doe' }}", 150, 52);
+                        doc.text("Age/Gender: {{ \Carbon\Carbon::parse($patient->dob)->age ?? '30' }}y, {{ ucfirst($patient->gender ?? 'Male') }}", 150, 58);
+                        doc.text("Mobile: {{ $patient->phone ?? '+91 9876543210' }}", 150, 64);
+
+                        // Date and Time
+                        const currentDate = new Date();
+                        const formattedDate = currentDate.toLocaleDateString('en-GB');
+                        const formattedTime = currentDate.toLocaleTimeString('en-US', { 
+                            hour: '2-digit', 
+                            minute: '2-digit',
+                            hour12: true 
+                        }).toUpperCase();
+
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(10);
+                        doc.text("Date: " + formattedDate + " / Time: " + formattedTime, 138, 11);
+
+                        // Horizontal line
+                        doc.setDrawColor(135, 76, 245);
+                        doc.setLineWidth(0.7);
+                        doc.line(10, 70, 200, 70);
+
+                        let yPos = 80;
+
+                        // Add your data sections here...
+                        const medicationsData = getMedicationsData();
+                        if (medicationsData.length > 0) {
+                            yPos = drawMedicationsTable(medicationsData, "Medications:", yPos, doc);
+                        }
+
+                        // Footer
+                        doc.setFontSize(10);
+                        doc.setTextColor(150);
+                        doc.text("AK Clinic | Confidential – For Medical Use Only", 105, 290, { align: 'center' });
+
+                        window.open(doc.output('bloburl'), '_blank');
+                    };
+                    reader.readAsDataURL(blob);
+                })
+                .catch(error => {
+                    console.error('Error loading logo:', error);
+                    alert("PDF generation failed due to logo loading error. Please try again.");
+                });
+        }
+    });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+  <div class="form-section">
+                            <div class="medications-header">
+                                <h5 class="me-3">Medications (Rx)</h5>
+                                <i class="ti ti-microphone voice-mic" data-target="medicationsNote"></i><span class="voice-indicator"></span>
+                            </div>
+                            
+                            <!-- Medicine Selection Methods -->
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <input type="text" id="searchMedicines" class="form-control" placeholder="Search Medicines by Name">
+                                        <button class="btn btn-primary" type="button" id="addSearchedMedicine">
+                                            <i class="fas fa-plus"></i> Add
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <select id="medicines" class="form-select">
+                                        <option value="">Select from Medicine List</option>
+                                        @foreach($Allmedicines as $medicine)
+                                            <option value="{{ $medicine->name }}">{{ $medicine->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table id="medicinesTable" class="table table-bordered table-sm selection-table mt-2">
+                                    <thead>
+                                        <tr>
+                                            <th width="3%"></th>
+                                            <th width="5%">Sr.</th>
+                                            <th width="22%">Medicine</th>
+                                            <th width="10%">Unit/Dose</th>
+                                            <th width="10%">Frequency</th>
+                                            <th width="10%">When</th>
+                                            <th width="10%">Duration</th>
+                                            <th width="25%">Note</th>
+                                            <th width="5%">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Rows will be added dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <textarea id="medicationsNote" class="form-control form-controls mt-2" rows="3" placeholder="Speak or type additional medications instructions..."></textarea>
+                        </div>
