@@ -1,26 +1,178 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   SkoraCares design tokens (Tailwind v4)
+   ───────────────────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Brand — clinical teal */
+  --color-brand-50: #f0fbfe;
+  --color-brand-100: #d8f3fb;
+  --color-brand-200: #b5e8f7;
+  --color-brand-300: #80d7f0;
+  --color-brand-400: #44bde4;
+  --color-brand-500: #1d9fd0;
+  --color-brand-600: #0f81b1;
+  --color-brand-700: #0a6e8a;
+  --color-brand-800: #074f65;
+  --color-brand-900: #0b3d50;
+  --color-brand-950: #072838;
+
+  /* Accent — mint green */
+  --color-accent-50: #effdf9;
+  --color-accent-100: #c9f8ec;
+  --color-accent-200: #96efdb;
+  --color-accent-300: #5ce0c6;
+  --color-accent-400: #2ecdb0;
+  --color-accent-500: #00c9a7;
+  --color-accent-600: #00a78c;
+  --color-accent-700: #009e83;
+  --color-accent-800: #067a67;
+  --color-accent-900: #0a6355;
+  --color-accent-950: #043c33;
+
+  /* Dashboard nav — deep clinical green */
+  --color-navy-700: #0c4843;
+  --color-navy-800: #093a36;
+  --color-navy-900: #062c29;
+  --color-navy-950: #041f1d;
+
+  /* Surfaces */
+  --color-surface: #f8fdff;
+  --color-ink: #0d1f2d;
+  --color-ink-muted: #5a7384;
+
+  --radius-4xl: 2rem;
+
+  --shadow-soft: 0 8px 40px rgba(10, 110, 138, 0.12);
+  --shadow-float: 0 20px 60px rgba(10, 110, 138, 0.18);
+
+  --animate-float: float 5s ease-in-out infinite;
+  --animate-float-slow: float 7s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(1.35);
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────────────────── */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --foreground: #0d1f2d;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+.font-display {
+  font-family: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: #0a6e8a;
+  color: #fff;
+}
+
+/* Slim scrollbars for dashboard panels */
+.slim-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.slim-scroll::-webkit-scrollbar-thumb {
+  background: rgb(10 110 138 / 0.25);
+  border-radius: 999px;
+}
+.slim-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Reusable component classes
+   ───────────────────────────────────────────────────────────────────────── */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700 disabled:pointer-events-none disabled:opacity-60;
+}
+
+@layer components {
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm text-white shadow-md shadow-brand-700/20 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-700/30;
+  }
+  .btn-secondary {
+    @apply btn border border-brand-200 bg-white px-5 py-2.5 text-sm text-brand-800 hover:border-brand-600 hover:text-brand-700;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 px-5 py-2.5 text-sm text-white hover:bg-red-700;
+  }
+  .btn-ghost {
+    @apply btn px-4 py-2 text-sm text-ink-muted hover:bg-brand-50 hover:text-brand-800;
+  }
+
+  .card {
+    @apply rounded-2xl border border-brand-900/10 bg-white shadow-sm;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:-translate-y-1 hover:border-brand-600/40 hover:shadow-soft;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition-all placeholder:text-slate-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  .table-shell {
+    @apply overflow-hidden rounded-2xl border border-slate-200 bg-white;
+  }
+  .data-table {
+    @apply w-full text-left text-sm;
+  }
+  .data-table thead th {
+    @apply border-b border-slate-200 bg-slate-50/80 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .data-table tbody td {
+    @apply border-b border-slate-100 px-4 py-3 align-middle text-slate-700;
+  }
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .data-table tbody tr {
+    @apply transition-colors hover:bg-brand-50/40;
+  }
 }
