@@ -186,6 +186,27 @@ export const personalAccessTokens = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Audit log (added for S4 defense-in-depth)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const auditLogs = mysqlTable(
+  "audit_logs",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number" }),
+    action: varchar("action", { length: 100 }).notNull(),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    metadata: json("metadata"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => [
+    index("audit_logs_user_id_index").on(t.userId),
+    index("audit_logs_action_index").on(t.action),
+    index("audit_logs_created_at_index").on(t.createdAt),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 

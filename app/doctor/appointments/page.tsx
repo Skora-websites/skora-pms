@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getAppointments } from "@/lib/queries/doctor";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { AppointmentRowActions } from "@/components/doctor/appointment-actions";
+import { ExportAppointmentsButton } from "./export-button";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Appointments · Doctor" };
@@ -36,13 +37,16 @@ export default async function AppointmentsPage({
         title="Appointments"
         subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} found`}
         action={
-          <Link
-            href="/doctor/appointments/book"
-            className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/20 transition-all hover:-translate-y-0.5"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            Book appointment
-          </Link>
+          <div className="flex items-center gap-2">
+            <ExportAppointmentsButton status={params.status} />
+            <Link
+              href="/doctor/appointments/book"
+              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/20 transition-all hover:-translate-y-0.5"
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Book appointment
+            </Link>
+          </div>
         }
       />
 

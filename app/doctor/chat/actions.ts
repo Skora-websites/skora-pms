@@ -6,6 +6,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chatRooms, messages, favorites, userChatSettings, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { authRateLimit } from "@/lib/security/rate-limit";
 
 async function getChatRoomId(): Promise<number> {
   const [room] = await db.select().from(chatRooms).where(eq(chatRooms.name, "Doctors Group"));
@@ -49,6 +50,12 @@ export async function sendChatMessage(
 
 /** Polls for messages newer than the last seen id. */
 export async function pollChatMessages(sinceId: number) {
+  const user = await authedUser();
+  const { allowed } = authRateLimit.chatPoll(user.id);
+  if (!allowed) {
+    // Quietly return nothing so the poller just retries next tick.
+    return [];
+  }
   const roomId = await getChatRoomId();
   const rows = await db
     .select({

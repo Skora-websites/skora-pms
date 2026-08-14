@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
@@ -11,7 +12,8 @@ import { getCurrentUser } from "@/lib/auth/user";
 
 export type ConsultPdfActionResult = { error: string | null };
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "doctor-consult-pdfs");
+// Stored outside public/ so PHI documents are never directly served.
+const UPLOAD_DIR = path.join(process.cwd(), "storage", "uploads", "doctor-consult-pdfs");
 
 export async function uploadConsultPdf(
   _prev: ConsultPdfActionResult,
@@ -26,24 +28,34 @@ export async function uploadConsultPdf(
 
   const file = formData.get("pdf") as File | null;
   if (!file || file.size === 0) return { error: "Please choose a PDF file." };
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    return { error: "Only PDF files are allowed." };
-  }
   if (file.size > 10 * 1024 * 1024) return { error: "File must be under 10 MB." };
 
-  const safeName = file.name.replace(/[^\w.\-() ]/g, "").trim() || "consult.pdf";
-  const filename = `${doctorId}-${Date.now()}-${safeName}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+
+  // Magic-byte check: PDFs start with "%PDF-" (optionally with a BOM).
+  const hasPdfSignature =
+    (bytes.length >= 5 && bytes.subarray(0, 5).toString("latin1") === "%PDF-") ||
+    (bytes.length >= 6 &&
+      bytes[0] === 0xef &&
+      bytes[1] === 0xbb &&
+      bytes[2] === 0xbf &&
+      bytes.subarray(3, 8).toString("latin1") === "%PDF-");
+  if (!hasPdfSignature) {
+    return { error: "Only PDF files are allowed." };
+  }
+
+  // Random, unguessable filename — never echo the user-supplied name on disk.
+  const filename = `${doctorId}-${crypto.randomUUID()}.pdf`;
 
   try {
     await fs.mkdir(UPLOAD_DIR, { recursive: true });
-    const bytes = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(path.join(UPLOAD_DIR, filename), bytes);
   } catch (err) {
     console.error("Failed to store consult PDF:", err);
     return { error: "Could not save the file. Please try again." };
   }
 
-  const publicPath = `uploads/doctor-consult-pdfs/${filename}`;
+  const storedPath = `doctor-consult-pdfs/${filename}`;
   const now = new Date();
 
   const [existing] = await db
@@ -54,15 +66,15 @@ export async function uploadConsultPdf(
   if (existing) {
     // Replace the old file (best-effort cleanup).
     if (existing.pdfPath) {
-      const oldFile = path.join(process.cwd(), "public", existing.pdfPath);
+      const oldFile = path.join(UPLOAD_DIR, path.basename(existing.pdfPath));
       fs.unlink(oldFile).catch(() => undefined);
     }
     await db
       .update(doctorConsultPdfs)
-      .set({ pdfPath: publicPath, updatedAt: now })
+      .set({ pdfPath: storedPath, updatedAt: now })
       .where(eq(doctorConsultPdfs.id, existing.id));
   } else {
-    await db.insert(doctorConsultPdfs).values({ doctorId, pdfPath: publicPath, createdAt: now, updatedAt: now });
+    await db.insert(doctorConsultPdfs).values({ doctorId, pdfPath: storedPath, createdAt: now, updatedAt: now });
   }
 
   revalidatePath("/doctor/consult-pdf");

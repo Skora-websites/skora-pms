@@ -39,7 +39,7 @@ export default async function ConsultPdfPage() {
               <p className="text-sm font-semibold text-accent-900">✓ PDF uploaded</p>
               <p className="mt-0.5 truncate font-mono text-xs text-accent-700">{consultPdf.pdfPath}</p>
             </div>
-            <a href={`/${consultPdf.pdfPath}`} target="_blank" className="btn-secondary">
+            <a href="/api/doctor/consult-pdf" target="_blank" className="btn-secondary">
               <FileDown className="h-4 w-4" />
               View current
             </a>

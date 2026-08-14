@@ -1,5 +1,8 @@
 "use server";
 
+import { authRateLimit } from "@/lib/security/rate-limit";
+import { contactSchema } from "@/lib/validation";
+
 export type DemoBookingState = { success: boolean; error: string | null };
 
 export async function bookDemo(
@@ -9,17 +12,21 @@ export async function bookDemo(
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
+  const message = String(formData.get("message") ?? "").trim();
 
-  if (!name || !email || !phone) {
-    return { success: false, error: "Please fill in your name, email and phone number." };
+  const parsed = contactSchema.safeParse({ name, email, phone: phone || undefined, message });
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { success: false, error: "Please enter a valid email address." };
+
+  const { allowed, retryAfterMs } = authRateLimit.demo(email);
+  if (!allowed) {
+    const minutes = Math.ceil(retryAfterMs / 60_000);
+    return { success: false, error: `Too many requests. Try again in ${minutes} minute(s).` };
   }
 
   // TODO: persist lead + send notification email (mail provider integration).
-  // For now the request is acknowledged and forwarded via your preferred channel.
-  console.info("[demo-booking]", { name, email, phone, clinic: formData.get("clinic"), message: formData.get("message") });
+  console.info("[demo-booking]", { name, email, phone, message });
 
   return { success: true, error: null };
 }

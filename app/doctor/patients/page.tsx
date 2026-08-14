@@ -1,38 +1,65 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Users, ArrowUpRight } from "lucide-react";
+import { Users, ArrowUpRight, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getDoctorPatients } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
+import { ExportPatientsButton } from "./export-button";
 
 export const metadata: Metadata = { title: "Registrations · Doctor" };
 
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; start_date?: string; end_date?: string }>;
 }) {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const { q } = await searchParams;
-  const patients = await getDoctorPatients(doctorId, q);
+  const { q, start_date, end_date } = await searchParams;
+  const patients = await getDoctorPatients(doctorId, q, start_date, end_date);
 
   return (
     <div>
       <PageHeader
         title="Patient registrations"
         subtitle={`${patients.length} patient${patients.length === 1 ? "" : "s"} in your care`}
+        action={
+          <Link href="/doctor/patients/new" className="btn-primary">
+            <Plus className="h-4 w-4" /> Register
+          </Link>
+        }
       />
 
-      <form className="mb-5 flex max-w-md gap-2">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search by name, phone or email…"
-          className="input"
-        />
+      <form className="mb-5 flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Search by name, phone or email..."
+            className="input"
+          />
+        </div>
+        <div className="w-40">
+          <input
+            name="start_date"
+            type="date"
+            defaultValue={start_date ?? ""}
+            className="input"
+            title="From date"
+          />
+        </div>
+        <div className="w-40">
+          <input
+            name="end_date"
+            type="date"
+            defaultValue={end_date ?? ""}
+            className="input"
+            title="To date"
+          />
+        </div>
         <button type="submit" className="btn-primary shrink-0">Search</button>
+        <ExportPatientsButton />
       </form>
 
       {patients.length === 0 ? (
@@ -40,6 +67,7 @@ export default async function PatientsPage({
           icon={Users}
           title="No patients found"
           description="Search with a different term, or register a new patient."
+          action={{ href: "/doctor/patients/new", label: "Register a patient" }}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -55,7 +83,10 @@ export default async function PatientsPage({
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-900">{p.name}</p>
-                  <p className="truncate text-xs text-slate-400">{p.phone ?? p.email ?? "—"}</p>
+                  <p className="truncate text-xs text-slate-400">
+                    {p.registrationId ?? `#${p.id}`}
+                    {p.phone ? ` · ${p.phone}` : p.email ? ` · ${p.email}` : ""}
+                  </p>
                 </div>
                 <ArrowUpRight className="ml-auto h-4 w-4 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-brand-700" />
               </div>

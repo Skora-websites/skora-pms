@@ -16,6 +16,16 @@ import {
   users,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import {
+  ensurePatientOfDoctor,
+  ensureAppointmentOfDoctor,
+  ensureBillingTypeOfDoctor,
+  ensureIncomeTypeOfUser,
+  ensureExpenseTypeOfUser,
+  ensureTicketOwner,
+} from "@/lib/auth/ownership";
+import { audit } from "@/lib/security/audit-log";
+import { billSchema, supportTicketReplySchema } from "@/lib/validation";
 
 async function getDoctorId(): Promise<number> {
   const user = await getCurrentUser();
@@ -25,40 +35,9 @@ async function getDoctorId(): Promise<number> {
 
 type ActionResult = { error: string | null };
 
-// ── Appointments ─────────────────────────────────────────────────────────
-
-export async function createAppointment(
-  _prev: ActionResult,
-  formData: FormData
-): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
-  const now = new Date();
-  const patientIdRaw = String(formData.get("patient_id") ?? "");
-  const patientString = String(formData.get("patient_string") ?? "").trim();
-  const date = String(formData.get("date") ?? "");
-  const time = String(formData.get("time") ?? "");
-  const caseType = String(formData.get("case_type") ?? "clinical_visit");
-
-  if (!date || !time) return { error: "Date and time are required." };
-
-  await db.insert(appointments).values({
-    doctorId,
-    patientId: patientIdRaw ? Number(patientIdRaw) : null,
-    patientString: patientString || null,
-    date: date as never,
-    time,
-    caseType: caseType as never,
-    status: "pending",
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  revalidatePath("/doctor");
-  revalidatePath("/doctor/appointments");
-  return { error: null };
-}
-
 const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "completed", "cancelled"];
+const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"];
+const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
   if (!APPOINTMENT_STATUSES.includes(status)) return;
@@ -86,7 +65,29 @@ export async function createBill(
   const paymentMethod = String(formData.get("payment_method") ?? "cash");
   const notes = String(formData.get("notes") ?? "").trim() || null;
 
+  // Zod validation
+  const parsed = billSchema.safeParse({
+    patientId: String(formData.get("patient_id") ?? "0"),
+    billingTypeId: String(formData.get("billing_type_id") ?? "0"),
+    amount: String(formData.get("amount") ?? "0"),
+    description: String(formData.get("notes") ?? ""),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
   if (!patientId || !billingTypeId) return { error: "Patient and billing type are required." };
+  if (!Number.isInteger(patientId) || !Number.isInteger(billingTypeId)) {
+    return { error: "Invalid patient or billing type." };
+  }
+  if (!PAYMENT_METHODS.includes(paymentMethod)) return { error: "Invalid payment method." };
+
+  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
+    return { error: "Patient not found for this doctor." };
+  }
+  if (!(await ensureBillingTypeOfDoctor(billingTypeId, doctorId))) {
+    return { error: "Billing type not found." };
+  }
 
   const billNumber = `INV-${Date.now().toString().slice(-6)}`;
   const [billResult] = await db.insert(billings).values({
@@ -127,6 +128,9 @@ export async function createBill(
     updatedAt: now,
   });
 
+  void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod });
+  void audit.transactionCreated(doctorId, { billingId, amount });
+
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
   return { error: null };
@@ -143,9 +147,27 @@ export async function createTransaction(
   const type = Number(formData.get("type"));
   const amount = String(formData.get("amount") ?? "0");
   const date = String(formData.get("date") ?? now.toISOString().slice(0, 10));
-  const incomeTypeId = formData.get("income_type_id") ? Number(formData.get("income_type_id")) : null;
-  const expenseTypeId = formData.get("expense_type_id") ? Number(formData.get("expense_type_id")) : null;
+  const incomeTypeRaw = String(formData.get("income_type_id") ?? "");
+  const expenseTypeRaw = String(formData.get("expense_type_id") ?? "");
+  const incomeTypeId = incomeTypeRaw ? Number(incomeTypeRaw) : null;
+  const expenseTypeId = expenseTypeRaw ? Number(expenseTypeRaw) : null;
   const description = String(formData.get("description") ?? "").trim() || null;
+
+  if (![0, 1].includes(type)) return { error: "Invalid transaction type." };
+  const amountNum = Number(amount);
+  if (!Number.isFinite(amountNum) || amountNum <= 0) return { error: "Invalid amount." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date format." };
+
+  if (incomeTypeId) {
+    if (!Number.isInteger(incomeTypeId) || !(await ensureIncomeTypeOfUser(incomeTypeId, doctorId))) {
+      return { error: "Invalid income type." };
+    }
+  }
+  if (expenseTypeId) {
+    if (!Number.isInteger(expenseTypeId) || !(await ensureExpenseTypeOfUser(expenseTypeId, doctorId))) {
+      return { error: "Invalid expense type." };
+    }
+  }
 
   const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, doctorId));
   await db.insert(transactions).values({
@@ -161,6 +183,8 @@ export async function createTransaction(
     createdAt: now,
     updatedAt: now,
   });
+
+  void audit.transactionCreated(doctorId, { type, amount, incomeTypeId, expenseTypeId });
 
   revalidatePath("/doctor/income-expense");
   return { error: null };
@@ -185,11 +209,23 @@ export async function saveConsultation(
   const followUpDate = String(formData.get("follow_up_date") ?? "").trim() || null;
 
   if (!patientId) return { error: "Patient is required.", consultationId: null };
+  if (!Number.isInteger(appointmentId) || !Number.isInteger(patientId)) {
+    return { error: "Invalid appointment or patient.", consultationId: null };
+  }
+
+  // Verify the appointment belongs to this doctor
+  if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
+    return { error: "Appointment not found.", consultationId: null };
+  }
+  // Verify the patient belongs to this doctor
+  if (patientId && !(await ensurePatientOfDoctor(doctorId, patientId))) {
+    return { error: "Patient not found for this doctor.", consultationId: null };
+  }
 
   const [existing] = await db
     .select({ id: consultations.id })
     .from(consultations)
-    .where(eq(consultations.appointmentId, appointmentId));
+    .where(and(eq(consultations.appointmentId, appointmentId), eq(consultations.doctorId, doctorId)));
 
   let consultationId: number;
   if (existing) {
@@ -264,6 +300,7 @@ export async function saveConsultation(
 type TicketAction = { error: string | null };
 
 export async function updateFollowUpStatus(consultationId: number, status: string) {
+  if (!FOLLOW_UP_STATUSES.includes(status)) return;
   const doctorId = await getDoctorId();
   await db
     .update(consultations)
@@ -284,7 +321,14 @@ export async function createSupportTicket(
   const subject = String(formData.get("subject") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 
-  if (!subject || !message) return { error: "Subject and message are required." };
+  const parsed = supportTicketReplySchema.safeParse({
+    ticketId: 0,
+    message,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+  if (!subject) return { error: "Subject is required." };
 
   const now = new Date();
   const [ticket] = await db.insert(supportTickets).values({
@@ -303,6 +347,8 @@ export async function createSupportTicket(
     updatedAt: now,
   });
 
+  void audit.supportTicketCreated(user.id, { subject });
+
   revalidatePath("/doctor/support");
   return { error: null };
 }
@@ -311,7 +357,19 @@ export async function replySupportTicket(ticketId: number, formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const message = String(formData.get("message") ?? "").trim();
-  if (!message) return { error: "Message is required." };
+
+  const parsed = supportTicketReplySchema.safeParse({
+    ticketId,
+    message,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  // Verify the ticket belongs to this user
+  if (!(await ensureTicketOwner(ticketId, user.id))) {
+    return { error: "Ticket not found." };
+  }
 
   const now = new Date();
   await db.insert(supportTicketMessages).values({

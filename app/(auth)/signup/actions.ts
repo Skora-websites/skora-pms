@@ -6,6 +6,9 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
 import { setSessionCookie } from "@/lib/auth/session";
+import { authRateLimit } from "@/lib/security/rate-limit";
+import { audit } from "@/lib/security/audit-log";
+import { signupSchema } from "@/lib/validation";
 
 export type SignupState = { error: string | null };
 
@@ -13,37 +16,45 @@ export async function signupAction(
   _prev: SignupState,
   formData: FormData
 ): Promise<SignupState> {
-  const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const phone = String(formData.get("phone") ?? "").trim();
+  const rawName = String(formData.get("name") ?? "").trim();
+  const rawEmail = String(formData.get("email") ?? "").trim().toLowerCase();
+  const rawPhone = String(formData.get("phone") ?? "").trim();
   const gender = String(formData.get("gender") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const rawPassword = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("password_confirmation") ?? "");
 
-  if (!name || !email || !password) {
-    return { error: "Please fill in your name, email and password." };
+  const parsed = signupSchema.safeParse({
+    name: rawName,
+    email: rawEmail,
+    phone: rawPhone || undefined,
+    password: rawPassword,
+  });
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? "Invalid input.";
+    return { error: message };
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { error: "Please enter a valid email address." };
-  }
-  if (password.length < 8) {
-    return { error: "Password must be at least 8 characters long." };
-  }
-  if (password !== confirmation) {
+
+  if (rawPassword !== confirmation) {
     return { error: "Passwords do not match." };
   }
 
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+  const { allowed, retryAfterMs } = authRateLimit.signup(rawEmail);
+  if (!allowed) {
+    const minutes = Math.ceil(retryAfterMs / 60_000);
+    return { error: `Too many signup attempts. Try again in ${minutes} minute(s).` };
+  }
+
+  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, rawEmail));
   if (existing) {
     return { error: "An account with this email already exists. Try signing in." };
   }
 
-  const hashed = await hashPassword(password);
+  const hashed = await hashPassword(rawPassword);
   const now = new Date();
   const [result] = await db.insert(users).values({
-    name,
-    email,
-    phone: phone || null,
+    name: rawName,
+    email: rawEmail,
+    phone: rawPhone || null,
     gender: gender || null,
     password: hashed,
     role: "patient",
@@ -53,6 +64,8 @@ export async function signupAction(
     updatedAt: now,
   });
 
-  await setSessionCookie(Number(result.insertId));
+  const userId = Number(result.insertId);
+  await setSessionCookie(userId);
+  await audit.signup(userId, { email: rawEmail, name: rawName });
   redirect("/patient");
 }

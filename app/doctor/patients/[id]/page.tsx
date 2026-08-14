@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Phone, Mail, MapPin, Stethoscope } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Phone, Mail, MapPin, Stethoscope, Pencil } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getPatientById } from "@/lib/queries/doctor";
+import { getPatientById, getPatientPhotoPath } from "@/lib/queries/doctor";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
+import { DeletePatientButton } from "./delete-button";
 
 export async function generateMetadata({
   params,
@@ -28,6 +29,7 @@ export default async function PatientDetailPage({
   if (!data) notFound();
 
   const { patient, appointments, consultations } = data;
+  const photoPath = await getPatientPhotoPath(patient.id);
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -43,14 +45,24 @@ export default async function PatientDetailPage({
         <div className="h-24 bg-gradient-to-r from-brand-800 to-accent-700" />
         <div className="px-6 pb-6">
           <div className="-mt-10 flex flex-wrap items-end gap-4">
-            <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 font-display text-xl font-bold text-white shadow-lg">
-              {initials(patient.name)}
-            </span>
+            {photoPath ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/doctor/patients/${patient.id}/photo`}
+                alt={patient.name}
+                className="h-20 w-20 rounded-2xl border-4 border-white object-cover shadow-lg"
+              />
+            ) : (
+              <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 font-display text-xl font-bold text-white shadow-lg">
+                {initials(patient.name)}
+              </span>
+            )}
             <div className="pb-1">
               <h1 className="font-display text-2xl font-extrabold text-slate-900">{patient.name}</h1>
               <p className="text-sm text-slate-400">
                 Patient · {patient.gender ? <span className="capitalize">{patient.gender}</span> : "—"}
                 {patient.dob ? ` · ${patient.dob}` : ""}
+                {patient.registrationId ? ` · ${patient.registrationId}` : ""}
               </p>
             </div>
             <div className="ml-auto flex gap-2 pb-1">
@@ -62,6 +74,10 @@ export default async function PatientDetailPage({
                   <Mail className="h-3.5 w-3.5" /> Email
                 </a>
               )}
+              <Link href={`/doctor/patients/${patient.id}/edit`} className="btn-secondary !py-2 text-xs">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Link>
+              <DeletePatientButton patientId={patient.id} patientName={patient.name} />
               <Link href="/doctor/appointments/book" className="btn-primary !py-2 text-xs">
                 <CalendarPlus className="h-3.5 w-3.5" /> Book
               </Link>

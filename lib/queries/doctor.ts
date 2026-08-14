@@ -38,6 +38,12 @@ export type AppointmentRow = {
   patientString: string | null;
   mobileNumber: string | null;
   patientPhone: string | null;
+  bloodGroup: string | null;
+  bp: string | null;
+  weight: string | null;
+  height: string | null;
+  remarks: string | null;
+  note: string | null;
 };
 
 async function appointmentRows(where: SQL | undefined, order: SQL) {
@@ -54,6 +60,12 @@ async function appointmentRows(where: SQL | undefined, order: SQL) {
       mobileNumber: appointments.mobileNumber,
       patientName: users.name,
       patientPhone: users.phone,
+      bloodGroup: appointments.bloodGroup,
+      bp: appointments.bp,
+      weight: appointments.weight,
+      height: appointments.height,
+      remarks: appointments.remarks,
+      note: appointments.note,
     })
     .from(appointments)
     .leftJoin(users, eq(users.id, appointments.patientId))
@@ -88,16 +100,23 @@ export const getRecentAppointments = cache(async (doctorId: number, limit = 5) =
   return rows.slice(0, limit);
 });
 
-export const getAppointmentById = cache(async (id: number) => {
-  const [row] = await appointmentRows(eq(appointments.id, id), asc(appointments.id));
+export const getAppointmentById = cache(async (doctorId: number, id: number) => {
+  const [row] = await appointmentRows(
+    and(eq(appointments.id, id), eq(appointments.doctorId, doctorId)),
+    asc(appointments.id)
+  );
   return row ?? null;
 });
 
-export const getDoctorPatients = cache(async (doctorId: number, search?: string) => {
-  const conds = [eq(users.doctorId, doctorId), eq(users.role, "patient")];
+export const getDoctorPatients = cache(async (doctorId: number, search?: string, startDate?: string, endDate?: string) => {
+  const conds = [eq(users.referenceRoleId, doctorId), eq(users.role, "patient")];
   if (search) {
     const like = `%${search}%`;
     conds.push(sql`(${users.name} LIKE ${like} OR ${users.phone} LIKE ${like} OR ${users.email} LIKE ${like})`);
+  }
+  if (startDate && endDate) {
+    conds.push(sql`${users.createdAt} >= ${startDate} 00:00:00`);
+    conds.push(sql`${users.createdAt} <= ${endDate} 23:59:59`);
   }
   return db
     .select({
@@ -109,6 +128,7 @@ export const getDoctorPatients = cache(async (doctorId: number, search?: string)
       dob: users.dob,
       city: users.city,
       state: users.state,
+      registrationId: users.registrationId,
       status: users.status,
       createdAt: users.createdAt,
     })
@@ -126,13 +146,21 @@ export const getPatientById = cache(async (doctorId: number, patientId: number) 
       phone: users.phone,
       gender: users.gender,
       dob: users.dob,
+      address: users.address,
+      pincode: users.pincode,
       city: users.city,
       state: users.state,
+      streetAddress: users.streetAddress,
+      salutation: users.salutation,
+      aadhaarNo: users.aadhaarNo,
+      referredBy: users.referredBy,
+      registrationId: users.registrationId,
+      profilePhotoPath: users.profilePhotoPath,
       status: users.status,
       createdAt: users.createdAt,
     })
     .from(users)
-    .where(and(eq(users.id, patientId), eq(users.doctorId, doctorId)));
+    .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
   if (!patient) return null;
 
   const [appts, consults] = await Promise.all([
@@ -145,6 +173,14 @@ export const getPatientById = cache(async (doctorId: number, patientId: number) 
   ]);
 
   return { patient, appointments: appts, consultations: consults };
+});
+
+export const getPatientPhotoPath = cache(async (patientId: number) => {
+  const [row] = await db
+    .select({ profilePhotoPath: users.profilePhotoPath })
+    .from(users)
+    .where(and(eq(users.id, patientId), eq(users.role, "patient")));
+  return row?.profilePhotoPath ?? null;
 });
 
 export const getClinicsWithSchedules = cache(async (doctorId: number) => {

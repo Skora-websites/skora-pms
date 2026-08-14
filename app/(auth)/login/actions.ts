@@ -7,6 +7,9 @@ import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { setSessionCookie, getSessionUserId } from "@/lib/auth/session";
 import { homePathForRole } from "@/lib/auth/user";
+import { authRateLimit } from "@/lib/security/rate-limit";
+import { audit } from "@/lib/security/audit-log";
+import { loginSchema } from "@/lib/validation";
 
 export type LoginState = { error: string | null };
 
@@ -14,11 +17,22 @@ export async function loginAction(
   _prev: LoginState,
   formData: FormData
 ): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
+  const parsed = loginSchema.safeParse({
+    email: String(formData.get("email") ?? "").trim().toLowerCase(),
+    password: String(formData.get("password") ?? ""),
+  });
 
-  if (!email || !password) {
-    return { error: "Please enter both email and password." };
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? "Invalid input.";
+    return { error: message };
+  }
+
+  const { email, password } = parsed.data;
+
+  const { allowed, retryAfterMs } = authRateLimit.login(email);
+  if (!allowed) {
+    const minutes = Math.ceil(retryAfterMs / 60_000);
+    return { error: `Too many login attempts. Try again in ${minutes} minute(s).` };
   }
 
   const [user] = await db
@@ -33,15 +47,18 @@ export async function loginAction(
     .where(eq(users.email, email));
 
   if (!user) {
+    await audit.loginFailed({ email, reason: "no_account" });
     return { error: "No account found with that email address." };
   }
 
   const valid = await verifyPassword(password, user.password);
   if (!valid) {
+    await audit.loginFailed({ email, userId: user.id, reason: "bad_password" });
     return { error: "Incorrect password. Please try again." };
   }
 
   if (user.status && user.status !== "active") {
+    await audit.loginFailed({ email, userId: user.id, reason: "deactivated" });
     return { error: "This account has been deactivated. Contact support." };
   }
 
@@ -53,5 +70,6 @@ export async function loginAction(
   }
 
   await setSessionCookie(user.id);
+  await audit.login(user.id, { email, role: user.role });
   redirect(homePathForRole(user.role));
 }

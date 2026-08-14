@@ -25,7 +25,7 @@ export default async function ConsultationPage({
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
   const { appointmentId } = await params;
-  const appointment = await getAppointmentById(Number(appointmentId));
+  const appointment = await getAppointmentById(doctorId, Number(appointmentId));
   if (!appointment) notFound();
 
   const consultationId = await getConsultationIdByAppointment(doctorId, appointment.id);
