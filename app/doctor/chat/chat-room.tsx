@@ -5,11 +5,14 @@ import { useActionState } from "react";
 import {
   Bell,
   BellOff,
+  Check,
   Eraser,
+  Pencil,
   Search,
   Send,
   Star,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   clearChat,
@@ -18,6 +21,7 @@ import {
   sendChatMessage,
   toggleChatFavorite,
   toggleChatMute,
+  updateChatMessage,
 } from "./actions";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +78,8 @@ export function ChatRoom({
   const [search, setSearch] = useState("");
   const [isMuted, setIsMuted] = useState(muted);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
   const [state, formAction, pending] = useActionState(sendChatMessage, initialState);
   const bottomRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -218,7 +224,47 @@ export function ChatRoom({
                     {!m.isMine && (
                       <p className="mb-0.5 text-[11px] font-bold text-brand-800">{m.senderName}</p>
                     )}
-                    <p className="whitespace-pre-wrap">{m.content}</p>
+                    {editingId === m.id ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const text = editContent.trim();
+                          if (!text) return;
+                          run(async () => {
+                            await updateChatMessage(m.id, text);
+                            setMessages((prev) =>
+                              prev.map((x) => (x.id === m.id ? { ...x, content: text } : x))
+                            );
+                            setEditingId(null);
+                          });
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <input
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none"
+                          autoFocus
+                        />
+                        <button
+                          type="submit"
+                          title="Save"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-brand-700 hover:bg-brand-50"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          title="Cancel"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </form>
+                    ) : (
+                      <p className="whitespace-pre-wrap">{m.content}</p>
+                    )}
                   </div>
                   <p
                     className={cn(
@@ -249,13 +295,25 @@ export function ChatRoom({
                     <Star className={cn("h-3.5 w-3.5", m.isFavorite && "fill-amber-400")} />
                   </button>
                   {m.isMine && (
-                    <button
-                      onClick={() => run(() => deleteChatMessage(m.id))}
-                      title="Delete"
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:text-rose-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setEditContent(m.content);
+                        }}
+                        title="Edit"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:text-brand-700"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => run(() => deleteChatMessage(m.id))}
+                        title="Delete"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:text-rose-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

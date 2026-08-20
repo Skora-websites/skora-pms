@@ -156,3 +156,21 @@ export async function clearChat() {
   }
   revalidatePath("/doctor/chat");
 }
+
+/** Edit one of your own messages (legacy ChatController@update parity). */
+export async function updateChatMessage(messageId: number, content: string) {
+  const user = await authedUser();
+  const text = String(content ?? "").trim();
+  if (!text) return { error: "Message cannot be empty." };
+  const [existing] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.id, messageId), eq(messages.senderId, user.id)));
+  if (!existing) return { error: "Message not found." };
+  await db
+    .update(messages)
+    .set({ content: text, updatedAt: new Date() })
+    .where(eq(messages.id, messageId));
+  revalidatePath("/doctor/chat");
+  return { error: null };
+}
