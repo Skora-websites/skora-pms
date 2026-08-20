@@ -1,17 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { UserPlus } from "lucide-react";
+import { useActionState, useState } from "react";
+import { UserPlus, Stethoscope, User } from "lucide-react";
 import { signupAction } from "./actions";
 
 const initialState = { error: null as string | null };
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signupAction, initialState);
+  const [role, setRole] = useState<"patient" | "doctor">("patient");
 
   return (
     <form action={formAction} className="mt-8 space-y-5">
+      <div>
+        <label className="label">I am a</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setRole("patient")}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-semibold transition-colors ${
+              role === "patient"
+                ? "border-accent-500 bg-accent-50 text-accent-800"
+                : "border-slate-200 text-slate-500 hover:border-slate-300"
+            }`}
+          >
+            <User className="h-4 w-4" />
+            Patient
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole("doctor")}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-semibold transition-colors ${
+              role === "doctor"
+                ? "border-brand-600 bg-brand-50 text-brand-800"
+                : "border-slate-200 text-slate-500 hover:border-slate-300"
+            }`}
+          >
+            <Stethoscope className="h-4 w-4" />
+            Doctor / Clinic
+          </button>
+        </div>
+        <input type="hidden" name="role" value={role} />
+        {role === "doctor" && (
+          <p className="mt-2 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
+            Doctor accounts start with a free trial — no credit card required.
+          </p>
+        )}
+      </div>
       <div>
         <label htmlFor="name" className="label">
           Full name

@@ -21,6 +21,8 @@ export type CurrentUser = {
   role: string;
   status: string | null;
   profilePhotoPath: string | null;
+  signaturePath: string | null;
+  notificationPreferences: any;
   doctorId: number | null;
   qualification: string | null;
   registrationNumber: string | null;
@@ -43,6 +45,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       role: users.role,
       status: users.status,
       profilePhotoPath: users.profilePhotoPath,
+      signaturePath: users.signaturePath,
+      notificationPreferences: users.notificationPreferences,
       doctorId: users.doctorId,
       qualification: users.qualification,
       registrationNumber: users.registrationNumber,

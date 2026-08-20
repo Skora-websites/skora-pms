@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getTransactions } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { TransactionForm } from "./transaction-form";
+import { TransactionRowActions } from "./transaction-row-actions";
+import { CategoryManager } from "./category-manager";
 import { formatINR, formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Income & Expense · Doctor" };
@@ -57,11 +59,26 @@ export default async function IncomeExpensePage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <TransactionTable title="Recent income" rows={income} tone="income" />
-          <TransactionTable title="Recent expenses" rows={expense} tone="expense" />
+          <TransactionTable
+            title="Recent income"
+            rows={income}
+            tone="income"
+            incomeTypes={incomeTypes}
+            expenseTypes={expenseTypes}
+          />
+          <TransactionTable
+            title="Recent expenses"
+            rows={expense}
+            tone="expense"
+            incomeTypes={incomeTypes}
+            expenseTypes={expenseTypes}
+          />
         </div>
 
-        <TransactionForm incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
+        <div className="space-y-6">
+          <TransactionForm incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
+          <CategoryManager incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
+        </div>
       </div>
     </div>
   );
@@ -71,10 +88,14 @@ function TransactionTable({
   title,
   rows,
   tone,
+  incomeTypes,
+  expenseTypes,
 }: {
   title: string;
   rows: Awaited<ReturnType<typeof getTransactions>>["rows"];
   tone: "income" | "expense";
+  incomeTypes: { id: number; name: string }[];
+  expenseTypes: { id: number; name: string }[];
 }) {
   if (rows.length === 0) {
     return (
@@ -90,7 +111,16 @@ function TransactionTable({
   }
   return (
     <div>
-      <h2 className="mb-3 font-display text-base font-bold text-slate-900">{title}</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-base font-bold text-slate-900">{title}</h2>
+        <a
+          href={`/api/doctor/income-expense/export?type=${tone}`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export {tone}
+        </a>
+      </div>
       <div className="table-shell">
         <table className="data-table">
           <thead>
@@ -99,6 +129,7 @@ function TransactionTable({
               <th>Category</th>
               <th>Date</th>
               <th className="text-right">Amount</th>
+              <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -113,6 +144,13 @@ function TransactionTable({
                   }`}
                 >
                   {tone === "income" ? "+" : "−"}{formatINR(r.amount)}
+                </td>
+                <td>
+                  <TransactionRowActions
+                    tx={r}
+                    incomeTypes={incomeTypes}
+                    expenseTypes={expenseTypes}
+                  />
                 </td>
               </tr>
             ))}

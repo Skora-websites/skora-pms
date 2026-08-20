@@ -3,8 +3,8 @@ import Link from "next/link";
 import { Users } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getUsers } from "@/lib/queries/super-admin";
-import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
-import { formatDate, initials } from "@/lib/utils";
+import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
+import { UsersTable } from "./users-table";
 
 export const metadata: Metadata = { title: "Manage Users · Super Admin" };
 
@@ -15,9 +15,20 @@ export default async function UsersPage({
 }: {
   searchParams: Promise<{ role?: string; q?: string }>;
 }) {
-  await requireRole(["super_admin", "admin"]);
+  const me = await requireRole(["super_admin", "admin"]);
   const { role = "all", q } = await searchParams;
   const users = await getUsers(role, q);
+
+  const rows = users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    phone: u.phone,
+    role: u.role,
+    status: u.status ?? "active",
+    createdAt: u.createdAt ? u.createdAt.toISOString() : null,
+    trialEndsAt: u.trialEndsAt ? u.trialEndsAt.toISOString() : null,
+  }));
 
   return (
     <div>
@@ -49,42 +60,7 @@ export default async function UsersPage({
       {users.length === 0 ? (
         <EmptyState icon={Users} title="No users found" description="Try adjusting your filters." />
       ) : (
-        <div className="table-shell">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Role</th>
-                <th>Phone</th>
-                <th>Status</th>
-                <th>Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-navy-800 to-brand-700 text-xs font-bold text-white">
-                        {initials(u.name)}
-                      </span>
-                      <div>
-                        <p className="font-semibold text-slate-900">{u.name}</p>
-                        <p className="text-xs text-slate-400">{u.email ?? "—"}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="badge bg-slate-100 capitalize text-slate-700">{u.role.replace(/_/g, " ")}</span>
-                  </td>
-                  <td>{u.phone ?? "—"}</td>
-                  <td><StatusBadge status={u.status ?? "active"} /></td>
-                  <td>{formatDate(u.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <UsersTable users={rows} currentUserId={me.id} />
       )}
     </div>
   );

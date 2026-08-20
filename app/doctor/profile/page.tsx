@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { BadgeCheck, GraduationCap, IdCard, Mail, Phone } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { PageHeader } from "@/components/ui/dashboard-ui";
-import { initials, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { ProfileForm } from "./profile-form";
+import { PhotoUpload } from "./photo-upload";
+import { SignatureUpload } from "./signature-upload";
 
 export const metadata: Metadata = { title: "Profile · Doctor" };
 
@@ -18,9 +20,10 @@ export default async function ProfilePage() {
         <div className="h-24 bg-gradient-to-r from-brand-800 to-accent-700" />
         <div className="px-7 pb-7">
           <div className="-mt-10 flex items-end gap-4">
-            <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 font-display text-xl font-bold text-white shadow-lg">
-              {initials(user.name)}
-            </span>
+            <PhotoUpload
+              name={user.name}
+              photoUrl={user.profilePhotoPath ? "/api/doctor/profile/photo" : null}
+            />
             <div className="pb-1">
               <h1 className="font-display text-xl font-extrabold text-slate-900">{user.name}</h1>
               <p className="text-sm capitalize text-slate-400">{user.role.replace("_", " ")}</p>
@@ -39,6 +42,10 @@ export default async function ProfilePage() {
 
       <div className="mt-6">
         <ProfileForm />
+      </div>
+
+      <div className="mt-6">
+        <SignatureUpload signatureUrl={user.signaturePath ? "/api/doctor/profile/signature" : null} />
       </div>
     </div>
   );

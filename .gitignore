@@ -26,9 +26,20 @@ yarn-error.log*
 .env*.local
 .env
 
+# uploaded / generated files (PHI-safe non-public storage)
+/storage/uploads/
+
+# local tooling artifacts
+.freebuff/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright
+/test-results/
+/playwright-report/
+/e2e/.auth/
 
 # local dev database + tooling
 /.local/

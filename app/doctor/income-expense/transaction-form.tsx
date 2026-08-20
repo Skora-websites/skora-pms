@@ -56,7 +56,7 @@ export function TransactionForm({
 
         <div>
           <label htmlFor="amount" className="label">Amount (₹)</label>
-          <input id="amount" name="amount" type="number" min="0" step="0.01" required placeholder="0.00" className="input" />
+          <input id="amount" name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00" className="input" />
         </div>
 
         <div>
@@ -79,6 +79,35 @@ export function TransactionForm({
         <div>
           <label htmlFor="description" className="label">Description</label>
           <input id="description" name="description" placeholder="What is this for?" className="input" />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="payment_method" className="label">Payment method</label>
+            <select id="payment_method" name="payment_method" className="input" defaultValue="">
+              <option value="" disabled>Select...</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="netbanking">Net banking</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="reference_number" className="label">Reference no.</label>
+            <input id="reference_number" name="reference_number" placeholder="e.g. UTR / receipt" className="input" />
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="file" className="label">Attachment (optional)</label>
+          <input
+            id="file"
+            name="file"
+            type="file"
+            accept="application/pdf,image/jpeg,image/png"
+            className="input file-input"
+          />
+          <p className="mt-1 text-xs text-slate-400">PDF, JPG or PNG · under 3 MB</p>
         </div>
 
         {state.error && (

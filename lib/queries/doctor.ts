@@ -13,6 +13,8 @@ import {
   incomeTypes,
   expenseTypes,
   testBookings,
+  vendors,
+  tests,
   supportTickets,
   supportTicketMessages,
   chatRooms,
@@ -98,6 +100,13 @@ export const getAppointments = cache(
 export const getRecentAppointments = cache(async (doctorId: number, limit = 5) => {
   const rows = await appointmentRows(eq(appointments.doctorId, doctorId), desc(appointments.date));
   return rows.slice(0, limit);
+});
+
+export const getOnlineConsultations = cache(async (doctorId: number) => {
+  return appointmentRows(
+    and(eq(appointments.doctorId, doctorId), eq(appointments.caseType, "online_visit")),
+    desc(appointments.date)
+  );
 });
 
 export const getAppointmentById = cache(async (doctorId: number, id: number) => {
@@ -215,17 +224,20 @@ export const getBillingOverview = cache(async (doctorId: number) => {
         id: billings.id,
         billNumber: billings.billNumber,
         patientId: billings.patientId,
+        billingTypeId: billings.billingTypeId,
         totalAmount: billings.totalAmount,
         receivedAmount: billings.receivedAmount,
         pendingAmount: billings.pendingAmount,
+        paymentMethod: billings.paymentMethod,
         status: billings.status,
+        notes: billings.notes,
         billDate: billings.billDate,
         createdAt: billings.createdAt,
         patientName: users.name,
       })
       .from(billings)
       .leftJoin(users, eq(users.id, billings.patientId))
-      .where(eq(billings.doctorId, doctorId))
+      .where(and(eq(billings.doctorId, doctorId), isNull(billings.deletedAt)))
       .orderBy(desc(billings.billDate)),
     db
       .select()
@@ -233,6 +245,62 @@ export const getBillingOverview = cache(async (doctorId: number) => {
       .where(and(eq(billingTypes.doctorId, doctorId), eq(billingTypes.isActive, true))),
   ]);
   return { bills, billingTypes: types };
+});
+
+/**
+ * Active billing types for a doctor (used by consultation-page billing).
+ */
+export const getBillingTypes = cache(async (doctorId: number) => {
+  return db
+    .select()
+    .from(billingTypes)
+    .where(and(eq(billingTypes.doctorId, doctorId), eq(billingTypes.isActive, true)));
+});
+
+/**
+ * Fetch a single bill (with patient + billing-type + doctor details) scoped
+ * by doctor. Used by the print-PDF API route and the bill edit page.
+ */
+export const getBillById = cache(async (doctorId: number, billId: number) => {
+  const [bill] = await db
+    .select({
+      id: billings.id,
+      billNumber: billings.billNumber,
+      patientId: billings.patientId,
+      billingTypeId: billings.billingTypeId,
+      appointmentId: billings.appointmentId,
+      consultationId: billings.consultationId,
+      totalAmount: billings.totalAmount,
+      receivedAmount: billings.receivedAmount,
+      pendingAmount: billings.pendingAmount,
+      paymentMethod: billings.paymentMethod,
+      status: billings.status,
+      notes: billings.notes,
+      billDate: billings.billDate,
+      createdAt: billings.createdAt,
+      patientName: users.name,
+      patientPhone: users.phone,
+      patientEmail: users.email,
+      patientRegistrationId: users.registrationId,
+      billingTypeName: billingTypes.name,
+    })
+    .from(billings)
+    .leftJoin(users, eq(users.id, billings.patientId))
+    .leftJoin(billingTypes, eq(billingTypes.id, billings.billingTypeId))
+    .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId), isNull(billings.deletedAt)));
+
+  if (!bill) return null;
+
+  const [doctor] = await db
+    .select({ name: users.name, qualification: users.qualification })
+    .from(users)
+    .where(eq(users.id, doctorId));
+
+  return {
+    ...bill,
+    doctorName: doctor?.name ?? "",
+    doctorQualification: doctor?.qualification ?? "",
+  };
 });
 
 export const getTransactions = cache(async (doctorId: number) => {
@@ -246,21 +314,66 @@ export const getTransactions = cache(async (doctorId: number) => {
       description: transactions.description,
       referenceNumber: transactions.referenceNumber,
       paymentMethod: transactions.paymentMethod,
+      incomeTypeId: transactions.incomeTypeId,
+      expenseTypeId: transactions.expenseTypeId,
+      billingId: transactions.billingId,
+      filePath: transactions.filePath,
       incomeType: incomeTypes.name,
       expenseType: expenseTypes.name,
     })
     .from(transactions)
     .leftJoin(incomeTypes, eq(incomeTypes.id, transactions.incomeTypeId))
     .leftJoin(expenseTypes, eq(expenseTypes.id, transactions.expenseTypeId))
-    .where(eq(transactions.userId, doctorId))
-    .orderBy(desc(transactions.date));
+    .where(and(eq(transactions.userId, doctorId), isNull(transactions.deletedAt)))
+    .orderBy(desc(transactions.date), desc(transactions.id));
 
   const types = await Promise.all([
-    db.select().from(incomeTypes).where(eq(incomeTypes.userId, doctorId)),
-    db.select().from(expenseTypes).where(eq(expenseTypes.userId, doctorId)),
+    db
+      .select()
+      .from(incomeTypes)
+      .where(and(eq(incomeTypes.userId, doctorId), isNull(incomeTypes.deletedAt)))
+      .orderBy(asc(incomeTypes.name)),
+    db
+      .select()
+      .from(expenseTypes)
+      .where(and(eq(expenseTypes.userId, doctorId), isNull(expenseTypes.deletedAt)))
+      .orderBy(asc(expenseTypes.name)),
   ]);
 
   return { rows, incomeTypes: types[0], expenseTypes: types[1] };
+});
+
+/** Fetch a single transaction scoped to the doctor. */
+export const getTransactionById = cache(async (txId: number, doctorId: number) => {
+  const [row] = await db
+    .select({
+      id: transactions.id,
+      userId: transactions.userId,
+      type: transactions.type,
+      incomeTypeId: transactions.incomeTypeId,
+      expenseTypeId: transactions.expenseTypeId,
+      amount: transactions.amount,
+      date: transactions.date,
+      status: transactions.status,
+      billingId: transactions.billingId,
+      referenceNumber: transactions.referenceNumber,
+      paymentMethod: transactions.paymentMethod,
+      description: transactions.description,
+      filePath: transactions.filePath,
+      incomeType: incomeTypes.name,
+      expenseType: expenseTypes.name,
+    })
+    .from(transactions)
+    .leftJoin(incomeTypes, eq(incomeTypes.id, transactions.incomeTypeId))
+    .leftJoin(expenseTypes, eq(expenseTypes.id, transactions.expenseTypeId))
+    .where(
+      and(
+        eq(transactions.id, txId),
+        eq(transactions.userId, doctorId),
+        isNull(transactions.deletedAt)
+      )
+    );
+  return row ?? null;
 });
 
 export const getFollowUps = cache(async (doctorId: number) => {
@@ -282,20 +395,77 @@ export const getFollowUps = cache(async (doctorId: number) => {
   return rows.filter((r) => r.followUpDate);
 });
 
-export const getTestBookings = cache(async (doctorId: number) => {
+export const getConsultations = cache(async (doctorId: number) => {
+  return db
+    .select({
+      id: consultations.id,
+      consultationDate: consultations.consultationDate,
+      symptomsNote: consultations.symptomsNote,
+      diagnosisNote: consultations.diagnosisNote,
+      medicationsNote: consultations.medicationsNote,
+      followUpDate: consultations.followUpDate,
+      followUpStatus: consultations.followUpStatus,
+      patientId: consultations.patientId,
+      patientName: users.name,
+      patientPhone: users.phone,
+      patientRegistrationId: users.registrationId,
+      appointmentId: consultations.appointmentId,
+    })
+    .from(consultations)
+    .innerJoin(users, eq(users.id, consultations.patientId))
+    .where(and(eq(consultations.doctorId, doctorId), isNull(consultations.deletedAt)))
+    .orderBy(desc(consultations.consultationDate));
+});
+
+export const getTestBookings = cache(async (doctorId: number, filter: { status?: string; q?: string } = {}) => {
+  const conds = [eq(testBookings.doctorId, doctorId)];
+  if (filter.status && filter.status !== "all") conds.push(eq(testBookings.status, filter.status as never));
+  if (filter.q) {
+    const like = `%${filter.q}%`;
+    conds.push(sql`(${users.name} LIKE ${like} OR ${users.registrationId} LIKE ${like} OR ${users.phone} LIKE ${like})`);
+  }
   return db
     .select({
       id: testBookings.id,
       bookingDate: testBookings.bookingDate,
+      bookingTime: testBookings.bookingTime,
       totalAmount: testBookings.totalAmount,
+      paymentAmount: testBookings.paymentAmount,
+      paymentMethod: testBookings.paymentMethod,
       status: testBookings.status,
       notes: testBookings.notes,
+      tests: testBookings.tests,
+      uploadLinkToken: testBookings.uploadLinkToken,
+      uploadedFilePath: testBookings.uploadedFilePath,
+      patientId: testBookings.patientId,
       patientName: users.name,
+      patientPhone: users.phone,
+      patientRegistrationId: users.registrationId,
+      vendorId: testBookings.vendorId,
+      vendorName: vendors.name,
+      vendorEmail: vendors.email,
     })
     .from(testBookings)
     .innerJoin(users, eq(users.id, testBookings.patientId))
-    .where(eq(testBookings.doctorId, doctorId))
+    .leftJoin(vendors, eq(vendors.id, testBookings.vendorId))
+    .where(and(...conds))
     .orderBy(desc(testBookings.bookingDate));
+});
+
+export const getVendors = cache(async (doctorId: number) => {
+  return db
+    .select()
+    .from(vendors)
+    .where(and(eq(vendors.doctorId, doctorId), eq(vendors.status, true)))
+    .orderBy(asc(vendors.name));
+});
+
+export const getTests = cache(async (doctorId: number) => {
+  return db
+    .select()
+    .from(tests)
+    .where(and(eq(tests.doctorId, doctorId), eq(tests.status, true)))
+    .orderBy(asc(tests.name));
 });
 
 export const getSupportTickets = cache(async (userId: number) => {
@@ -440,6 +610,46 @@ export const getHomeVisits = cache(async (doctorId: number) => {
     ...r,
     patientName: r.patientName ?? r.patientString ?? "Walk-in patient",
   }));
+});
+
+/** Full patient details + appointment history for the home-visits drawer (legacy `patientDetailshowing`). */
+export const getHomeVisitPatientDetail = cache(async (doctorId: number, patientId: number) => {
+  const [patient] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      gender: users.gender,
+      dob: users.dob,
+      address: users.address,
+      streetAddress: users.streetAddress,
+      city: users.city,
+      state: users.state,
+      pincode: users.pincode,
+      registrationId: users.registrationId,
+      referredBy: users.referredBy,
+    })
+    .from(users)
+    .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId), eq(users.role, "patient")));
+  if (!patient) return null;
+
+  const apptRows = await db
+    .select({
+      id: appointments.id,
+      date: appointments.date,
+      time: appointments.time,
+      status: appointments.status,
+      caseType: appointments.caseType,
+      note: appointments.note,
+      doctorName: users.name,
+    })
+    .from(appointments)
+    .innerJoin(users, eq(users.id, appointments.doctorId))
+    .where(eq(appointments.patientId, patientId))
+    .orderBy(desc(appointments.date));
+
+  return { patient, appointments: apptRows };
 });
 
 // ── Shop / medicine inventory ───────────────────────────────────────────────

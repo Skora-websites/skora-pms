@@ -12,6 +12,7 @@ const NAV: NavItem[] = [
   { label: "Support", href: "/super-admin/support", icon: "headset" },
   { label: "Landing Page", href: "/super-admin/landing", icon: "panels-top-left" },
   { label: "Email Setup", href: "/super-admin/email-setup", icon: "mail" },
+  { label: "Settings", href: "/super-admin/settings", icon: "settings" },
 ];
 
 export default async function SuperAdminLayout({

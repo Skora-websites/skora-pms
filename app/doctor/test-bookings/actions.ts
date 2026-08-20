@@ -1,0 +1,549 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import crypto from "node:crypto";
+import { and, eq, like, or } from "drizzle-orm";
+import { db } from "@/lib/db";
+import {
+  testBookings,
+  vendors,
+  tests,
+  users,
+  billings,
+  billingTypes,
+  transactions,
+} from "@/lib/db/schema";
+import { getCurrentUser } from "@/lib/auth/user";
+import { audit } from "@/lib/security/audit-log";
+
+export type TestBookingActionResult = { error: string | null };
+
+async function getDoctorId(): Promise<number> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
+  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+}
+
+const BOOKING_STATUSES = ["pending", "in-progress", "completed", "cancelled"] as const;
+const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"] as const;
+
+function randomToken(): string {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+// ── Test booking CRUD ──────────────────────────────────────────────────────
+
+async function resolvePatient(doctorId: number, registrationId: string, phone: string) {
+  const conds = [eq(users.role, "patient")];
+  if (registrationId) {
+    conds.push(eq(users.registrationId, registrationId));
+  } else if (phone) {
+    const phoneCond = or(eq(users.phone, phone), like(users.phone, `%${phone}%`));
+    if (phoneCond) conds.push(phoneCond);
+  } else {
+    return null;
+  }
+  const [patient] = await db
+    .select({ id: users.id, name: users.name, registrationId: users.registrationId })
+    .from(users)
+    .where(and(...conds))
+    .limit(1);
+  if (!patient) return null;
+  // Must be one of this doctor's patients (legacy checked registration_id globally;
+  // we scope it to the doctor's patient list to prevent cross-doctor access).
+  const [owned] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, patient.id), eq(users.referenceRoleId, doctorId)));
+  return owned ? patient : null;
+}
+
+function buildPaymentDetails(
+  method: string,
+  formData: FormData
+): { details: Record<string, string>; paymentDate: string | null } {
+  const details: Record<string, string> = {};
+  let paymentDate: string | null = null;
+  if (method === "upi") {
+    const upiId = String(formData.get("upi_id") ?? "").trim();
+    if (!upiId) throw new Error("UPI ID is required.");
+    details.upi_id = upiId;
+    paymentDate = String(formData.get("transaction_date") ?? "").trim() || null;
+  } else if (method === "cash") {
+    paymentDate = String(formData.get("payment_date") ?? "").trim() || null;
+    if (!paymentDate) throw new Error("Payment date is required.");
+  } else if (method === "card") {
+    const cardNumber = String(formData.get("card_number") ?? "").trim();
+    const expiry = String(formData.get("expiry") ?? "").trim();
+    const cvv = String(formData.get("cvv") ?? "").trim();
+    if (!cardNumber || !expiry || !cvv) throw new Error("Card details are required.");
+    details.card_number = cardNumber;
+    details.expiry = expiry;
+    details.cvv = cvv;
+  } else if (method === "netbanking") {
+    const bankName = String(formData.get("bank_name") ?? "").trim();
+    const txId = String(formData.get("transaction_id") ?? "").trim();
+    if (!bankName || !txId) throw new Error("Bank name and transaction ID are required.");
+    details.bank_name = bankName;
+    details.transaction_id = txId;
+    paymentDate = String(formData.get("transaction_date") ?? "").trim() || null;
+  }
+  return { details, paymentDate };
+}
+
+async function createBillingForBooking(args: {
+  doctorId: number;
+  patientId: number;
+  totalAmount: number;
+  receivedAmount: number;
+  paymentMethod: string;
+  paymentDetails: Record<string, string>;
+}) {
+  try {
+    const [existingType] = await db
+      .select({ id: billingTypes.id })
+      .from(billingTypes)
+      .where(and(eq(billingTypes.doctorId, args.doctorId), eq(billingTypes.name, "Medical Test")));
+    let billingTypeId: number;
+    if (existingType) {
+      billingTypeId = existingType.id;
+    } else {
+      const [created] = await db
+        .insert(billingTypes)
+        .values({
+          doctorId: args.doctorId,
+          name: "Medical Test",
+          defaultAmount: "0",
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .$returningId();
+      billingTypeId = Number(created.id);
+    }
+
+    const now = new Date();
+    const billNumber = `INV-${Date.now().toString().slice(-6)}`;
+    const pending = Math.max(0, args.totalAmount - args.receivedAmount);
+    const [bill] = await db
+      .insert(billings)
+      .values({
+        billNumber,
+        patientId: args.patientId,
+        doctorId: args.doctorId,
+        billingTypeId,
+        totalAmount: args.totalAmount.toFixed(2),
+        receivedAmount: args.receivedAmount.toFixed(2),
+        pendingAmount: pending.toFixed(2),
+        paymentMethod: args.paymentMethod as never,
+        paymentDetails: args.paymentDetails,
+        status: pending <= 0 ? "paid" : args.receivedAmount > 0 ? "partial" : "pending",
+        notes: "Automated bill from Test Booking",
+        billDate: now.toISOString().slice(0, 10),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const billingId = Number(bill.id);
+
+    if (args.receivedAmount > 0) {
+      await db.insert(transactions).values({
+        userId: args.doctorId,
+        type: 1,
+        billingId,
+        amount: args.receivedAmount.toFixed(2),
+        date: now.toISOString().slice(0, 10),
+        status: "approved",
+        description: `Bill ${billNumber} — Medical Test (test booking)`,
+        paymentMethod: args.paymentMethod,
+        createdBy: "System",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    void audit.billCreated(args.doctorId, { billingId, billNumber, source: "test_booking" });
+  } catch {
+    // Legacy parity: billing sync failure must not fail the booking itself.
+  }
+}
+
+export async function createTestBooking(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const registrationId = String(formData.get("registration_id") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const vendorId = Number(formData.get("vendor_id"));
+  const testIds = String(formData.get("test_ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number);
+  const paymentMethod = String(formData.get("payment_method") ?? "cash");
+  const amount = String(formData.get("amount") ?? "0");
+  const bookingDate = String(formData.get("booking_date") ?? "");
+  const bookingTime = String(formData.get("booking_time") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!registrationId && !phone) return { error: "Patient registration ID or phone is required." };
+  const patient = await resolvePatient(doctorId, registrationId, phone);
+  if (!patient) return { error: "Patient not found for this doctor. Check registration ID / phone." };
+
+  if (!vendorId || !Number.isInteger(vendorId)) return { error: "Vendor is required." };
+  const [vendor] = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+  if (!vendor) return { error: "Vendor not found for this doctor." };
+
+  if (testIds.length === 0) return { error: "Select at least one test." };
+  const testRows = await db
+    .select({ id: tests.id, name: tests.name, price: tests.price })
+    .from(tests)
+    .where(and(eq(tests.doctorId, doctorId)));
+  const ownedTests = testRows.filter((t) => testIds.includes(t.id));
+  if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
+
+  if (!(PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
+    return { error: "Invalid payment method." };
+  }
+  const amountNum = Number(amount);
+  if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid payment amount." };
+  if (bookingDate && !/^\d{4}-\d{2}-\d{2}$/.test(bookingDate)) return { error: "Invalid booking date." };
+
+  let paymentDetails: Record<string, string>;
+  let paymentDate: string | null;
+  try {
+    ({ details: paymentDetails, paymentDate } = buildPaymentDetails(paymentMethod, formData));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Invalid payment details." };
+  }
+
+  const totalAmount = ownedTests.reduce((sum, t) => sum + Number(t.price ?? 0), 0);
+  const testsJson = ownedTests.map((t) => ({ id: t.id, name: t.name, price: Number(t.price ?? 0) }));
+
+  const now = new Date();
+  await db.insert(testBookings).values({
+    doctorId,
+    patientId: patient.id,
+    vendorId,
+    bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : now,
+    bookingTime,
+    tests: testsJson,
+    totalAmount: totalAmount.toFixed(2),
+    paymentMethod,
+    paymentAmount: amountNum.toFixed(2),
+    paymentDate: paymentDate as never,
+    paymentDetails,
+    status: "pending",
+    notes,
+    uploadLinkToken: randomToken(),
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await createBillingForBooking({
+    doctorId,
+    patientId: patient.id,
+    totalAmount,
+    receivedAmount: amountNum,
+    paymentMethod,
+    paymentDetails,
+  });
+
+  void audit.transactionCreated(doctorId, { source: "test_booking", vendorId, patientId: patient.id, totalAmount });
+
+  revalidatePath("/doctor/test-bookings");
+  revalidatePath("/doctor/billing");
+  revalidatePath("/doctor/income-expense");
+  return { error: null };
+}
+
+export async function updateTestBooking(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const bookingId = Number(formData.get("id"));
+  const vendorId = Number(formData.get("vendor_id"));
+  const testIds = String(formData.get("test_ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number);
+  const paymentMethod = String(formData.get("payment_method") ?? "cash");
+  const amount = String(formData.get("amount") ?? "0");
+  const bookingDate = String(formData.get("booking_date") ?? "");
+  const bookingTime = String(formData.get("booking_time") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
+  const [existing] = await db
+    .select({ id: testBookings.id })
+    .from(testBookings)
+    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+  if (!existing) return { error: "Test booking not found." };
+
+  const [vendor] = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+  if (!vendor) return { error: "Vendor not found for this doctor." };
+
+  const testRows = await db
+    .select({ id: tests.id, name: tests.name, price: tests.price })
+    .from(tests)
+    .where(eq(tests.doctorId, doctorId));
+  const ownedTests = testRows.filter((t) => testIds.includes(t.id));
+  if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
+
+  if (!(PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
+    return { error: "Invalid payment method." };
+  }
+  const amountNum = Number(amount);
+  if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid payment amount." };
+
+  const totalAmount = ownedTests.reduce((sum, t) => sum + Number(t.price ?? 0), 0);
+  const testsJson = ownedTests.map((t) => ({ id: t.id, name: t.name, price: Number(t.price ?? 0) }));
+
+  await db
+    .update(testBookings)
+    .set({
+      vendorId,
+      tests: testsJson,
+      totalAmount: totalAmount.toFixed(2),
+      paymentMethod,
+      paymentAmount: amountNum.toFixed(2),
+      bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : undefined,
+      bookingTime,
+      notes,
+      updatedAt: new Date(),
+    })
+    .where(eq(testBookings.id, bookingId));
+
+  void audit.transactionUpdated(doctorId, { source: "test_booking", bookingId });
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function deleteTestBooking(bookingId: number): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
+
+  const [existing] = await db
+    .select({ id: testBookings.id })
+    .from(testBookings)
+    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+  if (!existing) return { error: "Test booking not found." };
+
+  await db.delete(testBookings).where(eq(testBookings.id, bookingId));
+
+  void audit.transactionDeleted(doctorId, { source: "test_booking", bookingId });
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function updateTestBookingStatus(
+  bookingId: number,
+  status: string
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
+  if (!(BOOKING_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
+
+  const [existing] = await db
+    .select({ id: testBookings.id })
+    .from(testBookings)
+    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+  if (!existing) return { error: "Test booking not found." };
+
+  await db
+    .update(testBookings)
+    .set({ status: status as never, updatedAt: new Date() })
+    .where(eq(testBookings.id, bookingId));
+
+  void audit.transactionStatusChanged(doctorId, { source: "test_booking", bookingId, status });
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function regenerateUploadLink(bookingId: number): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
+
+  const [existing] = await db
+    .select({ id: testBookings.id })
+    .from(testBookings)
+    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+  if (!existing) return { error: "Test booking not found." };
+
+  await db
+    .update(testBookings)
+    .set({ uploadLinkToken: randomToken(), updatedAt: new Date() })
+    .where(eq(testBookings.id, bookingId));
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+// ── Vendor CRUD ────────────────────────────────────────────────────────────
+
+export async function createVendor(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const name = String(formData.get("name") ?? "").trim();
+  const mobile = String(formData.get("mobile") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+
+  if (!name) return { error: "Vendor name is required." };
+  if (name.length > 255) return { error: "Vendor name must be at most 255 characters." };
+  if (!mobile) return { error: "Mobile is required." };
+  if (!/^[\d+\s()-]{7,20}$/.test(mobile)) return { error: "Enter a valid mobile number." };
+  if (!email) return { error: "Email is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email." };
+  if (!address) return { error: "Address is required." };
+
+  await db.insert(vendors).values({
+    doctorId,
+    name,
+    mobile,
+    email,
+    address,
+    status: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function updateVendor(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const vendorId = Number(formData.get("id"));
+  const name = String(formData.get("name") ?? "").trim();
+  const mobile = String(formData.get("mobile") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+
+  if (!vendorId || !Number.isInteger(vendorId)) return { error: "Invalid vendor ID." };
+  if (!name || !mobile || !email || !address) return { error: "All fields are required." };
+
+  const [existing] = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+  if (!existing) return { error: "Vendor not found." };
+
+  await db
+    .update(vendors)
+    .set({ name, mobile, email, address, updatedAt: new Date() })
+    .where(eq(vendors.id, vendorId));
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function deleteVendor(vendorId: number): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  if (!vendorId || !Number.isInteger(vendorId)) return { error: "Invalid vendor ID." };
+
+  const [existing] = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+  if (!existing) return { error: "Vendor not found." };
+
+  await db.delete(vendors).where(eq(vendors.id, vendorId));
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+// ── Test CRUD ──────────────────────────────────────────────────────────────
+
+export async function createTest(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const price = String(formData.get("price") ?? "0");
+
+  if (!name) return { error: "Test name is required." };
+  const priceNum = Number(price);
+  if (!Number.isFinite(priceNum) || priceNum < 0) return { error: "Invalid price." };
+
+  await db.insert(tests).values({
+    doctorId,
+    name,
+    description,
+    price: priceNum.toFixed(2),
+    status: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function updateTest(
+  _prev: TestBookingActionResult,
+  formData: FormData
+): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  const testId = Number(formData.get("id"));
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const price = String(formData.get("price") ?? "0");
+
+  if (!testId || !Number.isInteger(testId)) return { error: "Invalid test ID." };
+  if (!name) return { error: "Test name is required." };
+  const priceNum = Number(price);
+  if (!Number.isFinite(priceNum) || priceNum < 0) return { error: "Invalid price." };
+
+  const [existing] = await db
+    .select({ id: tests.id })
+    .from(tests)
+    .where(and(eq(tests.id, testId), eq(tests.doctorId, doctorId)));
+  if (!existing) return { error: "Test not found." };
+
+  await db
+    .update(tests)
+    .set({ name, description, price: priceNum.toFixed(2), updatedAt: new Date() })
+    .where(eq(tests.id, testId));
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}
+
+export async function deleteTest(testId: number): Promise<TestBookingActionResult> {
+  const doctorId = await getDoctorId();
+  if (!testId || !Number.isInteger(testId)) return { error: "Invalid test ID." };
+
+  const [existing] = await db
+    .select({ id: tests.id })
+    .from(tests)
+    .where(and(eq(tests.id, testId), eq(tests.doctorId, doctorId)));
+  if (!existing) return { error: "Test not found." };
+
+  await db.delete(tests).where(eq(tests.id, testId));
+
+  revalidatePath("/doctor/test-bookings");
+  return { error: null };
+}

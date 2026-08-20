@@ -29,6 +29,12 @@ export type AuditAction =
   | "bill_created"
   | "bill_paid"
   | "transaction_created"
+  | "transaction_updated"
+  | "transaction_deleted"
+  | "transaction_status_changed"
+  | "category_created"
+  | "category_updated"
+  | "category_deleted"
   | "pdf_downloaded"
   | "appointment_created"
   | "appointment_updated"
@@ -39,7 +45,8 @@ export type AuditAction =
   | "role_changed"
   | "settings_updated"
   | "support_ticket_created"
-  | "file_uploaded";
+  | "file_uploaded"
+  | "demo_booked";
 
 export interface AuditLogEntry {
   userId?: number | null;
@@ -101,6 +108,24 @@ export const audit = {
   transactionCreated: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "transaction_created", metadata }),
 
+  transactionUpdated: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "transaction_updated", metadata }),
+
+  transactionDeleted: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "transaction_deleted", metadata }),
+
+  transactionStatusChanged: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "transaction_status_changed", metadata }),
+
+  categoryCreated: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "category_created", metadata }),
+
+  categoryUpdated: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "category_updated", metadata }),
+
+  categoryDeleted: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "category_deleted", metadata }),
+
   pdfDownloaded: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "pdf_downloaded", metadata }),
 
@@ -127,4 +152,10 @@ export const audit = {
 
   patientDeleted: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "patient_deleted", metadata }),
+
+  roleChanged: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "role_changed", metadata }),
+
+  settingsUpdated: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "settings_updated", metadata }),
 };

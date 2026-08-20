@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { ReceiptText } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getBillingOverview, getDoctorPatients } from "@/lib/queries/doctor";
-import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
+import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { BillForm } from "./bill-form";
-import { formatINR, formatDate } from "@/lib/utils";
+import { BillTable } from "./bill-table";
+import { BillingTypesManager } from "./billing-types-manager";
+import { formatINR } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Billing · Doctor" };
 
@@ -48,37 +50,20 @@ export default async function BillingPage() {
               description="Generate your first bill from the form."
             />
           ) : (
-            <div className="table-shell">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Bill no.</th>
-                    <th>Patient</th>
-                    <th>Date</th>
-                    <th>Total</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bills.map((b) => (
-                    <tr key={b.id}>
-                      <td className="font-mono text-xs font-semibold text-brand-800">{b.billNumber}</td>
-                      <td className="font-semibold text-slate-900">{b.patientName}</td>
-                      <td>{formatDate(b.billDate)}</td>
-                      <td className="font-semibold">{formatINR(b.totalAmount)}</td>
-                      <td><StatusBadge status={b.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <BillTable
+              bills={bills}
+              billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
+            />
           )}
         </div>
 
-        <BillForm
-          patients={patients.map((p) => ({ id: p.id, name: p.name, phone: p.phone }))}
-          billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
-        />
+        <div className="space-y-6">
+          <BillForm
+            patients={patients.map((p) => ({ id: p.id, name: p.name, phone: p.phone }))}
+            billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
+          />
+          <BillingTypesManager billingTypes={billingTypes} />
+        </div>
       </div>
     </div>
   );

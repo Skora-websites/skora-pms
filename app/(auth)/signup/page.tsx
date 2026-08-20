@@ -55,7 +55,7 @@ export default function SignupPage() {
           </Link>
           <h2 className="font-display text-3xl font-extrabold text-ink">Create your account</h2>
           <p className="mt-2 text-sm text-ink-muted">
-            Register as a patient to book and manage appointments.
+            Register as a patient to book appointments, or as a doctor to run your clinic.
           </p>
           <SignupForm />
           <p className="mt-8 text-center text-sm text-ink-muted">

@@ -1,7 +1,11 @@
 "use server";
 
+import { db } from "@/lib/db";
+import { leads } from "@/lib/db/schema";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { contactSchema } from "@/lib/validation";
+import { sendMail } from "@/lib/mail/send";
+import { auditLog } from "@/lib/security/audit-log";
 
 export type DemoBookingState = { success: boolean; error: string | null };
 
@@ -25,8 +29,42 @@ export async function bookDemo(
     return { success: false, error: `Too many requests. Try again in ${minutes} minute(s).` };
   }
 
-  // TODO: persist lead + send notification email (mail provider integration).
-  console.info("[demo-booking]", { name, email, phone, message });
+  const now = new Date();
+  try {
+    const [lead] = await db
+      .insert(leads)
+      .values({
+        name,
+        email,
+        phone: phone || null,
+        message,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+
+    void auditLog({
+      action: "demo_booked",
+      metadata: { leadId: Number(lead.id), email, name },
+    }).catch(() => undefined);
+
+    // Notify the sales inbox in the background — failures must never block
+    // the user's "thank you" confirmation.
+    void sendMail({
+      to: email,
+      subject: "Thank you for booking a demo — SkoraCare",
+      text: `Hi ${name},\n\nThanks for your interest in SkoraCare. Our team will reach out shortly to schedule your demo.\n\n— SkoraCare`,
+    }).then((sent) => {
+      void sendMail({
+        to: process.env.DEMO_NOTIFY_EMAIL ?? "sales@example.com",
+        subject: "New demo booking",
+        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || "—"}\nMessage: ${message}`,
+      }).catch(() => undefined);
+      return sent;
+    }).catch(() => undefined);
+  } catch {
+    return { success: false, error: "Could not save your request. Please try again." };
+  }
 
   return { success: true, error: null };
 }

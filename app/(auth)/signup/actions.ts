@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, companySettings } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
 import { setSessionCookie } from "@/lib/auth/session";
 import { authRateLimit } from "@/lib/security/rate-limit";
@@ -22,6 +22,11 @@ export async function signupAction(
   const gender = String(formData.get("gender") ?? "").trim();
   const rawPassword = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("password_confirmation") ?? "");
+  const role = String(formData.get("role") ?? "patient").trim();
+
+  if (!["patient", "doctor"].includes(role)) {
+    return { error: "Invalid account type." };
+  }
 
   const parsed = signupSchema.safeParse({
     name: rawName,
@@ -49,6 +54,17 @@ export async function signupAction(
     return { error: "An account with this email already exists. Try signing in." };
   }
 
+  // Doctor accounts get a trial window (legacy RegistrationController parity).
+  let trialEndsAt: Date | null = null;
+  if (role === "doctor") {
+    const [setting] = await db
+      .select({ defaultTrialDays: companySettings.defaultTrialDays })
+      .from(companySettings)
+      .limit(1);
+    const days = setting?.defaultTrialDays ?? 15;
+    trialEndsAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  }
+
   const hashed = await hashPassword(rawPassword);
   const now = new Date();
   const [result] = await db.insert(users).values({
@@ -57,15 +73,16 @@ export async function signupAction(
     phone: rawPhone || null,
     gender: gender || null,
     password: hashed,
-    role: "patient",
+    role: role as never,
     status: "active",
     emailVerifiedAt: now,
+    trialEndsAt,
     createdAt: now,
     updatedAt: now,
   });
 
   const userId = Number(result.insertId);
   await setSessionCookie(userId);
-  await audit.signup(userId, { email: rawEmail, name: rawName });
-  redirect("/patient");
+  await audit.signup(userId, { email: rawEmail, name: rawName, role, trialEndsAt: trialEndsAt?.toISOString() ?? null });
+  redirect(role === "doctor" ? "/doctor" : "/patient");
 }

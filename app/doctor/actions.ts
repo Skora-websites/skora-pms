@@ -2,6 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -35,6 +38,7 @@ async function getDoctorId(): Promise<number> {
 
 type ActionResult = { error: string | null };
 
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "completed", "cancelled"];
 const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"];
 const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
@@ -138,6 +142,42 @@ export async function createBill(
 
 // ── Transactions ─────────────────────────────────────────────────────────
 
+const TX_FILE_DIR = path.join(process.cwd(), "storage", "uploads", "transactions");
+
+/** Magic-byte check — only real PDF/JPEG/PNG files pass (spoofed extensions rejected). */
+function sniffFile(bytes: Buffer): "pdf" | "jpg" | "png" | null {
+  if (
+    (bytes.length >= 5 && bytes.subarray(0, 5).toString("latin1") === "%PDF-") ||
+    (bytes.length >= 6 &&
+      bytes[0] === 0xef &&
+      bytes[1] === 0xbb &&
+      bytes[2] === 0xbf &&
+      bytes.subarray(3, 8).toString("latin1") === "%PDF-")
+  ) {
+    return "pdf";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
+  if (
+    bytes.length >= 8 &&
+    bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return "png";
+  }
+  return null;
+}
+
+async function saveTransactionAttachment(file: File): Promise<string | null> {
+  if (!file || file.size === 0) return null;
+  if (file.size > 3 * 1024 * 1024) throw new Error("Attachment must be under 3 MB.");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const kind = sniffFile(bytes);
+  if (!kind) throw new Error("Only PDF, JPG or PNG attachments are allowed.");
+  const filename = `${crypto.randomUUID()}.${kind}`;
+  await fs.mkdir(TX_FILE_DIR, { recursive: true });
+  await fs.writeFile(path.join(TX_FILE_DIR, filename), bytes);
+  return `transactions/${filename}`;
+}
+
 export async function createTransaction(
   _prev: ActionResult,
   formData: FormData
@@ -152,20 +192,35 @@ export async function createTransaction(
   const incomeTypeId = incomeTypeRaw ? Number(incomeTypeRaw) : null;
   const expenseTypeId = expenseTypeRaw ? Number(expenseTypeRaw) : null;
   const description = String(formData.get("description") ?? "").trim() || null;
+  const paymentMethod = String(formData.get("payment_method") ?? "").trim() || null;
+  const referenceNumber = String(formData.get("reference_number") ?? "").trim() || null;
 
-  if (![0, 1].includes(type)) return { error: "Invalid transaction type." };
+  if (![1, 2].includes(type)) return { error: "Invalid transaction type." };
   const amountNum = Number(amount);
   if (!Number.isFinite(amountNum) || amountNum <= 0) return { error: "Invalid amount." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date format." };
+  if (paymentMethod && !PAYMENT_METHODS.includes(paymentMethod)) {
+    return { error: "Invalid payment method." };
+  }
 
-  if (incomeTypeId) {
-    if (!Number.isInteger(incomeTypeId) || !(await ensureIncomeTypeOfUser(incomeTypeId, doctorId))) {
-      return { error: "Invalid income type." };
+  if (type === 1) {
+    if (!incomeTypeId || !Number.isInteger(incomeTypeId) || !(await ensureIncomeTypeOfUser(incomeTypeId, doctorId))) {
+      return { error: "Income category is required." };
+    }
+  } else {
+    if (!expenseTypeId || !Number.isInteger(expenseTypeId) || !(await ensureExpenseTypeOfUser(expenseTypeId, doctorId))) {
+      return { error: "Expense category is required." };
     }
   }
-  if (expenseTypeId) {
-    if (!Number.isInteger(expenseTypeId) || !(await ensureExpenseTypeOfUser(expenseTypeId, doctorId))) {
-      return { error: "Invalid expense type." };
+
+  // Optional file attachment (stored outside public/ — PHI-safe)
+  const file = formData.get("file") as File | null;
+  let filePath: string | null = null;
+  if (file && file.size > 0) {
+    try {
+      filePath = await saveTransactionAttachment(file);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Could not save the file." };
     }
   }
 
@@ -173,18 +228,21 @@ export async function createTransaction(
   await db.insert(transactions).values({
     userId: doctorId,
     type,
-    incomeTypeId,
-    expenseTypeId,
+    incomeTypeId: type === 1 ? incomeTypeId : null,
+    expenseTypeId: type === 2 ? expenseTypeId : null,
     amount,
     date: date as never,
     status: "approved",
     description,
+    paymentMethod,
+    referenceNumber,
+    filePath,
     createdBy: user?.name ?? "System",
     createdAt: now,
     updatedAt: now,
   });
 
-  void audit.transactionCreated(doctorId, { type, amount, incomeTypeId, expenseTypeId });
+  void audit.transactionCreated(doctorId, { type, amount, incomeTypeId, expenseTypeId, fileAttached: !!filePath });
 
   revalidatePath("/doctor/income-expense");
   return { error: null };
@@ -208,9 +266,26 @@ export async function saveConsultation(
   const medicalHistory = String(formData.get("medical_history") ?? "").trim() || null;
   const followUpDate = String(formData.get("follow_up_date") ?? "").trim() || null;
 
+  // Vitals (persisted to the appointment — legacy ConsultationController@store parity)
+  const bloodGroup = String(formData.get("blood_group") ?? "").trim() || null;
+  const bp = String(formData.get("bp") ?? "").trim() || null;
+  const weightRaw = String(formData.get("weight") ?? "").trim();
+  const heightRaw = String(formData.get("height") ?? "").trim();
+
   if (!patientId) return { error: "Patient is required.", consultationId: null };
   if (!Number.isInteger(appointmentId) || !Number.isInteger(patientId)) {
     return { error: "Invalid appointment or patient.", consultationId: null };
+  }
+  if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup))
+    return { error: "Invalid blood group.", consultationId: null };
+  if (bp && !/^\d{2,3}\/\d{2,3}$/.test(bp)) return { error: "BP must be like 120/80.", consultationId: null };
+  const weight = weightRaw ? Number(weightRaw) : null;
+  const height = heightRaw ? Number(heightRaw) : null;
+  if (weight !== null && (Number.isNaN(weight) || weight < 0 || weight > 500)) {
+    return { error: "Invalid weight.", consultationId: null };
+  }
+  if (height !== null && (Number.isNaN(height) || height < 0 || height > 300)) {
+    return { error: "Invalid height.", consultationId: null };
   }
 
   // Verify the appointment belongs to this doctor
@@ -286,10 +361,17 @@ export async function saveConsultation(
     );
   }
 
-  // Mark appointment completed
+  // Persist vitals + mark appointment completed
   await db
     .update(appointments)
-    .set({ status: "completed", updatedAt: now })
+    .set({
+      bloodGroup,
+      bp,
+      weight: weight !== null ? String(weight) : null,
+      height: height !== null ? String(height) : null,
+      status: "completed",
+      updatedAt: now,
+    })
     .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
 
   revalidatePath("/doctor");

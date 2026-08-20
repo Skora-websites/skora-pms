@@ -2,6 +2,8 @@ import { requireRole } from "@/lib/auth/guard";
 import { getUserPermissions } from "@/lib/auth/user";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import type { NavItem } from "@/components/dashboard/sidebar";
+import { getUnreadCount } from "@/app/doctor/notifications/actions";
+import { redirect } from "next/navigation";
 
 export default async function DoctorLayout({
   children,
@@ -9,6 +11,11 @@ export default async function DoctorLayout({
   children: React.ReactNode;
 }) {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
+  // Trial-expired guard (legacy trialExpired parity): doctors with an ended
+  // trial are locked out of the dashboard until they renew.
+  if (user.role === "doctor" && user.trialEndsAt && user.trialEndsAt <= new Date()) {
+    redirect("/trial-expired");
+  }
   const perms = await getUserPermissions(user.id);
 
   const ALL_NAV: { perm: string; item: NavItem }[] = [
@@ -24,12 +31,17 @@ export default async function DoctorLayout({
     { perm: "chat", item: { label: "Chat", href: "/doctor/chat", icon: "messages-square" } },
     { perm: "shop", item: { label: "Shop", href: "/doctor/shop", icon: "shopping-cart" } },
     { perm: "support", item: { label: "Support", href: "/doctor/support", icon: "headset" } },
+    { perm: "dashboard", item: { label: "Notifications", href: "/doctor/notifications", icon: "bell" } },
+    { perm: "dashboard", item: { label: "Consultations", href: "/doctor/consultations", icon: "stethoscope" } },
+    { perm: "dashboard", item: { label: "Online Consultations", href: "/doctor/online-consultations", icon: "video" } },
+    { perm: "dashboard", item: { label: "FAQ", href: "/doctor/faq", icon: "help-circle" } },
     { perm: "dashboard", item: { label: "Consult PDF", href: "/doctor/consult-pdf", icon: "file-text" } },
     { perm: "roles-permissions", item: { label: "My Staff", href: "/doctor/staff", icon: "users" } },
     { perm: "roles-permissions", item: { label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog" } },
   ];
 
   const navItems = ALL_NAV.filter((n) => perms.has(n.perm)).map((n) => n.item);
+  const unreadCount = await getUnreadCount();
 
   return (
     <DashboardShell
@@ -40,6 +52,7 @@ export default async function DoctorLayout({
         email: user.email,
         profilePhotoPath: user.profilePhotoPath,
       }}
+      unreadCount={unreadCount}
       footerHref="/"
       footerLabel="View public site"
     >

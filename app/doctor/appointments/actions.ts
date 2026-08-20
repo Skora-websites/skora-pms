@@ -13,6 +13,7 @@ import {
 import { getCurrentUser } from "@/lib/auth/user";
 import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
+import { notifyUser } from "@/lib/notifications";
 import { appointmentSchema } from "@/lib/validation";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
@@ -267,6 +268,14 @@ export async function createAppointment(
     consentLink,
   });
 
+  void notifyUser({
+    userId: doctorId,
+    title: "New appointment booked",
+    message: `${patientString || `Patient #${patientId ?? "—"}`} — ${date} at ${time} (${caseType.replace(/_/g, " ")})`,
+    type: "success",
+    link: "/doctor/appointments",
+  });
+
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
 
@@ -394,6 +403,14 @@ export async function updateAppointment(
     caseType,
   });
 
+  void notifyUser({
+    userId: doctorId,
+    title: "Appointment updated",
+    message: `${patientString || `Patient #${patientId ?? "—"}`} — ${date} at ${time}`,
+    type: "info",
+    link: "/doctor/appointments",
+  });
+
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
 
@@ -449,6 +466,14 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
     patientString: appt.patientString,
     date: appt.date,
     time: appt.time,
+  });
+
+  void notifyUser({
+    userId: doctorId,
+    title: "Appointment cancelled",
+    message: `${appt.patientString || `Patient #${appt.patientId ?? "—"}`} — ${appt.date} at ${appt.time}`,
+    type: "warning",
+    link: "/doctor/appointments",
   });
 
   revalidatePath("/doctor");

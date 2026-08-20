@@ -50,6 +50,8 @@ export const users = mysqlTable(
     password: varchar("password", { length: 255 }).notNull(),
     phone: varchar("phone", { length: 255 }),
     profilePhotoPath: varchar("profile_photo_path", { length: 2048 }),
+    signaturePath: varchar("signature_path", { length: 2048 }),
+    notificationPreferences: json("notification_preferences"),
     address: varchar("address", { length: 255 }),
     gender: varchar("gender", { length: 255 }),
     referredBy: varchar("referred_by", { length: 200 }),
@@ -203,6 +205,34 @@ export const auditLogs = mysqlTable(
     index("audit_logs_user_id_index").on(t.userId),
     index("audit_logs_action_index").on(t.action),
     index("audit_logs_created_at_index").on(t.createdAt),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-app notifications (P7.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    message: text("message"),
+    type: varchar("type", { length: 50 }).default("info"),
+    link: varchar("link", { length: 255 }),
+    read: boolean("is_read").default(false),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("notifications_user_id_index").on(t.userId),
+    index("notifications_read_index").on(t.read),
+    index("notifications_created_at_index").on(t.createdAt),
+    foreignKey({
+      columns: [t.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
   ]
 );
 
@@ -1361,6 +1391,20 @@ export const landingItems = mysqlTable(
     }).onDelete("cascade"),
   ]
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Marketing leads (demo bookings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const leads = mysqlTable("leads", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports

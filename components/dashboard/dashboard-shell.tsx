@@ -7,12 +7,14 @@ import { DashboardHeader } from "./header";
 export function DashboardShell({
   navItems,
   user,
+  unreadCount,
   footerHref,
   footerLabel,
   children,
 }: {
   navItems: NavItem[];
   user: { name: string; role: string; email: string | null; profilePhotoPath: string | null };
+  unreadCount?: number;
   footerHref: string;
   footerLabel: string;
   children: React.ReactNode;
@@ -32,7 +34,7 @@ export function DashboardShell({
         footerLabel={footerLabel}
       />
       <div className={`transition-all duration-300 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
-        <DashboardHeader user={user} onOpenMobileMenu={() => setMobileOpen(true)} />
+        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} />
         <main className="p-4 lg:p-8">{children}</main>
       </div>
     </div>

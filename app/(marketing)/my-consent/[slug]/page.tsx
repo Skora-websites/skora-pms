@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, FileText, ShieldCheck } from "lucide-react";
 import { getConsentBySlug } from "@/lib/queries/consent";
 import { ConsentForm } from "./consent-form";
 
@@ -82,6 +82,19 @@ export default async function ConsentPage({
                   ? "The clinic has been notified of your acceptance."
                   : "The clinic has been notified of your decision."}
               </p>
+              {consent.consentFile && (
+                <a
+                  href={`/api/consents/${consent.slug}/file`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-brand-700 shadow-sm ring-1 ring-brand-200 transition-colors hover:bg-brand-50"
+                >
+                  <FileText className="h-4 w-4" />
+                  {consent.consentFile.startsWith("consent-pdfs/")
+                    ? "Download consent certificate"
+                    : "Download uploaded document"}
+                </a>
+              )}
             </div>
           ) : (
             <ConsentForm slug={consent.slug} />

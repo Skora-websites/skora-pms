@@ -1,7 +1,80 @@
 import { cache } from "react";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appointments, consultations, consultationMedications, users, billings } from "@/lib/db/schema";
+import { appointments, consultations, consultationMedications, users, billings, doctorClinics, doctorSchedules } from "@/lib/db/schema";
+
+/** Doctor + their primary active clinic (available for self-booking). */
+export type AvailableDoctor = {
+  id: number;
+  name: string;
+  qualification: string | null;
+  registrationNumber: string | null;
+  salutation: string | null;
+  profilePhotoPath: string | null;
+  city: string | null;
+  state: string | null;
+  clinicName: string | null;
+  clinicAddress: string | null;
+  consultationFee: string | null;
+};
+
+/** Doctors with at least one active clinic + schedule (available for self-booking). */
+export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> => {
+  const doctors = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      qualification: users.qualification,
+      registrationNumber: users.registrationNumber,
+      salutation: users.salutation,
+      profilePhotoPath: users.profilePhotoPath,
+      email: users.email,
+      phone: users.phone,
+      city: users.city,
+      state: users.state,
+    })
+    .from(users)
+    .where(eq(users.role, "doctor"))
+    .orderBy(asc(users.name));
+
+  const available: AvailableDoctor[] = [];
+  for (const d of doctors) {
+    const clinic = await db
+      .select({
+        id: doctorClinics.id,
+        clinicName: doctorClinics.clinicName,
+        address: doctorClinics.address,
+        consultationFee: doctorClinics.consultationFee,
+      })
+      .from(doctorClinics)
+      .where(and(eq(doctorClinics.doctorId, d.id), eq(doctorClinics.isActive, true)))
+      .limit(1);
+    if (!clinic[0]) continue;
+    const [schedule] = await db
+      .select({ id: doctorSchedules.id })
+      .from(doctorSchedules)
+      .where(
+        and(eq(doctorSchedules.doctorClinicId, clinic[0].id), eq(doctorSchedules.isActive, true))
+      )
+      .limit(1);
+    if (schedule) {
+      available.push({
+        id: d.id,
+        name: d.name,
+        qualification: d.qualification,
+        registrationNumber: d.registrationNumber,
+        salutation: d.salutation,
+        profilePhotoPath: d.profilePhotoPath,
+        city: d.city,
+        state: d.state,
+        clinicName: clinic[0]?.clinicName ?? null,
+        clinicAddress: clinic[0]?.address ?? null,
+        consultationFee: clinic[0]?.consultationFee ?? null,
+      });
+    }
+  }
+  return available;
+});
 
 export const getPatientAppointments = cache(async (patientId: number) => {
   return db

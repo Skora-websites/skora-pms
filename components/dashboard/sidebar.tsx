@@ -26,6 +26,10 @@ import {
   Home,
   ShoppingCart,
   FileText,
+  Bell,
+  Video,
+  HelpCircle,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -53,6 +57,10 @@ const ICON_MAP: Record<string, LucideIcon> = {
   home: Home,
   "shopping-cart": ShoppingCart,
   "file-text": FileText,
+  settings: Settings,
+  bell: Bell,
+  video: Video,
+  "help-circle": HelpCircle,
 };
 
 export type NavItem = {

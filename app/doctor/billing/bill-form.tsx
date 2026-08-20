@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { ReceiptText } from "lucide-react";
-import { createBill } from "../actions";
+import { createBill } from "./actions";
 
 type Patient = { id: number; name: string; phone: string | null };
 type BillingType = { id: number; name: string; defaultAmount: string | null };

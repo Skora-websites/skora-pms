@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getMedicineInventory } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { AddMedicineForm } from "./add-medicine-form";
+import { MedicineCardActions } from "./medicine-card-actions";
 
 export const metadata: Metadata = { title: "Shop · Medicine Inventory · Doctor" };
 
@@ -80,16 +81,19 @@ export default async function ShopPage({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {inventory.map((m) => (
             <div key={m.id} className="card card-hover group p-5">
-              <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-white shadow-md transition-transform group-hover:scale-105">
-                  <Pill className="h-6 w-6" />
-                </span>
-                <div className="min-w-0">
-                  <h3 className="font-display text-base font-bold text-slate-900">{m.name}</h3>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {[m.strength, m.unit].filter(Boolean).join(" ")} · {m.form}
-                  </p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-white shadow-md transition-transform group-hover:scale-105">
+                    <Pill className="h-6 w-6" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-base font-bold text-slate-900">{m.name}</h3>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {[m.strength, m.unit].filter(Boolean).join(" ")} · {m.form}
+                    </p>
+                  </div>
                 </div>
+                <MedicineCardActions medicine={m} />
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-slate-50 pt-3">
                 <span className="rounded-full bg-accent-50 px-2.5 py-1 text-[11px] font-semibold text-accent-700">

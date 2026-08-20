@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { CalendarDays } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, CalendarPlus } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
@@ -16,6 +17,12 @@ export default async function PatientAppointmentsPage() {
       <PageHeader
         title="My appointments"
         subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} in your history`}
+        action={
+          <Link href="/patient/appointments/book" className="btn-primary">
+            <CalendarPlus className="h-4 w-4" />
+            Book appointment
+          </Link>
+        }
       />
 
       {appointments.length === 0 ? (
