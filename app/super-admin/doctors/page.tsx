@@ -5,6 +5,7 @@ import { getDoctors } from "@/lib/queries/super-admin";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { initials, formatDate } from "@/lib/utils";
 import { DoctorPermissionsDialog } from "./doctor-permissions";
+import { DoctorStatusToggle } from "./doctor-status-toggle";
 
 export const metadata: Metadata = { title: "Manage Doctors · Super Admin" };
 
@@ -52,11 +53,14 @@ export default async function DoctorsPage({
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                 <DoctorPermissionsDialog doctorId={d.id} doctorName={d.name} />
-                {d.trialEndsAt && (
-                  <span className="text-[11px] font-medium text-slate-400">
-                    Trial ends {formatDate(d.trialEndsAt)}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  <DoctorStatusToggle doctorId={d.id} currentStatus={d.status ?? "active"} />
+                  {d.trialEndsAt && (
+                    <span className="text-[11px] font-medium text-slate-400">
+                      Trial ends {formatDate(d.trialEndsAt)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}

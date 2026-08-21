@@ -35,8 +35,8 @@ export function DashboardHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Notifications — doctor/staff only; patients have no notification inbox */}
-          {user.role !== "patient" && (
+          {/* Notifications — doctor/staff only; patients and super-admins have no notification inbox */}
+          {user.role !== "patient" && user.role !== "super_admin" && (
             <div className="relative">
               <Link
                 href="/doctor/notifications"
