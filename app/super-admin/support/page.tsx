@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Headset } from "lucide-react";
+import { Download, Headset } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getAllSupportTickets } from "@/lib/queries/support";
 import { getSupportVideos } from "@/lib/queries/super-admin";
@@ -10,6 +10,7 @@ import { SupportVideosPanel } from "./support-videos-panel";
 import { timeAgo } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Support · Super Admin" };
+export const dynamic = "force-dynamic";
 
 export default async function SuperAdminSupportPage() {
   await requireRole(["super_admin", "admin"]);
@@ -21,6 +22,14 @@ export default async function SuperAdminSupportPage() {
       <PageHeader
         title="Support inbox"
         subtitle={`${open.length} open ticket${open.length === 1 ? "" : "s"} in the queue`}
+        action={
+          tickets.length > 0 ? (
+            <a href="/api/super-admin/support/export" className="btn-secondary">
+              <Download className="h-4 w-4" />
+              Export CSV
+            </a>
+          ) : undefined
+        }
       />
 
       {tickets.length === 0 ? (

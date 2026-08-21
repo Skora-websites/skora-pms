@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { saveCompanySettings } from "../actions";
@@ -109,17 +109,17 @@ export function CompanySettingsForm({ company }: { company: CompanyRow | null })
           <div>
             <label htmlFor="cs_light" className="label">Light logo</label>
             <input id="cs_light" name="light_logo" type="file" accept="image/*" className="input" />
-            {c?.lightLogo && <p className="mt-1 truncate text-xs text-slate-400">{c.lightLogo}</p>}
+            <LogoPreview inputId="cs_light" stored={c?.lightLogo} />
           </div>
           <div>
             <label htmlFor="cs_dark" className="label">Dark logo</label>
             <input id="cs_dark" name="dark_logo" type="file" accept="image/*" className="input" />
-            {c?.darkLogo && <p className="mt-1 truncate text-xs text-slate-400">{c.darkLogo}</p>}
+            <LogoPreview inputId="cs_dark" stored={c?.darkLogo} />
           </div>
           <div>
             <label htmlFor="cs_favicon" className="label">Favicon</label>
             <input id="cs_favicon" name="favicon" type="file" accept="image/*" className="input" />
-            {c?.favicon && <p className="mt-1 truncate text-xs text-slate-400">{c.favicon}</p>}
+            <LogoPreview inputId="cs_favicon" stored={c?.favicon} />
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -171,4 +171,38 @@ export function CompanySettingsForm({ company }: { company: CompanyRow | null })
       </div>
     </form>
   );
+}
+
+/** Shows the currently stored logo path, or a live preview of a newly selected file. */
+function LogoPreview({ inputId, stored }: { inputId: string; stored: string | null | undefined }) {
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    const input = document.getElementById(inputId) as HTMLInputElement | null;
+    if (!input) return;
+    const onChange = () => {
+      const f = input.files?.[0];
+      if (f) {
+        const url = URL.createObjectURL(f);
+        setPreview(url);
+      }
+    };
+    input.addEventListener("change", onChange);
+    return () => {
+      input.removeEventListener("change", onChange);
+    };
+  }, [inputId]);
+
+  if (preview) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={preview} alt="Preview" className="mt-2 h-12 w-auto rounded-lg border border-slate-200 bg-white object-contain" />;
+  }
+  if (stored) {
+    return (
+      <p className="mt-1 truncate text-xs text-slate-400" title={stored}>
+        Stored: {stored.split("/").pop()}
+      </p>
+    );
+  }
+  return null;
 }

@@ -29,6 +29,7 @@ import {
   Bell,
   Video,
   HelpCircle,
+  Shield,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -61,6 +62,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   bell: Bell,
   video: Video,
   "help-circle": HelpCircle,
+  shield: Shield,
 };
 
 export type NavItem = {

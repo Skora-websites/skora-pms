@@ -10,6 +10,7 @@ const NAV: NavItem[] = [
   { label: "Consult Masters", href: "/super-admin/masters", icon: "clipboard-list" },
   { label: "Blogs", href: "/super-admin/blogs", icon: "newspaper" },
   { label: "Support", href: "/super-admin/support", icon: "headset" },
+  { label: "Audit Logs", href: "/super-admin/audit-logs", icon: "shield" },
   { label: "Landing Page", href: "/super-admin/landing", icon: "panels-top-left" },
   { label: "Email Setup", href: "/super-admin/email-setup", icon: "mail" },
   { label: "Settings", href: "/super-admin/settings", icon: "settings" },

@@ -1,9 +1,11 @@
 import { cache } from "react";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
   doctorClinics,
+  billings,
+  auditLogs,
   blogs,
   categories,
   supportTickets,
@@ -45,6 +47,128 @@ export const getSuperAdminStats = cache(async () => {
   };
 });
 
+/** Doctor registrations per month for the last N months. */
+export const getDoctorGrowth = cache(async (months = 6) => {
+  const rows = await db
+    .select({
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.role, "doctor"));
+  const buckets = new Map<string, number>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
+  }
+  for (const r of rows) {
+    if (!r.createdAt) continue;
+    const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, "0")}`;
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return [...buckets.entries()].map(([label, count]) => ({ label, count }));
+});
+
+/** Patient registrations per month for the last N months. */
+export const getPatientGrowth = cache(async (months = 6) => {
+  const rows = await db
+    .select({ createdAt: users.createdAt })
+    .from(users)
+    .where(eq(users.role, "patient"));
+  const buckets = new Map<string, number>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
+  }
+  for (const r of rows) {
+    if (!r.createdAt) continue;
+    const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, "0")}`;
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return [...buckets.entries()].map(([label, count]) => ({ label, count }));
+});
+
+/** Top clinics by total billed amount (non-deleted bills). */
+export const getTopClinics = cache(async (limit = 5) => {
+  const rows = await db
+    .select({
+      clinicId: doctorClinics.id,
+      clinicName: doctorClinics.clinicName,
+      doctorName: users.name,
+      total: sql<string>`coalesce(sum(${billings.receivedAmount}), 0)`,
+      count: sql<number>`count(*)`,
+    })
+    .from(billings)
+    .innerJoin(users, eq(users.id, billings.doctorId))
+    .innerJoin(doctorClinics, eq(doctorClinics.doctorId, billings.doctorId))
+    .where(and(eq(billings.deletedAt, sql`NULL`), eq(doctorClinics.isActive, true)))
+    .groupBy(doctorClinics.id, doctorClinics.clinicName, users.name)
+    .orderBy(desc(sql`sum(${billings.receivedAmount})`))
+    .limit(limit);
+  return rows.map((r) => ({
+    clinicId: r.clinicId,
+    clinicName: r.clinicName,
+    doctorName: r.doctorName,
+    total: Number(r.total ?? 0),
+    count: Number(r.count ?? 0),
+  }));
+});
+
+/** Recent support tickets with user names. */
+export const getRecentTickets = cache(async (limit = 5) => {
+  const rows = await db
+    .select({
+      id: supportTickets.id,
+      subject: supportTickets.subject,
+      status: supportTickets.status,
+      createdAt: supportTickets.createdAt,
+      userName: users.name,
+    })
+    .from(supportTickets)
+    .innerJoin(users, eq(users.id, supportTickets.userId))
+    .where(eq(supportTickets.deletedAt, sql`NULL`))
+    .orderBy(desc(supportTickets.createdAt))
+    .limit(limit);
+  return rows;
+});
+
+/** Audit log entries (paginated). */
+export const getAuditLogs = cache(
+  async (opts: { limit?: number; offset?: number; action?: string } = {}) => {
+    const limit = opts.limit ?? 50;
+    const offset = opts.offset ?? 0;
+    const rows = await db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        ipAddress: auditLogs.ipAddress,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+        userName: users.name,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(users.id, auditLogs.userId))
+      .where(opts.action ? eq(auditLogs.action, opts.action) : undefined)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+    return rows;
+  }
+);
+
+/** Distinct audit actions for the filter dropdown. */
+export const getAuditActions = cache(async () => {
+  const rows = await db
+    .select({ action: auditLogs.action })
+    .from(auditLogs)
+    .groupBy(auditLogs.action)
+    .orderBy(asc(auditLogs.action));
+  return rows.map((r) => r.action);
+});
+
 export const getDoctors = cache(async (search?: string) => {
   const like = `%${search ?? ""}%`;
   return db
@@ -68,6 +192,41 @@ export const getDoctors = cache(async (search?: string) => {
     .orderBy(desc(users.createdAt));
 });
 
+/** Single doctor + their clinics + recent appointments for the detail page. */
+export const getDoctorDetails = cache(async (doctorId: number) => {
+  const [doctor] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      qualification: users.qualification,
+      registrationNumber: users.registrationNumber,
+      status: users.status,
+      createdAt: users.createdAt,
+      trialEndsAt: users.trialEndsAt,
+    })
+    .from(users)
+    .where(and(eq(users.id, doctorId), eq(users.role, "doctor")))
+    .limit(1);
+  if (!doctor) return null;
+
+  const clinics = await db
+    .select({
+      id: doctorClinics.id,
+      clinicName: doctorClinics.clinicName,
+      address: doctorClinics.address,
+      phone: doctorClinics.phone,
+      consultationFee: doctorClinics.consultationFee,
+      isActive: doctorClinics.isActive,
+    })
+    .from(doctorClinics)
+    .where(eq(doctorClinics.doctorId, doctorId))
+    .orderBy(desc(doctorClinics.isActive));
+
+  return { doctor, clinics };
+});
+
 export const getClinics = cache(async () => {
   return db
     .select({
@@ -87,14 +246,14 @@ export const getClinics = cache(async () => {
     .orderBy(desc(doctorClinics.createdAt));
 });
 
-export const getUsers = cache(async (role?: string, search?: string) => {
+export const getUsers = cache(async (role?: string, search?: string, opts: { limit?: number; offset?: number } = {}) => {
   const like = search ? `%${search}%` : null;
   const where = sql`${users.id} > 0${
     role && role !== "all" ? sql` AND ${users.role} = ${role}` : sql``
   }${
     like ? sql` AND (${users.name} LIKE ${like} OR ${users.email} LIKE ${like} OR ${users.phone} LIKE ${like})` : sql``
   }`;
-  return db
+  const rows = await db
     .select({
       id: users.id,
       name: users.name,
@@ -108,7 +267,25 @@ export const getUsers = cache(async (role?: string, search?: string) => {
     })
     .from(users)
     .where(where)
-    .orderBy(desc(users.createdAt));
+    .orderBy(desc(users.createdAt))
+    .limit(opts.limit ?? 1000)
+    .offset(opts.offset ?? 0);
+  return rows;
+});
+
+/** Count of users matching a role + search (for pagination). */
+export const getUsersCount = cache(async (role?: string, search?: string) => {
+  const like = search ? `%${search}%` : null;
+  const where = sql`${users.id} > 0${
+    role && role !== "all" ? sql` AND ${users.role} = ${role}` : sql``
+  }${
+    like ? sql` AND (${users.name} LIKE ${like} OR ${users.email} LIKE ${like} OR ${users.phone} LIKE ${like})` : sql``
+  }`;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(users)
+    .where(where);
+  return Number(row?.count ?? 0);
 });
 
 export const getMasterCounts = cache(async () => {

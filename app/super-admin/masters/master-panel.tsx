@@ -107,9 +107,19 @@ export function MasterPanel({
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importState, importFormAction, importPending] = useActionState(importMasterItems, initialState);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
   const router = useRouter();
 
-  const rows = data[active];
+  const rows = data[active].filter((r) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (r.name ?? "").toLowerCase().includes(q) ||
+      (r.strength ?? "").toLowerCase().includes(q) ||
+      (r.form ?? "").toLowerCase().includes(q) ||
+      (r.unit ?? "").toLowerCase().includes(q)
+    );
+  });
 
   async function handleDelete(item: MasterRow) {
     if (confirmDelete?.id !== item.id) {
@@ -169,6 +179,12 @@ export function MasterPanel({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${active}…`}
+            className="input w-44"
+          />
           <a
             href={`/api/super-admin/masters/${active}/export`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"

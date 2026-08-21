@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { UserCog } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getDoctors } from "@/lib/queries/super-admin";
@@ -40,7 +41,9 @@ export default async function DoctorsPage({
                   {initials(d.name)}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-900">{d.name}</p>
+                  <Link href={`/super-admin/doctors/${d.id}`} className="truncate font-semibold text-slate-900 hover:text-brand-800 hover:underline">
+                    {d.name}
+                  </Link>
                   <p className="truncate text-xs text-slate-400">{d.email}</p>
                 </div>
                 <div className="ml-auto"><StatusBadge status={d.status ?? "active"} /></div>
