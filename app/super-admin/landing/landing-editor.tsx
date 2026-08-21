@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { ArrowDown, ArrowUp, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   deleteLandingItem,
+  reorderLandingItem,
   storeLandingItem,
   updateLandingItem,
   updateLandingSection,
@@ -253,6 +254,16 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
     }
   }
 
+  const [, startReorder] = useTransition();
+
+  function handleReorder(itemId: number, direction: "up" | "down") {
+    startReorder(async () => {
+      const res = await reorderLandingItem(itemId, direction);
+      if (res?.error) setMsg({ type: "err", text: res.error });
+      else router.refresh();
+    });
+  }
+
   return (
     <div>
       {msg && (
@@ -298,7 +309,7 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
               <p className="px-5 py-4 text-sm text-slate-400">No items in this section yet.</p>
             ) : (
               <div className="divide-y divide-slate-100">
-                {s.items.map((item) => (
+                {s.items.map((item, i) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-900">
@@ -309,6 +320,26 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
                         {item.description ?? "—"}
                         {item.priceMonthly && ` · ₹${item.priceMonthly}/mo`}
                       </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={i === 0}
+                        onClick={() => handleReorder(item.id, "up")}
+                        title="Move up"
+                        className="rounded-lg border border-slate-200 p-2 text-slate-400 transition-colors hover:text-brand-800 disabled:opacity-30 disabled:hover:text-slate-400"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={i === s.items.length - 1}
+                        onClick={() => handleReorder(item.id, "down")}
+                        title="Move down"
+                        className="rounded-lg border border-slate-200 p-2 text-slate-400 transition-colors hover:text-brand-800 disabled:opacity-30 disabled:hover:text-slate-400"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
                     </div>
                     <button
                       type="button"

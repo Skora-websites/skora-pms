@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import {
@@ -1367,6 +1367,47 @@ export async function deleteLandingItem(itemId: number): Promise<AdminActionResu
   await deleteUpload(existing.image);
 
   void audit.categoryDeleted(admin.id, { action: "landing_item_deleted", itemId });
+
+  revalidatePath("/super-admin/landing");
+  return { error: null };
+}
+
+/** Move a landing item up/down within its section (swaps the order field). */
+export async function reorderLandingItem(
+  itemId: number,
+  direction: "up" | "down"
+): Promise<AdminActionResult> {
+  const admin = await requireAdmin();
+  if (!Number.isInteger(itemId)) return { error: "Invalid item ID." };
+  if (direction !== "up" && direction !== "down") return { error: "Invalid direction." };
+
+  const [item] = await db
+    .select({ id: landingItems.id, sectionKey: landingItems.sectionKey, order: landingItems.order })
+    .from(landingItems)
+    .where(eq(landingItems.id, itemId));
+  if (!item) return { error: "Item not found." };
+
+  const siblings = await db
+    .select({ id: landingItems.id, order: landingItems.order })
+    .from(landingItems)
+    .where(eq(landingItems.sectionKey, item.sectionKey))
+    .orderBy(asc(landingItems.order), asc(landingItems.id));
+
+  const idx = siblings.findIndex((s) => s.id === itemId);
+  const target = direction === "up" ? idx - 1 : idx + 1;
+  if (idx < 0 || target < 0 || target >= siblings.length) return { error: null }; // at edge
+
+  const other = siblings[target];
+  await db
+    .update(landingItems)
+    .set({ order: other.order ?? 0, updatedAt: new Date() })
+    .where(eq(landingItems.id, itemId));
+  await db
+    .update(landingItems)
+    .set({ order: item.order ?? 0, updatedAt: new Date() })
+    .where(eq(landingItems.id, other.id));
+
+  void audit.categoryUpdated(admin.id, { action: "landing_item_reordered", itemId, direction });
 
   revalidatePath("/super-admin/landing");
   return { error: null };
