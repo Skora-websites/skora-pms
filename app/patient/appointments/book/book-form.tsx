@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useEffect } from "react";
-import { CalendarPlus, Clock, Loader2, MapPin, IndianRupee, BadgeCheck, Stethoscope } from "lucide-react";
+import { CalendarPlus, Clock, Loader2, MapPin, IndianRupee, BadgeCheck, Stethoscope, Home } from "lucide-react";
 import { createPatientAppointment } from "../actions";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
   const [fetchedKey, setFetchedKey] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [slotMessage, setSlotMessage] = useState<string | null>(null);
+  const [visitType, setVisitType] = useState<"clinical_visit" | "home_visit">("clinical_visit");
   const today = new Date().toISOString().slice(0, 10);
 
   const selectedDoctor = doctors.find((d) => String(d.id) === doctorId) ?? null;
@@ -169,6 +170,40 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                 {selectedDoctor.consultationFee ? ` · ${formatINR(selectedDoctor.consultationFee)}` : ""}
               </div>
             )}
+
+            {/* Visit type */}
+            <div>
+              <label className="label">Visit type</label>
+              <input type="hidden" name="case_type" value={visitType} />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisitType("clinical_visit")}
+                  className={`flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                    visitType === "clinical_visit"
+                      ? "border-brand-600 bg-brand-50 text-brand-800"
+                      : "border-slate-200 text-slate-500 hover:border-slate-300"
+                  }`}
+                >
+                  <Stethoscope className="h-4 w-4" /> Clinical visit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisitType("home_visit")}
+                  className={`flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                    visitType === "home_visit"
+                      ? "border-brand-600 bg-brand-50 text-brand-800"
+                      : "border-slate-200 text-slate-500 hover:border-slate-300"
+                  }`}
+                >
+                  <Home className="h-4 w-4" /> Home visit
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                {visitType === "home_visit" ? "The doctor will visit you at your registered address." : "You will visit the doctor's clinic."}
+              </p>
+            </div>
+
             <div>
               <label htmlFor="date" className="label">Date</label>
               <input

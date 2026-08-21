@@ -30,6 +30,8 @@ import {
   Video,
   HelpCircle,
   Shield,
+  Siren,
+  Stethoscope,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -63,6 +65,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   video: Video,
   "help-circle": HelpCircle,
   shield: Shield,
+  siren: Siren,
+  stethoscope: Stethoscope,
 };
 
 export type NavItem = {

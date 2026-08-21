@@ -1,7 +1,60 @@
 import { cache } from "react";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appointments, consultations, consultationMedications, users, billings, doctorClinics, doctorSchedules } from "@/lib/db/schema";
+import { appointments, consultations, consultationMedications, users, billings, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
+
+/** Patient's prescriptions (consultations) with doctor name. */
+export const getPatientPrescriptions = cache(async (patientId: number) => {
+  const rows = await db
+    .select({
+      id: consultations.id,
+      consultationDate: consultations.consultationDate,
+      diagnosisNote: consultations.diagnosisNote,
+      medicationsNote: consultations.medicationsNote,
+      symptomsNote: consultations.symptomsNote,
+      followUpDate: consultations.followUpDate,
+      doctorName: users.name,
+      doctorQualification: users.qualification,
+    })
+    .from(consultations)
+    .innerJoin(users, eq(users.id, consultations.doctorId))
+    .where(eq(consultations.patientId, patientId))
+    .orderBy(desc(consultations.consultationDate));
+
+  const withMeds = await Promise.all(
+    rows.map(async (c) => {
+      const meds = await db
+        .select()
+        .from(consultationMedications)
+        .where(eq(consultationMedications.consultationId, c.id))
+        .orderBy(consultationMedications.order);
+      return { ...c, medications: meds };
+    })
+  );
+  return withMeds;
+});
+
+/** Patient's test bookings (reports) with vendor name + uploaded file status. */
+export const getPatientTestBookings = cache(async (patientId: number) => {
+  const rows = await db
+    .select({
+      id: testBookings.id,
+      bookingDate: testBookings.bookingDate,
+      tests: testBookings.tests,
+      status: testBookings.status,
+      uploadedFilePath: testBookings.uploadedFilePath,
+      totalAmount: testBookings.totalAmount,
+      doctorId: testBookings.doctorId,
+      doctorName: users.name,
+      vendorName: vendors.name,
+    })
+    .from(testBookings)
+    .innerJoin(users, eq(users.id, testBookings.doctorId))
+    .leftJoin(vendors, eq(vendors.id, testBookings.vendorId))
+    .where(eq(testBookings.patientId, patientId))
+    .orderBy(desc(testBookings.bookingDate));
+  return rows;
+});
 
 /** Doctor + their primary active clinic (available for self-booking). */
 export type AvailableDoctor = {

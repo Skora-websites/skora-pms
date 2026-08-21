@@ -67,12 +67,14 @@ export async function createPatientAppointment(
   const doctorId = Number(formData.get("doctor_id"));
   const date = String(formData.get("date") ?? "").trim();
   const timeRaw = String(formData.get("time") ?? "").trim();
+  const caseType = String(formData.get("case_type") ?? "clinical_visit").trim();
 
   if (!doctorId || !Number.isInteger(doctorId) || doctorId <= 0) {
     return { error: "Please choose a doctor." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
   if (!/^\d{2}:\d{2}$/.test(timeRaw)) return { error: "Invalid time." };
+  if (!["clinical_visit", "home_visit"].includes(caseType)) return { error: "Invalid visit type." };
 
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
@@ -139,7 +141,7 @@ export async function createPatientAppointment(
     patientId: user.id,
     date: date as never,
     time,
-    caseType: "clinical_visit" as never,
+    caseType: caseType as never,
     status: "confirmed" as never,
     consentType: "skipped",
     createdAt: now,

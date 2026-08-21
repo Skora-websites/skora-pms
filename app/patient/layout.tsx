@@ -4,8 +4,12 @@ import type { NavItem } from "@/components/dashboard/sidebar";
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/patient", icon: "layout-dashboard", exact: true },
+  { label: "Find a Doctor", href: "/patient/find-doctor", icon: "stethoscope" },
   { label: "Appointments", href: "/patient/appointments", icon: "calendar-days" },
+  { label: "Prescriptions", href: "/patient/prescriptions", icon: "file-text" },
+  { label: "Test Reports", href: "/patient/test-reports", icon: "test-tube" },
   { label: "My Health Records", href: "/patient/records", icon: "file-heart" },
+  { label: "Emergency", href: "/patient/emergency", icon: "siren" },
 ];
 
 export default async function PatientLayout({
