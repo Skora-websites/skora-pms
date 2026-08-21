@@ -17,6 +17,7 @@ type BlogRow = {
   content: string | null;
   image: string | null;
   status: boolean | null;
+  publishAt: string | null;
   createdAt: string | null;
   categoryName: string | null;
   categoryId: number | null;
@@ -95,6 +96,19 @@ function BlogForm({
             <input type="checkbox" name="status" value="1" defaultChecked={blog ? (blog.status ?? true) : true} className="h-4 w-4 rounded border-slate-300 accent-brand-700" />
             Published (visible on the public blog)
           </label>
+          <div>
+            <label htmlFor="blog_publish" className="label">Schedule publish (optional)</label>
+            <input
+              id="blog_publish"
+              name="publish_at"
+              type="datetime-local"
+              defaultValue={blog?.publishAt ? new Date(blog.publishAt).toISOString().slice(0, 16) : ""}
+              className="input"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              If set, the post appears on the public blog only after this date/time. Leave blank to publish immediately (subject to the Published checkbox).
+            </p>
+          </div>
 
           {state.error && (
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{state.error}</p>
@@ -246,7 +260,13 @@ export function BlogManager({
                 </td>
                 <td><span className="badge bg-brand-100 text-brand-800">{p.categoryName ?? "Uncategorized"}</span></td>
                 <td>{formatDate(p.createdAt)}</td>
-                <td><StatusBadge status={p.status ? "active" : "inactive"} /></td>
+                <td>
+                  {p.publishAt && new Date(p.publishAt) > new Date() ? (
+                    <span className="badge bg-violet-100 text-violet-700">Scheduled {formatDate(p.publishAt)}</span>
+                  ) : (
+                    <StatusBadge status={p.status ? "active" : "inactive"} />
+                  )}
+                </td>
                 <td>
                   <div className="flex items-center justify-end gap-2">
                     <button

@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { blogs, categories } from "@/lib/db/schema";
 
@@ -16,7 +16,13 @@ export const getPublishedBlogs = cache(async () => {
     })
     .from(blogs)
     .innerJoin(categories, eq(categories.id, blogs.categoryId))
-    .where(eq(blogs.status, true))
+    .where(
+      and(
+        eq(blogs.status, true),
+        // Published now OR scheduled to publish in the past.
+        or(isNull(blogs.publishAt), sql`${blogs.publishAt} <= NOW()`)
+      )
+    )
     .orderBy(desc(blogs.createdAt));
 
   return rows;

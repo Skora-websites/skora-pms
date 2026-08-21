@@ -18,6 +18,7 @@ export default async function BlogsPage() {
     content: p.content,
     image: p.image,
     status: p.status,
+    publishAt: p.publishAt ? p.publishAt.toISOString() : null,
     createdAt: p.createdAt ? p.createdAt.toISOString() : null,
     categoryName: p.categoryName,
     categoryId: p.categoryId,

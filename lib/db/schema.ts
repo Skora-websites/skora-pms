@@ -523,6 +523,7 @@ export const blogs = mysqlTable(
     content: text("content").notNull(),
     image: varchar("image", { length: 255 }),
     status: boolean("status").default(true),
+    publishAt: timestamp("publish_at"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
   },

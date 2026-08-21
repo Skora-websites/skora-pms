@@ -868,11 +868,19 @@ export async function storeBlog(
   const shortcontent = String(formData.get("shortcontent") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
   const status = formData.get("status") === "1" || formData.get("status") === "on";
+  const publishAtRaw = String(formData.get("publish_at") ?? "").trim();
 
   if (!title) return { error: "Title is required." };
   if (title.length > 255) return { error: "Title must be at most 255 characters." };
   if (!shortcontent) return { error: "A short summary is required." };
   if (!content) return { error: "Content is required." };
+
+  let publishAt: Date | null = null;
+  if (publishAtRaw) {
+    const parsed = new Date(publishAtRaw);
+    if (Number.isNaN(parsed.getTime())) return { error: "Invalid publish date." };
+    publishAt = parsed;
+  }
 
   let categoryId: number | null = null;
   if (Number.isInteger(categoryIdRaw) && categoryIdRaw > 0) {
@@ -907,6 +915,7 @@ export async function storeBlog(
       content,
       image: imagePath,
       status,
+      publishAt,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -930,10 +939,18 @@ export async function updateBlog(
   const shortcontent = String(formData.get("shortcontent") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
   const status = formData.get("status") === "1" || formData.get("status") === "on";
+  const publishAtRaw = String(formData.get("publish_at") ?? "").trim();
 
   if (!title) return { error: "Title is required." };
   if (!shortcontent) return { error: "A short summary is required." };
   if (!content) return { error: "Content is required." };
+
+  let publishAt: Date | null = null;
+  if (publishAtRaw) {
+    const parsed = new Date(publishAtRaw);
+    if (Number.isNaN(parsed.getTime())) return { error: "Invalid publish date." };
+    publishAt = parsed;
+  }
 
   const [existing] = await db
     .select({ id: blogs.id, image: blogs.image, title: blogs.title })
@@ -974,6 +991,7 @@ export async function updateBlog(
       content,
       image: imagePath,
       status,
+      publishAt,
       updatedAt: new Date(),
     })
     .where(eq(blogs.id, blogId));

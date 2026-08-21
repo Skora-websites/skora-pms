@@ -363,6 +363,7 @@ export const getAllBlogs = cache(async () => {
       content: blogs.content,
       image: blogs.image,
       status: blogs.status,
+      publishAt: blogs.publishAt,
       createdAt: blogs.createdAt,
       categoryId: blogs.categoryId,
       categoryName: categories.name,
