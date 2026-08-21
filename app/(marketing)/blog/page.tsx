@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/marketing/page-header";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Blog" };
+export const dynamic = "force-dynamic";
 
 export default async function BlogPage() {
   const posts = await getPublishedBlogs();

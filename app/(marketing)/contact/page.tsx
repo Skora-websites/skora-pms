@@ -5,6 +5,7 @@ import { ContactForm } from "./contact-form";
 import { getCompanySettings } from "@/lib/queries/landing";
 
 export const metadata: Metadata = { title: "Contact & Book a Demo" };
+export const dynamic = "force-dynamic";
 
 export default async function ContactPage() {
   const settings = await getCompanySettings();
