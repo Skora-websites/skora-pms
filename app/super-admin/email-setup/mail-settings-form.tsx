@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
-import { Save, ShieldCheck } from "lucide-react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { Loader2, Mail, Save, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { saveMailSettings } from "../actions";
+import { saveMailSettings, testMailSettings } from "../actions";
 
 const initialState = { error: null as string | null };
 
@@ -22,6 +22,8 @@ export function MailSettingsForm({
   defaults: { fromAddress: string | null; fromName: string | null };
 }) {
   const [state, formAction, pending] = useActionState(saveMailSettings, initialState);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testPending, startTest] = useTransition();
   const router = useRouter();
 
   useEffect(() => {
@@ -30,6 +32,15 @@ export function MailSettingsForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+
+  function handleTest() {
+    setTestMsg(null);
+    startTest(async () => {
+      const res = await testMailSettings();
+      if (res?.error) setTestMsg({ ok: false, text: res.error });
+      else setTestMsg({ ok: true, text: "Test email sent! Check your inbox." });
+    });
+  }
 
   return (
     <form action={formAction} className="card p-7">
@@ -80,7 +91,26 @@ export function MailSettingsForm({
         <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{state.error}</p>
       )}
 
-      <div className="mt-6 flex justify-end">
+      {testMsg && (
+        <p
+          className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+            testMsg.ok ? "border-accent-200 bg-accent-50 text-accent-800" : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          {testMsg.text}
+        </p>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testPending}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800 disabled:opacity-60"
+        >
+          {testPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+          {testPending ? "Sending…" : "Send test email"}
+        </button>
         <button type="submit" disabled={pending} className="btn-primary disabled:opacity-60">
           <ShieldCheck className="h-4 w-4" />
           {pending ? "Saving…" : "Save settings"}

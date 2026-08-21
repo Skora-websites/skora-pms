@@ -35,6 +35,7 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { hashPassword } from "@/lib/auth/password";
 import { audit } from "@/lib/security/audit-log";
 import { encryptSecret } from "@/lib/security/crypto";
+import { sendMail } from "@/lib/mail/send";
 import { slugify } from "@/lib/utils";
 
 export type AdminActionResult = { error: string | null };
@@ -1371,6 +1372,30 @@ export async function saveMailSettings(
   void audit.settingsUpdated(admin.id, { action: "mail_settings_saved" });
 
   revalidatePath("/super-admin/email-setup");
+  return { error: null };
+}
+
+/** Send a test email using the saved SMTP config to verify it works. */
+export async function testMailSettings(): Promise<AdminActionResult> {
+  const admin = await requireAdmin();
+  const [mail] = await db.select().from(mailSettings).limit(1);
+  if (!mail?.host) return { error: "Save SMTP settings first, then send a test email." };
+
+  const to = admin.email;
+  if (!to) return { error: "Your account has no email address to send the test to." };
+
+  try {
+    await sendMail({
+      to,
+      subject: "SkoraCares — SMTP test successful",
+      text: `Hi ${admin.name},\n\nThis is a test email from the SkoraCares platform. Your SMTP configuration is working correctly.\n\n— SkoraCares`,
+    });
+  } catch (err) {
+    console.error("SMTP test failed:", err);
+    return { error: `SMTP test failed: ${err instanceof Error ? err.message : "unknown error"}` };
+  }
+
+  void audit.settingsUpdated(admin.id, { action: "mail_settings_test" });
   return { error: null };
 }
 
