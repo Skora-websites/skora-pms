@@ -1032,6 +1032,34 @@ export async function closeTicket(ticketId: number): Promise<AdminActionResult> 
   return { error: null };
 }
 
+const TICKET_PRIORITIES = ["low", "normal", "high", "urgent"];
+
+/** Set a support ticket's priority (low / normal / high / urgent). */
+export async function setTicketPriority(
+  ticketId: number,
+  priority: string
+): Promise<AdminActionResult> {
+  const admin = await requireAdmin();
+  if (!Number.isInteger(ticketId)) return { error: "Invalid ticket ID." };
+  if (!TICKET_PRIORITIES.includes(priority)) return { error: "Invalid priority." };
+
+  const [ticket] = await db
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(eq(supportTickets.id, ticketId));
+  if (!ticket) return { error: "Ticket not found." };
+
+  await db
+    .update(supportTickets)
+    .set({ priority, updatedAt: new Date() })
+    .where(eq(supportTickets.id, ticketId));
+
+  void audit.supportTicketCreated(admin.id, { action: "ticket_priority_changed", ticketId, priority });
+
+  revalidatePath("/super-admin/support");
+  return { error: null };
+}
+
 // ── Support videos (legacy `SupportController` videos) ──────────────────────
 
 export async function storeSupportVideo(

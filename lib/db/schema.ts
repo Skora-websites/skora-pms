@@ -1257,6 +1257,7 @@ export const supportTickets = mysqlTable(
     userId: bigint("user_id", { mode: "number" }).notNull(),
     subject: varchar("subject", { length: 255 }).notNull(),
     status: mysqlEnum("status", ["open", "closed"]).default("open"),
+    priority: varchar("priority", { length: 20 }).default("normal"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),

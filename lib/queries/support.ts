@@ -9,6 +9,7 @@ export const getAllSupportTickets = cache(async () => {
       id: supportTickets.id,
       subject: supportTickets.subject,
       status: supportTickets.status,
+      priority: supportTickets.priority,
       createdAt: supportTickets.createdAt,
       userName: users.name,
       userRole: users.role,

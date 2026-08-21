@@ -6,6 +6,7 @@ import { getSupportVideos } from "@/lib/queries/super-admin";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { AdminTicketPanel } from "./ticket-panel";
 import { TicketCloseButton } from "./ticket-close-button";
+import { TicketPrioritySelect } from "./ticket-priority-select";
 import { SupportVideosPanel } from "./support-videos-panel";
 import { timeAgo } from "@/lib/utils";
 
@@ -46,6 +47,7 @@ export default async function SuperAdminSupportPage() {
                   </p>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
+                  <TicketPrioritySelect ticketId={t.id} current={t.priority ?? "normal"} />
                   {t.status === "open" && <TicketCloseButton ticketId={t.id} />}
                   <StatusBadge status={t.status} />
                 </div>
