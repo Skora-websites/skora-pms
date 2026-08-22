@@ -1,6 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, CalendarCheck2, FileHeart, Wallet, Stethoscope, ArrowUpRight } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarCheck2,
+  FileHeart,
+  Wallet,
+  Stethoscope,
+  ArrowUpRight,
+  FlaskConical,
+  ReceiptText,
+  FileText,
+  UserPlus,
+} from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientStats, getPatientAppointments, getPatientConsultations } from "@/lib/queries/patient";
 import { StatCard, PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
@@ -105,6 +116,33 @@ export default async function PatientDashboardPage() {
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="mt-6">
+        <h2 className="mb-3 font-display text-base font-bold text-slate-900">Quick actions</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { icon: Stethoscope, label: "Find a doctor", href: "/patient/find-doctor" },
+            { icon: CalendarDays, label: "Book appointment", href: "/patient/appointments/book" },
+            { icon: FileText, label: "Prescriptions", href: "/patient/prescriptions" },
+            { icon: FlaskConical, label: "Test reports", href: "/patient/test-reports" },
+            { icon: ReceiptText, label: "My bills", href: "/patient/bills" },
+            { icon: FileHeart, label: "Health records", href: "/patient/records" },
+          ].map((q) => (
+            <Link
+              key={q.href}
+              href={q.href}
+              className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-soft"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-800">
+                <q.icon className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-semibold text-slate-900">{q.label}</span>
+              <ArrowUpRight className="ml-auto h-4 w-4 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-brand-700" />
+            </Link>
+          ))}
         </div>
       </div>
     </div>
