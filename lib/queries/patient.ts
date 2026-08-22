@@ -1,7 +1,31 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appointments, consultations, consultationMedications, users, billings, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
+import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
+
+/** Patient's bill receipts with doctor + billing type names. */
+export const getPatientBills = cache(async (patientId: number) => {
+  const rows = await db
+    .select({
+      id: billings.id,
+      billNumber: billings.billNumber,
+      totalAmount: billings.totalAmount,
+      receivedAmount: billings.receivedAmount,
+      pendingAmount: billings.pendingAmount,
+      paymentMethod: billings.paymentMethod,
+      status: billings.status,
+      billDate: billings.billDate,
+      notes: billings.notes,
+      doctorName: users.name,
+      billingTypeName: billingTypes.name,
+    })
+    .from(billings)
+    .innerJoin(users, eq(users.id, billings.doctorId))
+    .leftJoin(billingTypes, eq(billingTypes.id, billings.billingTypeId))
+    .where(and(eq(billings.patientId, patientId), isNull(billings.deletedAt)))
+    .orderBy(desc(billings.billDate));
+  return rows;
+});
 
 /** Patient's prescriptions (consultations) with doctor name. */
 export const getPatientPrescriptions = cache(async (patientId: number) => {

@@ -32,6 +32,7 @@ import {
   Shield,
   Siren,
   Stethoscope,
+  ReceiptText,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -67,6 +68,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   shield: Shield,
   siren: Siren,
   stethoscope: Stethoscope,
+  receipt: ReceiptText,
 };
 
 export type NavItem = {

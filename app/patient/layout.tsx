@@ -8,6 +8,7 @@ const NAV: NavItem[] = [
   { label: "Appointments", href: "/patient/appointments", icon: "calendar-days" },
   { label: "Prescriptions", href: "/patient/prescriptions", icon: "file-text" },
   { label: "Test Reports", href: "/patient/test-reports", icon: "test-tube" },
+  { label: "My Bills", href: "/patient/bills", icon: "receipt" },
   { label: "My Health Records", href: "/patient/records", icon: "file-heart" },
   { label: "Emergency", href: "/patient/emergency", icon: "siren" },
 ];
