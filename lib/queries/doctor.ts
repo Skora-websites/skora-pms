@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -303,7 +303,17 @@ export const getBillById = cache(async (doctorId: number, billId: number) => {
   };
 });
 
-export const getTransactions = cache(async (doctorId: number) => {
+export const getTransactions = cache(async (doctorId: number, period: "month" | "last_month" | "all" = "all") => {
+  const conds = [eq(transactions.userId, doctorId), isNull(transactions.deletedAt)];
+  const today = new Date();
+  if (period === "month") {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    conds.push(gte(transactions.date, start));
+  } else if (period === "last_month") {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 10);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().slice(0, 10);
+    conds.push(gte(transactions.date, start), lte(transactions.date, end));
+  }
   const rows = await db
     .select({
       id: transactions.id,
@@ -324,7 +334,7 @@ export const getTransactions = cache(async (doctorId: number) => {
     .from(transactions)
     .leftJoin(incomeTypes, eq(incomeTypes.id, transactions.incomeTypeId))
     .leftJoin(expenseTypes, eq(expenseTypes.id, transactions.expenseTypeId))
-    .where(and(eq(transactions.userId, doctorId), isNull(transactions.deletedAt)))
+    .where(and(...conds))
     .orderBy(desc(transactions.date), desc(transactions.id));
 
   const types = await Promise.all([

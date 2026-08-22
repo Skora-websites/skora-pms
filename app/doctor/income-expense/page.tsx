@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getTransactions } from "@/lib/queries/doctor";
@@ -7,13 +8,29 @@ import { TransactionForm } from "./transaction-form";
 import { TransactionRowActions } from "./transaction-row-actions";
 import { CategoryManager } from "./category-manager";
 import { formatINR, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Income & Expense · Doctor" };
+export const dynamic = "force-dynamic";
 
-export default async function IncomeExpensePage() {
+const PERIODS = [
+  { key: "all", label: "All time" },
+  { key: "month", label: "This month" },
+  { key: "last_month", label: "Last month" },
+] as const;
+
+type Period = (typeof PERIODS)[number]["key"];
+
+export default async function IncomeExpensePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const { rows, incomeTypes, expenseTypes } = await getTransactions(doctorId);
+  const { period: periodRaw } = await searchParams;
+  const period: Period = periodRaw === "month" || periodRaw === "last_month" ? periodRaw : "all";
+  const { rows, incomeTypes, expenseTypes } = await getTransactions(doctorId, period);
 
   const income = rows.filter((r) => r.type === 1);
   const expense = rows.filter((r) => r.type === 2);
@@ -25,6 +42,22 @@ export default async function IncomeExpensePage() {
       <PageHeader
         title="Income & Expense"
         subtitle="Unified ledger for your practice finances"
+        action={
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+            {PERIODS.map((p) => (
+              <Link
+                key={p.key}
+                href={p.key === "all" ? "/doctor/income-expense" : `/doctor/income-expense?period=${p.key}`}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                  period === p.key ? "bg-navy-950 text-white" : "text-slate-500 hover:text-brand-800"
+                )}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
+        }
       />
 
       <div className="mb-6 grid gap-5 sm:grid-cols-3">
@@ -63,6 +96,7 @@ export default async function IncomeExpensePage() {
             title="Recent income"
             rows={income}
             tone="income"
+            period={period}
             incomeTypes={incomeTypes}
             expenseTypes={expenseTypes}
           />
@@ -70,6 +104,7 @@ export default async function IncomeExpensePage() {
             title="Recent expenses"
             rows={expense}
             tone="expense"
+            period={period}
             incomeTypes={incomeTypes}
             expenseTypes={expenseTypes}
           />
@@ -88,12 +123,14 @@ function TransactionTable({
   title,
   rows,
   tone,
+  period,
   incomeTypes,
   expenseTypes,
 }: {
   title: string;
   rows: Awaited<ReturnType<typeof getTransactions>>["rows"];
   tone: "income" | "expense";
+  period: Period;
   incomeTypes: { id: number; name: string }[];
   expenseTypes: { id: number; name: string }[];
 }) {
@@ -114,7 +151,7 @@ function TransactionTable({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-base font-bold text-slate-900">{title}</h2>
         <a
-          href={`/api/doctor/income-expense/export?type=${tone}`}
+          href={`/api/doctor/income-expense/export?type=${tone}&period=${period}`}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
         >
           <Download className="h-3.5 w-3.5" />
