@@ -160,3 +160,30 @@ export async function createPatientAppointment(
   revalidatePath("/patient/appointments");
   redirect("/patient/appointments?created=1");
 }
+
+/** Patient cancels one of their own upcoming appointments. */
+export async function cancelPatientAppointment(appointmentId: number): Promise<PatientBookingState> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "patient") return { error: "Only patients can cancel appointments." };
+  if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
+
+  const [appt] = await db
+    .select({ id: appointments.id, status: appointments.status, date: appointments.date, doctorId: appointments.doctorId })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, user.id)));
+  if (!appt) return { error: "Appointment not found." };
+  if (appt.status === "cancelled") return { error: "Appointment is already cancelled." };
+  if (appt.status === "completed") return { error: "Completed appointments cannot be cancelled." };
+
+  await db
+    .update(appointments)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(eq(appointments.id, appointmentId));
+
+  void audit.appointmentCancelled(user.id, { appointmentId, doctorId: appt.doctorId, source: "patient_cancelled" });
+
+  revalidatePath("/patient");
+  revalidatePath("/patient/appointments");
+  return { error: null };
+}

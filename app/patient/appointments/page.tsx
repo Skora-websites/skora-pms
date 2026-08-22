@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
+import { CancelAppointmentButton } from "./cancel-appointment-button";
 
 export const metadata: Metadata = { title: "Appointments · Patient" };
 
@@ -41,6 +42,7 @@ export default async function PatientAppointmentsPage() {
                 <th>Time</th>
                 <th>Visit type</th>
                 <th>Status</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -56,6 +58,11 @@ export default async function PatientAppointmentsPage() {
                   <td>{a.time}</td>
                   <td className="capitalize">{a.caseType.replace(/_/g, " ")}</td>
                   <td><StatusBadge status={a.status} /></td>
+                  <td className="text-right">
+                    {a.status !== "cancelled" && a.status !== "completed" && (
+                      <CancelAppointmentButton appointmentId={a.id} />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
