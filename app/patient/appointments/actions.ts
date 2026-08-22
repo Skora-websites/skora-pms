@@ -6,6 +6,8 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { sendMail } from "@/lib/mail/send";
+import { notifyUser } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
 
 export type PatientBookingState = { error: string | null };
@@ -155,6 +157,42 @@ export async function createPatientAppointment(
     time,
     patientId: user.id,
   });
+
+  // Notify the patient (confirmation email) + the doctor (in-app + email), fire-and-forget.
+  void (async () => {
+    try {
+      const [doctor] = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, doctorId));
+
+      if (user.email) {
+        await sendMail({
+          to: user.email,
+          subject: "Appointment confirmed — SkoraCares",
+          text: `Hi ${user.name},\n\nYour appointment has been confirmed:\nDoctor: ${doctor?.name ?? "Your doctor"}\nDate: ${date}\nTime: ${time}\nType: ${caseType.replace(/_/g, " ")}\n\nSee you soon!\n— SkoraCares`,
+        });
+      }
+
+      if (doctor?.email) {
+        await sendMail({
+          to: doctor.email,
+          subject: "New appointment booked — SkoraCares",
+          text: `Hi ${doctor.name},\n\n${user.name} has booked a ${caseType.replace(/_/g, " ")} on ${date} at ${time}.\n\n— SkoraCares`,
+        });
+      }
+
+      await notifyUser({
+        userId: doctorId,
+        title: "New appointment booked",
+        message: `${user.name} — ${date} at ${time} (${caseType.replace(/_/g, " ")})`,
+        type: "success",
+        link: "/doctor/appointments",
+      });
+    } catch {
+      // Email/notification failure must never block the booking response.
+    }
+  })();
 
   revalidatePath("/patient");
   revalidatePath("/patient/appointments");

@@ -9,11 +9,13 @@ import {
   appointmentConsultConsents,
   doctorClinics,
   doctorSchedules,
+  users,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
+import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
@@ -275,6 +277,26 @@ export async function createAppointment(
     type: "success",
     link: "/doctor/appointments",
   });
+
+  // Confirm the appointment with the patient by email (fire-and-forget).
+  if (patientId) {
+    void (async () => {
+      try {
+        const [patient] = await db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, patientId));
+        if (!patient?.email) return;
+        await sendMail({
+          to: patient.email,
+          subject: "Appointment booked — SkoraCares",
+          text: `Hi ${patient.name},\n\nAn appointment has been booked for you:\nDate: ${date}\nTime: ${time}\nType: ${caseType.replace(/_/g, " ")}\n${consentLink ? `\nConsent link: ${consentLink}\n` : ""}\n— SkoraCares`,
+        });
+      } catch {
+        // Email failure must never block the booking.
+      }
+    })();
+  }
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
