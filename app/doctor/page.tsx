@@ -132,7 +132,17 @@ export default async function DoctorDashboardPage() {
                   <p className="truncate text-sm font-semibold text-slate-900">{a.patientName}</p>
                   <p className="text-xs capitalize text-slate-400">{a.caseType.replace(/_/g, " ")}</p>
                 </div>
-                <StatusBadge status={a.status} />
+                {a.status === "confirmed" || a.status === "pending" ? (
+                  <Link
+                    href={`/doctor/consultations/${a.id}`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-brand-700 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-800"
+                    title="Start consultation"
+                  >
+                    Start
+                  </Link>
+                ) : (
+                  <StatusBadge status={a.status} />
+                )}
               </div>
             ))}
           </div>
