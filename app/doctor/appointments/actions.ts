@@ -498,6 +498,37 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
     link: "/doctor/appointments",
   });
 
+  // Notify the patient their appointment was cancelled (in-app + email).
+  const cancelledPatientId = appt.patientId;
+  if (cancelledPatientId) {
+    void (async () => {
+      try {
+        const [patient] = await db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, cancelledPatientId));
+        if (patient) {
+          await notifyUser({
+            userId: cancelledPatientId,
+            title: "Appointment cancelled",
+            message: `Your appointment on ${appt.date} at ${appt.time} was cancelled.`,
+            type: "warning",
+            link: "/patient/appointments",
+          });
+          if (patient.email) {
+            await sendMail({
+              to: patient.email,
+              subject: "Appointment cancelled — SkoraCares",
+              text: `Hi ${patient.name},\n\nYour appointment on ${appt.date} at ${appt.time} has been cancelled by the clinic.\n\n— SkoraCares`,
+            });
+          }
+        }
+      } catch {
+        // Notification failure must never block cancellation.
+      }
+    })();
+  }
+
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
 
@@ -519,7 +550,7 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
   }
 
   const [appt] = await db
-    .select({ id: appointments.id, status: appointments.status })
+    .select({ id: appointments.id, status: appointments.status, patientId: appointments.patientId })
     .from(appointments)
     .where(eq(appointments.id, appointmentId));
 
@@ -539,6 +570,37 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
     appointmentId,
     status: "completed",
   });
+
+  // Notify the patient their visit is complete (in-app + email), fire-and-forget.
+  const completedPatientId = appt.patientId;
+  if (completedPatientId) {
+    void (async () => {
+      try {
+        const [patient] = await db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, completedPatientId));
+        if (patient) {
+          await notifyUser({
+            userId: completedPatientId,
+            title: "Visit completed",
+            message: "Your appointment has been completed. Your records are available.",
+            type: "success",
+            link: "/patient/records",
+          });
+          if (patient.email) {
+            await sendMail({
+              to: patient.email,
+              subject: "Your visit is complete — SkoraCares",
+              text: `Hi ${patient.name},\n\nYour appointment has been marked complete. You can view your health records and prescriptions from your dashboard.\n\n— SkoraCares`,
+            });
+          }
+        }
+      } catch {
+        // Notification failure must never block completion.
+      }
+    })();
+  }
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
