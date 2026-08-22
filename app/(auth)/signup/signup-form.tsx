@@ -1,15 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { UserPlus, Stethoscope, User } from "lucide-react";
 import { signupAction } from "./actions";
+import { sendSignupOtp } from "./otp-actions";
 
 const initialState = { error: null as string | null };
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signupAction, initialState);
   const [role, setRole] = useState<"patient" | "doctor">("patient");
+  const [otpSending, startOtpSend] = useTransition();
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpMessage, setOtpMessage] = useState<string | null>(null);
+
+  function handleSendOtp() {
+    const phone = (document.getElementById("phone") as HTMLInputElement | null)?.value ?? "";
+    const email = (document.getElementById("email") as HTMLInputElement | null)?.value ?? "";
+    if (phone.replace(/[^0-9]/g, "").length < 10) {
+      setOtpMessage("Enter a valid phone number first.");
+      return;
+    }
+    setOtpMessage(null);
+    startOtpSend(async () => {
+      const fd = new FormData();
+      fd.set("phone", phone);
+      fd.set("email", email);
+      const res = await sendSignupOtp(initialState, fd);
+      if (res.error) setOtpMessage(res.error);
+      else {
+        setOtpSent(true);
+        setOtpMessage(
+          res.devOtp
+            ? `OTP sent! (Dev mode — your OTP is ${res.devOtp})`
+            : "OTP sent! Check your email."
+        );
+      }
+    });
+  }
 
   return (
     <form action={formAction} className="mt-8 space-y-5">
@@ -87,6 +116,34 @@ export function SignupForm() {
             <option value="other">Other</option>
           </select>
         </div>
+      </div>
+
+      {/* OTP verification */}
+      <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
+        <label className="label">Phone verification</label>
+        <div className="flex gap-2">
+          <input
+            id="otp"
+            name="otp"
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="6-digit OTP"
+            className="input flex-1"
+          />
+          <button
+            type="button"
+            onClick={handleSendOtp}
+            disabled={otpSending || otpSent}
+            className="btn-secondary shrink-0 !py-2.5 text-xs disabled:opacity-50"
+          >
+            {otpSending ? "Sending…" : otpSent ? "OTP sent ✓" : "Send OTP"}
+          </button>
+        </div>
+        {otpMessage && <p className="mt-2 text-xs text-brand-800">{otpMessage}</p>}
+        <p className="mt-1 text-xs text-slate-400">
+          We&apos;ll send a 6-digit code to verify your phone number.
+        </p>
       </div>
       <div>
         <label htmlFor="password" className="label">

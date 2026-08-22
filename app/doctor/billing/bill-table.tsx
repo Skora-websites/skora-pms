@@ -5,6 +5,7 @@ import { FileDown, Pencil } from "lucide-react";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatINR, formatDate } from "@/lib/utils";
 import { EditBillForm, DeleteBillButton } from "./edit-bill-form";
+import { CollectCreditButton } from "./collect-credit-button";
 
 type Bill = {
   id: number;
@@ -62,6 +63,9 @@ export function BillTable({
                 <td><StatusBadge status={b.status} /></td>
                 <td>
                   <div className="flex items-center justify-end gap-1.5">
+                    {(b.status === "pending" || b.paymentMethod === "credit") && (
+                      <CollectCreditButton billId={b.id} />
+                    )}
                     <a
                       href={`/api/doctor/billing/${b.id}/pdf`}
                       target="_blank"

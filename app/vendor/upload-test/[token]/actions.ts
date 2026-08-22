@@ -6,7 +6,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { testBookings } from "@/lib/db/schema";
+import { testBookings, users } from "@/lib/db/schema";
+import { sendMail } from "@/lib/mail/send";
+import { notifyUser } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
 
 export type VendorUploadResult = { error: string | null; success?: boolean };
@@ -84,6 +86,31 @@ export async function uploadTestReport(
     patientId: booking.patientId,
     action: "vendor_report_uploaded",
   });
+
+  // Notify the doctor that a lab report has been uploaded (fire-and-forget).
+  void (async () => {
+    try {
+      const [doctor] = await db
+        .select({ email: users.email, name: users.name })
+        .from(users)
+        .where(eq(users.id, booking.doctorId));
+      if (!doctor?.email) return;
+      await sendMail({
+        to: doctor.email,
+        subject: "Lab report uploaded — SkoraCares",
+        text: `Hi ${doctor.name},\n\nA vendor has uploaded a lab test report for booking #${booking.id}. You can view it from your Test Bookings dashboard.\n\n— SkoraCares`,
+      });
+      await notifyUser({
+        userId: booking.doctorId,
+        title: "Lab report uploaded",
+        message: `Report for booking #${booking.id} is ready to view.`,
+        type: "info",
+        link: "/doctor/test-bookings",
+      });
+    } catch {
+      // Email + notification failure must never block the upload response.
+    }
+  })();
 
   revalidatePath("/doctor/test-bookings");
   return { error: null, success: true };

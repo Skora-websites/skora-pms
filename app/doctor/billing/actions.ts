@@ -18,7 +18,7 @@ async function getDoctorId(): Promise<number> {
 
 type ActionResult = { error: string | null };
 
-const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
+const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking", "credit"];
 
 // ── Bill CRUD ──────────────────────────────────────────────────────────────
 
@@ -64,6 +64,9 @@ export async function createBill(
   }
 
   const billNumber = `INV-${Date.now().toString().slice(-6)}`;
+  // Credit payment: bill is created as PENDING (48h credit), income is only
+  // recognized once the doctor marks it collected (see collectCreditPayment).
+  const isCredit = paymentMethod === "credit";
   const [billResult] = await db.insert(billings).values({
     billNumber,
     patientId,
@@ -72,16 +75,23 @@ export async function createBill(
     appointmentId,
     consultationId,
     totalAmount: amount,
-    receivedAmount: amount,
-    pendingAmount: "0",
+    receivedAmount: isCredit ? "0" : amount,
+    pendingAmount: isCredit ? amount : "0",
     paymentMethod: paymentMethod as never,
-    status: "paid",
+    status: isCredit ? "pending" : "paid",
     notes,
     billDate: now.toISOString().slice(0, 10),
     createdAt: now,
     updatedAt: now,
   });
   const billingId = Number(billResult.insertId);
+
+  if (isCredit) {
+    void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod: "credit" });
+    revalidatePath("/doctor/billing");
+    revalidatePath("/doctor/income-expense");
+    return { error: null };
+  }
 
   // Auto-create approved income transaction
   const [billingType] = await db
@@ -105,6 +115,56 @@ export async function createBill(
 
   void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod });
   void audit.transactionCreated(doctorId, { billingId, amount });
+
+  revalidatePath("/doctor/billing");
+  revalidatePath("/doctor/income-expense");
+  return { error: null };
+}
+
+/** Mark a 48h-credit bill as collected — creates the income transaction. */
+export async function collectCreditPayment(billId: number): Promise<ActionResult> {
+  const doctorId = await getDoctorId();
+  if (!billId || !Number.isInteger(billId)) return { error: "Invalid bill ID." };
+
+  const [bill] = await db
+    .select({
+      id: billings.id,
+      doctorId: billings.doctorId,
+      totalAmount: billings.totalAmount,
+      status: billings.status,
+      paymentMethod: billings.paymentMethod,
+      billNumber: billings.billNumber,
+    })
+    .from(billings)
+    .where(eq(billings.id, billId));
+  if (!bill || bill.doctorId !== doctorId) return { error: "Bill not found." };
+  if (bill.status === "paid") return { error: "This bill is already paid." };
+  if (bill.paymentMethod !== "credit") return { error: "Only credit bills can be collected this way." };
+
+  const now = new Date();
+  const amount = bill.totalAmount;
+  await db
+    .update(billings)
+    .set({ status: "paid", receivedAmount: amount, pendingAmount: "0", updatedAt: now })
+    .where(eq(billings.id, billId));
+
+  // Recognize the income now that it's collected.
+  await db.insert(transactions).values({
+    userId: doctorId,
+    type: 1,
+    billingId: billId,
+    amount,
+    date: now.toISOString().slice(0, 10),
+    status: "approved",
+    description: `Bill ${bill.billNumber} — credit payment collected`,
+    paymentMethod: "credit",
+    createdBy: "System",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  void audit.billCreated(doctorId, { billingId: billId, action: "credit_collected", amount, billNumber: bill.billNumber });
+  void audit.transactionCreated(doctorId, { billingId: billId, amount });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");

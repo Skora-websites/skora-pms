@@ -9,6 +9,7 @@ import { setSessionCookie } from "@/lib/auth/session";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
 import { signupSchema } from "@/lib/validation";
+import { verifySignupOtp } from "./otp-actions";
 
 export type SignupState = { error: string | null };
 
@@ -23,6 +24,7 @@ export async function signupAction(
   const rawPassword = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("password_confirmation") ?? "");
   const role = String(formData.get("role") ?? "patient").trim();
+  const otp = String(formData.get("otp") ?? "").trim();
 
   if (!["patient", "doctor"].includes(role)) {
     return { error: "Invalid account type." };
@@ -42,6 +44,12 @@ export async function signupAction(
   if (rawPassword !== confirmation) {
     return { error: "Passwords do not match." };
   }
+
+  // OTP verification is required for signup.
+  if (!rawPhone) return { error: "Phone number is required for OTP verification." };
+  if (!otp) return { error: "Please enter the OTP sent to your phone." };
+  const otpOk = await verifySignupOtp(rawPhone, otp);
+  if (!otpOk) return { error: "Invalid or expired OTP. Please request a new one." };
 
   const { allowed, retryAfterMs } = authRateLimit.signup(rawEmail);
   if (!allowed) {
@@ -83,6 +91,6 @@ export async function signupAction(
 
   const userId = Number(result.insertId);
   await setSessionCookie(userId);
-  await audit.signup(userId, { email: rawEmail, name: rawName, role, trialEndsAt: trialEndsAt?.toISOString() ?? null });
+  await audit.signup(userId, { email: rawEmail, name: rawName, role, phone: rawPhone, trialEndsAt: trialEndsAt?.toISOString() ?? null });
   redirect(role === "doctor" ? "/doctor" : "/patient");
 }

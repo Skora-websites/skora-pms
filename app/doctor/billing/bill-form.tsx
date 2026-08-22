@@ -55,7 +55,11 @@ export function BillForm({
             <option value="upi">UPI</option>
             <option value="card">Card</option>
             <option value="netbanking">Net banking</option>
+            <option value="credit">48-hour credit</option>
           </select>
+          <p className="mt-1 text-xs text-slate-400">
+            Credit bills stay pending until you collect the payment.
+          </p>
         </div>
         <div>
           <label htmlFor="notes" className="label">Notes (optional)</label>

@@ -97,6 +97,15 @@ export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   createdAt: timestamp("created_at"),
 });
 
+export const registrationOtps = mysqlTable("registration_otps", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  otp: varchar("otp", { length: 10 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const sessions = mysqlTable(
   "sessions",
   {
@@ -610,7 +619,7 @@ export const billings = mysqlTable(
     totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull(),
     receivedAmount: decimal("received_amount", { precision: 12, scale: 2 }).default("0"),
     pendingAmount: decimal("pending_amount", { precision: 12, scale: 2 }).default("0"),
-    paymentMethod: mysqlEnum("payment_method", ["upi", "cash", "card", "netbanking"]),
+    paymentMethod: mysqlEnum("payment_method", ["upi", "cash", "card", "netbanking", "credit"]),
     paymentDetails: json("payment_details"),
     status: mysqlEnum("status", ["pending", "partial", "paid"]).default("pending"),
     notes: text("notes"),
