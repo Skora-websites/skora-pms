@@ -813,3 +813,35 @@ export const getDoctorStats = cache(async (doctorId: number) => {
     })),
   };
 });
+
+/** Income & expense totals per month for the last N months (dashboard chart). */
+export const getDoctorFinanceTrend = cache(async (doctorId: number, months = 6) => {
+  const rows = await db
+    .select({
+      date: transactions.date,
+      type: transactions.type,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .where(and(eq(transactions.userId, doctorId), eq(transactions.status, "approved"), isNull(transactions.deletedAt)));
+
+  const buckets = new Map<string, { income: number; expense: number }>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    buckets.set(key, { income: 0, expense: 0 });
+  }
+
+  for (const r of rows) {
+    const key = r.date.slice(0, 7);
+    if (buckets.has(key)) {
+      const b = buckets.get(key)!;
+      if (r.type === 1) b.income += Number(r.amount);
+      else if (r.type === 2) b.expense += Number(r.amount);
+    }
+  }
+
+  return [...buckets.entries()].map(([label, { income, expense }]) => ({ label, income, expense }));
+});

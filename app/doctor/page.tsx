@@ -13,6 +13,7 @@ import {
 import { requireRole } from "@/lib/auth/guard";
 import {
   getDoctorStats,
+  getDoctorFinanceTrend,
   getTodaysAppointments,
   getRecentAppointments,
 } from "@/lib/queries/doctor";
@@ -25,11 +26,13 @@ export default async function DoctorDashboardPage() {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
-  const [stats, todays, recent] = await Promise.all([
+  const [stats, todays, recent, financeTrend] = await Promise.all([
     getDoctorStats(doctorId),
     getTodaysAppointments(doctorId),
     getRecentAppointments(doctorId, 6),
+    getDoctorFinanceTrend(doctorId, 6),
   ]);
+  const maxFinance = Math.max(...financeTrend.map((m) => Math.max(m.income, m.expense)), 1);
 
   const weekMap = new Map(
     stats.weekAppointments.map((w) => [new Date(w.date).toDateString(), w.count] as const)
@@ -177,6 +180,38 @@ export default async function DoctorDashboardPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Finance trend chart */}
+      <div className="mt-6">
+        <div className="card p-6">
+          <h2 className="mb-4 font-display text-base font-bold text-slate-900">Income & Expense — 6 months</h2>
+          <div className="flex items-end gap-2" style={{ height: 160 }}>
+            {financeTrend.map((m) => (
+              <div key={m.label} className="flex flex-1 flex-col items-center gap-1.5">
+                <div className="flex w-full flex-1 gap-0.5">
+                  <div
+                    className="w-1/2 rounded-t-md bg-accent-500 transition-all"
+                    style={{ height: `${Math.max((m.income / maxFinance) * 100, 3)}%` }}
+                    title={`Income ${m.label}: ${formatINR(m.income)}`}
+                  />
+                  <div
+                    className="w-1/2 rounded-t-md bg-rose-500 transition-all"
+                    style={{ height: `${Math.max((m.expense / maxFinance) * 100, 3)}%` }}
+                    title={`Expense ${m.label}: ${formatINR(m.expense)}`}
+                  />
+                </div>
+                <span className="text-[10px] font-medium text-slate-400">
+                  {m.label.split("-")[1] ?? m.label}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-center gap-6 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-accent-500" /> Income</span>
+            <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-500" /> Expense</span>
+          </div>
+        </div>
       </div>
     </div>
   );
