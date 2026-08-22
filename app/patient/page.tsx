@@ -10,7 +10,6 @@ import {
   FlaskConical,
   ReceiptText,
   FileText,
-  UserPlus,
 } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientStats, getPatientAppointments, getPatientConsultations } from "@/lib/queries/patient";
