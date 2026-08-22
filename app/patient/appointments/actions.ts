@@ -80,6 +80,7 @@ export async function createPatientAppointment(
 
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
+  if (date < today) return { error: "Date cannot be in the past." };
   const tMin = parseTimeToMinutes(timeRaw);
   if (tMin === null) return { error: "Invalid time." };
   if (date === today && tMin < now.getHours() * 60 + now.getMinutes()) {
