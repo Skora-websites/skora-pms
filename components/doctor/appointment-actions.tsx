@@ -103,14 +103,16 @@ export function AppointmentRowActions({
         </button>
       )}
 
-      <button
-        disabled={pending}
-        onClick={remove}
-        title="Delete"
-        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      {status !== "completed" && (
+        <button
+          disabled={pending}
+          onClick={remove}
+          title="Delete"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }

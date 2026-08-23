@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import {
   appointments,
   appointmentConsultConsents,
+  consultations,
+  billings,
   doctorClinics,
   doctorSchedules,
   users,
@@ -335,6 +337,19 @@ export async function updateAppointment(
     return { error: "Appointment not found." };
   }
 
+  // Business rule: completed and cancelled appointments are immutable —
+  // their history must not be rewritten after the fact.
+  const [current] = await db
+    .select({ status: appointments.status })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId));
+  if (current?.status === "completed") {
+    return { error: "Completed appointments cannot be edited." };
+  }
+  if (current?.status === "cancelled") {
+    return { error: "Cancelled appointments cannot be edited." };
+  }
+
   const parsed = appointmentSchema.safeParse({
     patientId: patientIdRaw || undefined,
     date,
@@ -648,6 +663,26 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
       return { error: "This appointment cannot be deleted." };
     }
     return { error: "Past appointments must be completed or cancelled before deletion." };
+  }
+
+  // Business rule / data integrity: appointments that generated clinical or
+  // financial records must be retained. Deleting them would orphan
+  // consultations and bills.
+  const [linkedConsultation] = await db
+    .select({ id: consultations.id })
+    .from(consultations)
+    .where(eq(consultations.appointmentId, appointmentId))
+    .limit(1);
+  if (linkedConsultation) {
+    return { error: "This appointment has a linked consultation. Delete the consultation first or keep the record." };
+  }
+  const [linkedBill] = await db
+    .select({ id: billings.id })
+    .from(billings)
+    .where(eq(billings.appointmentId, appointmentId))
+    .limit(1);
+  if (linkedBill) {
+    return { error: "This appointment has a linked bill. Delete the bill first or keep the record." };
   }
 
   // Delete consent records first

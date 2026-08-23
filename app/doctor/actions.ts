@@ -46,6 +46,20 @@ const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
   if (!APPOINTMENT_STATUSES.includes(status)) return;
   const doctorId = await getDoctorId();
+  // Business state machine: only the confirm transition (-> confirmed) is a
+  // generic status change. Complete/cancel have dedicated validated actions;
+  // reversal (completed/pending etc.) must not be possible via this action.
+  const [current] = await db
+    .select({ status: appointments.status })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+  if (!current) return;
+  if (status === "confirmed") {
+    if (!["pending", "pending_consent"].includes(current.status)) return;
+  } else {
+    // Any other status is not a valid generic transition — no-op.
+    return;
+  }
   await db
     .update(appointments)
     .set({ status: status as never, updatedAt: new Date() })
