@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
-import { setSessionCookie, getSessionUserId } from "@/lib/auth/session";
+import { setSessionCookie, getSessionUserId, destroySession } from "@/lib/auth/session";
 import { homePathForRole } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
@@ -63,10 +63,15 @@ export async function loginAction(
   }
 
   // Already logged in? Redirect to the right home instead of double login.
+  // If the existing session belongs to a deactivated account, clear it and
+  // let the login attempt proceed (it will be rejected below).
   const existing = await getSessionUserId();
   if (existing) {
-    const [me] = await db.select({ role: users.role }).from(users).where(eq(users.id, existing));
-    redirect(homePathForRole(me?.role ?? "patient"));
+    const [me] = await db.select({ role: users.role, status: users.status }).from(users).where(eq(users.id, existing));
+    if (me?.status === "active") {
+      redirect(homePathForRole(me.role ?? "patient"));
+    }
+    await destroySession();
   }
 
   await setSessionCookie(user.id);

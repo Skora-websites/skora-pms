@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { audit } from "@/lib/security/audit-log";
+import { generateBillNumber } from "@/lib/utils";
 
 export type TestBookingActionResult = { error: string | null };
 
@@ -27,6 +28,25 @@ async function getDoctorId(): Promise<number> {
 }
 
 const BOOKING_STATUSES = ["pending", "in-progress", "completed", "cancelled"] as const;
+
+/**
+ * Business state machine for test bookings (legacy had no guard; the UI must
+ * not be able to jump states arbitrarily).
+ *
+ *   pending ──► in-progress ──► completed
+ *      │            │
+ *      └────► cancelled ◄──────┘
+ *
+ * `completed` and `cancelled` are terminal — reversal is not allowed because
+ * the booking may have generated a bill, a vendor upload, or patient-facing
+ * records.
+ */
+const BOOKING_TRANSITIONS: Record<string, readonly string[]> = {
+  pending: ["in-progress", "completed", "cancelled"],
+  "in-progress": ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
+};
 const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"] as const;
 
 function randomToken(): string {
@@ -60,6 +80,15 @@ async function resolvePatient(doctorId: number, registrationId: string, phone: s
   return owned ? patient : null;
 }
 
+function detectCardBrand(digits: string): string {
+  if (/^4/.test(digits)) return "visa";
+  if (/^(5[1-5]|2[2-7])/.test(digits)) return "mastercard";
+  if (/^3[47]/.test(digits)) return "amex";
+  if (/^6(?:011|5|4[4-9])/.test(digits)) return "discover";
+  if (/^(?:60|65|81|82|508)/.test(digits)) return "rupay";
+  return "card";
+}
+
 function buildPaymentDetails(
   method: string,
   formData: FormData
@@ -75,13 +104,15 @@ function buildPaymentDetails(
     paymentDate = String(formData.get("payment_date") ?? "").trim() || null;
     if (!paymentDate) throw new Error("Payment date is required.");
   } else if (method === "card") {
-    const cardNumber = String(formData.get("card_number") ?? "").trim();
+    const rawCard = String(formData.get("card_number") ?? "").replace(/[\s-]/g, "");
     const expiry = String(formData.get("expiry") ?? "").trim();
     const cvv = String(formData.get("cvv") ?? "").trim();
-    if (!cardNumber || !expiry || !cvv) throw new Error("Card details are required.");
-    details.card_number = cardNumber;
+    if (!rawCard || !expiry || !cvv) throw new Error("Card details are required.");
+    if (!/^\d{12,19}$/.test(rawCard)) throw new Error("Invalid card number.");
+    // PCI-DSS: never persist full PAN or CVV — store brand + last4 only.
+    details.card_brand = detectCardBrand(rawCard);
+    details.card_last4 = rawCard.slice(-4);
     details.expiry = expiry;
-    details.cvv = cvv;
   } else if (method === "netbanking") {
     const bankName = String(formData.get("bank_name") ?? "").trim();
     const txId = String(formData.get("transaction_id") ?? "").trim();
@@ -125,7 +156,7 @@ async function createBillingForBooking(args: {
     }
 
     const now = new Date();
-    const billNumber = `INV-${Date.now().toString().slice(-6)}`;
+    const billNumber = generateBillNumber();
     const pending = Math.max(0, args.totalAmount - args.receivedAmount);
     const [bill] = await db
       .insert(billings)
@@ -358,10 +389,19 @@ export async function updateTestBookingStatus(
   if (!(BOOKING_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
 
   const [existing] = await db
-    .select({ id: testBookings.id })
+    .select({ id: testBookings.id, status: testBookings.status })
     .from(testBookings)
     .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
   if (!existing) return { error: "Test booking not found." };
+
+  // Enforce the business state machine — arbitrary jumps are rejected
+  // server-side, not just hidden in the UI.
+  const allowed = BOOKING_TRANSITIONS[existing.status ?? "pending"] ?? [];
+  if (!allowed.includes(status)) {
+    return {
+      error: `Cannot change a ${existing.status} booking to ${status}.`,
+    };
+  }
 
   await db
     .update(testBookings)
@@ -466,6 +506,22 @@ export async function deleteVendor(vendorId: number): Promise<TestBookingActionR
     .from(vendors)
     .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
   if (!existing) return { error: "Vendor not found." };
+
+  // Business rule / data integrity: deleting a vendor cascades to every one
+  // of their test bookings (FK cascade), including completed bookings with
+  // uploaded lab reports — clinical records would be destroyed while the
+  // auto-generated bills remain. Deactivate the vendor (status toggle)
+  // instead; old bookings stay traceable.
+  const [linkedBooking] = await db
+    .select({ id: testBookings.id })
+    .from(testBookings)
+    .where(and(eq(testBookings.vendorId, vendorId), eq(testBookings.doctorId, doctorId)))
+    .limit(1);
+  if (linkedBooking) {
+    return {
+      error: "This vendor has historical test bookings and cannot be deleted. You can edit its details instead.",
+    };
+  }
 
   await db.delete(vendors).where(eq(vendors.id, vendorId));
 

@@ -42,6 +42,16 @@ type Test = { id: number; name: string; price: string | null };
 
 const STATUSES = ["pending", "in-progress", "completed", "cancelled"];
 
+// Must match BOOKING_TRANSITIONS in ./actions.ts — the server rejects any
+// transition not listed here, so this only controls which options the UI
+// suggests (the backend remains the source of truth).
+const TRANSITIONS: Record<string, string[]> = {
+  pending: ["pending", "in-progress", "completed", "cancelled"],
+  "in-progress": ["in-progress", "completed", "cancelled"],
+  completed: ["completed"],
+  cancelled: ["cancelled"],
+};
+
 export function TestBookingsTable({
   bookings,
   vendors,
@@ -150,7 +160,7 @@ export function TestBookingsTable({
                         onChange={(e) => run(b.id, () => updateTestBookingStatus(b.id, e.target.value))}
                         className="input !w-auto !py-1.5 !text-xs"
                       >
-                        {STATUSES.map((s) => (
+                        {(TRANSITIONS[b.status ?? "pending"] ?? STATUSES).map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>

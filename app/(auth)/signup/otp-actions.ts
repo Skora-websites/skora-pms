@@ -42,9 +42,10 @@ export async function sendSignupOtp(
     used: false,
   });
 
-  // No SMS gateway is configured in dev, so we email it if an address was
-  // provided and also return it via `devOtp` so the UI can display it.
-  // In production, wire this to your SMS provider (Twilio/MSG91).
+  // No SMS gateway is configured, so we email it if an address was provided.
+  // In production, wire this to your SMS provider (Twilio/MSG91). The OTP is
+  // only echoed back to the client in non-production environments — never
+  // return it in production or the phone-verification gate is meaningless.
   if (email) {
     void sendMail({
       to: email,
@@ -53,7 +54,8 @@ export async function sendSignupOtp(
     }).catch(() => undefined);
   }
 
-  return { error: null, sent: true, devOtp: otp };
+  const isDev = process.env.NODE_ENV !== "production";
+  return { error: null, sent: true, ...(isDev ? { devOtp: otp } : {}) };
 }
 
 /** Verify an OTP for a phone. Returns true when valid and marks it used. */

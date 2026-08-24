@@ -55,11 +55,13 @@ export function LoginForm() {
         {!pending && <LogIn className="h-4 w-4" />}
       </button>
 
-      <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-xs text-brand-800">
-        <p className="font-semibold">Demo accounts</p>
-        <p className="mt-1">doctor@gmail.com · patient@gmail.com · admin@gmail.com</p>
-        <p>Password: Admin@123</p>
-      </div>
+      {process.env.NODE_ENV === "development" && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-xs text-brand-800">
+          <p className="font-semibold">Demo accounts</p>
+          <p className="mt-1">doctor@gmail.com · patient@gmail.com · admin@gmail.com</p>
+          <p>Password: Admin@123</p>
+        </div>
+      )}
     </form>
   );
 }

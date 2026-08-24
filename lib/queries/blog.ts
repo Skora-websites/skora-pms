@@ -42,7 +42,15 @@ export const getBlogBySlug = cache(async (slug: string) => {
     })
     .from(blogs)
     .innerJoin(categories, eq(categories.id, blogs.categoryId))
-    .where(eq(blogs.slug, slug));
+    .where(
+      and(
+        eq(blogs.slug, slug),
+        // Same visibility rules as the listing: drafts and future-scheduled
+        // posts must not be readable by guessing the direct slug.
+        eq(blogs.status, true),
+        or(isNull(blogs.publishAt), sql`${blogs.publishAt} <= NOW()`)
+      )
+    );
 
   return row ?? null;
 });

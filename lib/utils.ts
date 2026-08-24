@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Generate a globally-unique invoice number. The legacy scheme
+ * (`INV-` + last 6 digits of the ms timestamp) repeats every ~16.7 minutes,
+ * which collides on the `billings.bill_number` unique index (and across
+ * doctors, since the index is global). The full timestamp + random suffix
+ * makes collisions practically impossible while keeping an invoice-like
+ * format. On retry (rare), the caller simply generates a fresh number.
+ */
+export function generateBillNumber(): string {
+  return `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+}
+
 /** Format a number as Indian Rupees. */
 export function formatINR(value: number | string | null | undefined) {
   const n = Number(value ?? 0);

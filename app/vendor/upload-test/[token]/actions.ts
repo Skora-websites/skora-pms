@@ -51,6 +51,8 @@ export async function uploadTestReport(
       id: testBookings.id,
       doctorId: testBookings.doctorId,
       patientId: testBookings.patientId,
+      status: testBookings.status,
+      uploadedFilePath: testBookings.uploadedFilePath,
       uploadLinkToken: testBookings.uploadLinkToken,
     })
     .from(testBookings)
@@ -58,6 +60,15 @@ export async function uploadTestReport(
 
   if (!booking) return { error: "Invalid or expired upload link." };
   if (booking.uploadLinkToken !== token) return { error: "Invalid or expired upload link." };
+
+  // Business rule: a cancelled booking must not be reactivated via upload,
+  // and a completed booking's clinical report must not be silently replaced.
+  if (booking.status === "cancelled") {
+    return { error: "This booking has been cancelled. Contact the clinic." };
+  }
+  if (booking.status === "completed" || booking.uploadedFilePath) {
+    return { error: "A report has already been uploaded for this booking. Contact the clinic if you need to upload again." };
+  }
 
   const file = formData.get("test_report") as File | null;
   if (!file || file.size === 0) return { error: "Please choose a report file." };

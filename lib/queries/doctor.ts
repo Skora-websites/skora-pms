@@ -761,7 +761,7 @@ export const getDoctorStats = cache(async (doctorId: number) => {
       db
         .select({ count: sql<number>`count(*)` })
         .from(users)
-        .where(and(eq(users.doctorId, doctorId), eq(users.role, "patient"))),
+        .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "patient"))),
       db
         .select({ count: sql<number>`count(*)` })
         .from(consultations)
@@ -780,6 +780,7 @@ export const getDoctorStats = cache(async (doctorId: number) => {
             eq(transactions.userId, doctorId),
             eq(transactions.type, 1),
             eq(transactions.status, "approved"),
+            isNull(transactions.deletedAt),
             gte(transactions.date, monthStart)
           )
         ),
@@ -791,6 +792,7 @@ export const getDoctorStats = cache(async (doctorId: number) => {
             eq(transactions.userId, doctorId),
             eq(transactions.type, 2),
             eq(transactions.status, "approved"),
+            isNull(transactions.deletedAt),
             gte(transactions.date, monthStart)
           )
         ),

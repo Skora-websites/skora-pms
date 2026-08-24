@@ -22,7 +22,7 @@ export type CurrentUser = {
   status: string | null;
   profilePhotoPath: string | null;
   signaturePath: string | null;
-  notificationPreferences: any;
+  notificationPreferences: unknown;
   doctorId: number | null;
   qualification: string | null;
   registrationNumber: string | null;
@@ -56,6 +56,12 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     })
     .from(users)
     .where(eq(users.id, userId));
+
+  // Business rule: a deactivated account must not retain access through an
+  // existing session. Login already blocks inactive users; this closes the
+  // "already logged in" gap (session stays valid after super-admin
+  // deactivates the account).
+  if (row && row.status && row.status !== "active") return null;
 
   return row ?? null;
 });

@@ -28,6 +28,7 @@ import {
   ensureTicketOwner,
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
+import { generateBillNumber } from "@/lib/utils";
 import { billSchema, supportTicketReplySchema } from "@/lib/validation";
 
 async function getDoctorId(): Promise<number> {
@@ -107,7 +108,7 @@ export async function createBill(
     return { error: "Billing type not found." };
   }
 
-  const billNumber = `INV-${Date.now().toString().slice(-6)}`;
+  const billNumber = generateBillNumber();
   const [billResult] = await db.insert(billings).values({
     billNumber,
     patientId,
@@ -306,6 +307,22 @@ export async function saveConsultation(
   if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
     return { error: "Appointment not found.", consultationId: null };
   }
+
+  // Business state machine: a consultation may only be recorded for an
+  // appointment that is pending, confirmed, or already completed (edits).
+  // Cancelled appointments must not be re-opened, and a consultation must not
+  // bypass an outstanding patient consent.
+  const [apptStatus] = await db
+    .select({ status: appointments.status })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+  if (apptStatus?.status === "cancelled") {
+    return { error: "Cancelled appointments cannot be consulted.", consultationId: null };
+  }
+  if (apptStatus?.status === "pending_consent") {
+    return { error: "Patient consent is required before starting this consultation.", consultationId: null };
+  }
+
   // Verify the patient belongs to this doctor
   if (patientId && !(await ensurePatientOfDoctor(doctorId, patientId))) {
     return { error: "Patient not found for this doctor.", consultationId: null };

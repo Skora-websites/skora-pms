@@ -307,19 +307,22 @@ export function BookingForm({
                   </div>
                 )}
                 {paymentMethod === "card" && (
-                  <div className="mt-3 grid grid-cols-3 gap-3">
-                    <div>
-                      <label htmlFor="card_number" className="label">Card number</label>
-                      <input id="card_number" name="card_number" className="input" placeholder="4242…" />
+                  <div className="mt-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label htmlFor="card_number" className="label">Card number</label>
+                        <input id="card_number" name="card_number" inputMode="numeric" autoComplete="off" className="input" placeholder="4242…" />
+                      </div>
+                      <div>
+                        <label htmlFor="expiry" className="label">Expiry</label>
+                        <input id="expiry" name="expiry" autoComplete="off" className="input" placeholder="MM/YY" />
+                      </div>
+                      <div>
+                        <label htmlFor="cvv" className="label">CVV</label>
+                        <input id="cvv" name="cvv" type="password" inputMode="numeric" autoComplete="off" className="input" placeholder="•••" />
+                      </div>
                     </div>
-                    <div>
-                      <label htmlFor="expiry" className="label">Expiry</label>
-                      <input id="expiry" name="expiry" className="input" placeholder="MM/YY" />
-                    </div>
-                    <div>
-                      <label htmlFor="cvv" className="label">CVV</label>
-                      <input id="cvv" name="cvv" className="input" placeholder="•••" />
-                    </div>
+                    <p className="mt-1 text-xs text-slate-500">Only the card brand and last 4 digits are stored. Full card details and CVV are never saved.</p>
                   </div>
                 )}
                 {paymentMethod === "netbanking" && (

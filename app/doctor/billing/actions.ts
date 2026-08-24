@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { ensurePatientOfDoctor, ensureBillingTypeOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { billSchema } from "@/lib/validation";
+import { generateBillNumber } from "@/lib/utils";
 
 async function getDoctorId(): Promise<number> {
   const user = await getCurrentUser();
@@ -63,7 +64,7 @@ export async function createBill(
     return { error: "Billing type not found." };
   }
 
-  const billNumber = `INV-${Date.now().toString().slice(-6)}`;
+  const billNumber = generateBillNumber();
   // Credit payment: bill is created as PENDING (48h credit), income is only
   // recognized once the doctor marks it collected (see collectCreditPayment).
   const isCredit = paymentMethod === "credit";

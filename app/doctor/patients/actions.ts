@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, consultations, billings } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { hashPassword } from "@/lib/auth/password";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
@@ -238,17 +238,44 @@ export async function updatePatient(
   redirect(`/doctor/patients/${patientId}`);
 }
 
-export async function deletePatient(patientId: number) {
+export async function deletePatient(patientId: number): Promise<PatientActionResult | undefined> {
   const doctorId = await getDoctorId();
-  if (!Number.isInteger(patientId) || patientId <= 0) return;
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) return;
+  if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient ID." };
+  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
+    return { error: "Patient not found for this doctor." };
+  }
+
+  // Business rule / data integrity: a patient with clinical or financial
+  // records must not be hard-deleted — deleting the user row cascades to
+  // their consultations, bills and test bookings (FK cascade), destroying
+  // medicolegal and financial history. Deactivate instead (status toggle).
+  const [clinical] = await db
+    .select({ id: consultations.id })
+    .from(consultations)
+    .where(and(eq(consultations.patientId, patientId), eq(consultations.doctorId, doctorId)))
+    .limit(1);
+  if (clinical) {
+    return {
+      error: "This patient has consultation records. Deactivate the patient instead of deleting.",
+    };
+  }
+  const [financial] = await db
+    .select({ id: billings.id })
+    .from(billings)
+    .where(and(eq(billings.patientId, patientId), eq(billings.doctorId, doctorId), isNull(billings.deletedAt)))
+    .limit(1);
+  if (financial) {
+    return {
+      error: "This patient has billing records. Deactivate the patient instead of deleting.",
+    };
+  }
 
   const [patient] = await db
     .select({ profilePhotoPath: users.profilePhotoPath })
     .from(users)
     .where(eq(users.id, patientId));
 
-  // Hard delete (legacy parity); dependent records cascade or set null via FK.
+  // Hard delete only for patients with no clinical/financial history.
   await db.delete(users).where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
   await deletePhoto(patient?.profilePhotoPath ?? null);
 
