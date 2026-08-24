@@ -36,7 +36,21 @@ type ActionResult = { error: string | null };
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "completed", "cancelled"];
-const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"];
+const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"] as const;
+
+function isFollowUpStatus(s: string): s is (typeof FOLLOW_UP_STATUSES)[number] {
+  return (FOLLOW_UP_STATUSES as readonly string[]).includes(s);
+}
+
+/** Legal transitions for follow-up statuses. */
+const FOLLOW_UP_TRANSITIONS: Record<string, string[]> = {
+  pending: ["addressed", "no_follow_up", "rescheduled", "cancelled"],
+  // Terminal states — once addressed / cancelled etc., no further transitions.
+  addressed: [],
+  no_follow_up: [],
+  rescheduled: ["pending"],
+  cancelled: [],
+};
 const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
@@ -414,9 +428,21 @@ export async function saveConsultation(
 type TicketAction = { error: string | null };
 
 export async function updateFollowUpStatus(consultationId: number, status: string) {
-  if (!FOLLOW_UP_STATUSES.includes(status)) return;
+  if (!isFollowUpStatus(status)) return;
   const doctorId = await requireDoctorPermission("follow-up-status-update");
   if (!doctorId) return;
+
+  // Fetch current status to validate transition.
+  const [current] = await db
+    .select({ followUpStatus: consultations.followUpStatus })
+    .from(consultations)
+    .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)))
+    .limit(1);
+  if (!current) return;
+  const from = current.followUpStatus ?? "pending";
+  const allowed = FOLLOW_UP_TRANSITIONS[from];
+  if (!allowed || !allowed.includes(status)) return;
+
   await db
     .update(consultations)
     .set({ followUpStatus: status, updatedAt: new Date() })

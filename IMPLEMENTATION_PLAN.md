@@ -167,9 +167,9 @@ All fixes follow one pattern: **scope every query by the authenticated doctor/pa
 **Files:** `lib/security/audit-log.ts` (re-create), `lib/db/schema.ts`
 
 #### S4.5 Enum whitelists
-- [ ] `updateFollowUpStatus`: add enum whitelist (currently none)
-- [ ] `createAppointment.caseType`: whitelist `clinical_visit | home_visit | online_visit | on_call_visit`
-- [ ] `createBill.paymentMethod`: whitelist `upi | cash | card | netbanking`
+- [x] `updateFollowUpStatus`: enum whitelist + transition guard (addressed/no_follow_up/rescheduled/cancelled terminal; rescheduled→pending) — fixed the UI sending "completed" which the server silently rejected
+- [x] `createAppointment.caseType`: whitelist `clinical_visit | home_visit | online_visit | on_call_visit`
+- [x] `createBill.paymentMethod`: whitelist `upi | cash | card | netbanking`
 
 **Files:** `app/doctor/actions.ts`
 

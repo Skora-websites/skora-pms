@@ -18,11 +18,11 @@ export function FollowUpActions({
   return (
     <button
       disabled={pending}
-      onClick={() => startTransition(() => updateFollowUpStatus(consultationId, "completed"))}
+      onClick={() => startTransition(() => updateFollowUpStatus(consultationId, "addressed"))}
       className="inline-flex items-center gap-1.5 rounded-full bg-accent-100 px-3.5 py-1.5 text-xs font-semibold text-accent-800 transition-colors hover:bg-accent-200 disabled:opacity-50"
     >
       <CheckCircle2 className="h-3.5 w-3.5" />
-      Mark completed
+      Mark addressed
     </button>
   );
 }
