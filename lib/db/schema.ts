@@ -616,6 +616,7 @@ export const billings = mysqlTable(
     billingTypeId: bigint("billing_type_id", { mode: "number" }).notNull(),
     appointmentId: bigint("appointment_id", { mode: "number" }),
     consultationId: bigint("consultation_id", { mode: "number" }),
+    testBookingId: bigint("test_booking_id", { mode: "number" }),
     totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull(),
     receivedAmount: decimal("received_amount", { precision: 12, scale: 2 }).default("0"),
     pendingAmount: decimal("pending_amount", { precision: 12, scale: 2 }).default("0"),
@@ -634,6 +635,7 @@ export const billings = mysqlTable(
     index("idx_bill_patient").on(t.patientId),
     index("idx_bill_doctor_status").on(t.doctorId, t.status),
     index("idx_bill_appointment").on(t.appointmentId),
+    index("idx_bill_test_booking").on(t.testBookingId),
     foreignKey({
       columns: [t.patientId],
       foreignColumns: [users.id],

@@ -21,6 +21,14 @@ Also noted: billing page has no filter/search (usability); staff hard-delete cas
 
 ---
 
+## 0b. Third-pass additions (2026-08-24, later)
+
+| # | Severity | Issue | Fix | Regression |
+|---|---|---|---|---|
+| W7 | MEDIUM | Follow-up "Mark completed" button was **silently broken**: UI sent `"completed"` but the server whitelist (`pending/addressed/no_follow_up/rescheduled/cancelled`) rejected it — no-op | Button now sends `"addressed"` (legacy parity + existing DB values); added `FOLLOW_UP_TRANSITIONS` state machine (pending→terminal absorbing states; rescheduled→pending); `addressed`/`no_follow_up`/`rescheduled` badge styling | ✅ typecheck + live E2E (3→2 pending; DB addressed 3→4) |
+
+---
+
 ## 1. Business Process Map (43.1)
 
 **Who → does what → to which entity → at what stage → under what conditions → what happens next → who sees the result.**

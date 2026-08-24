@@ -123,6 +123,7 @@ async function createBillingForBooking(args: {
   receivedAmount: number;
   paymentMethod: string;
   paymentDetails: Record<string, string>;
+  bookingId?: number;
 }) {
   try {
     const [existingType] = await db
@@ -157,6 +158,7 @@ async function createBillingForBooking(args: {
         patientId: args.patientId,
         doctorId: args.doctorId,
         billingTypeId,
+        testBookingId: args.bookingId,
         totalAmount: args.totalAmount.toFixed(2),
         receivedAmount: args.receivedAmount.toFixed(2),
         pendingAmount: pending.toFixed(2),
@@ -251,24 +253,28 @@ export async function createTestBooking(
   const testsJson = ownedTests.map((t) => ({ id: t.id, name: t.name, price: Number(t.price ?? 0) }));
 
   const now = new Date();
-  await db.insert(testBookings).values({
-    doctorId,
-    patientId: patient.id,
-    vendorId,
-    bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : now,
-    bookingTime,
-    tests: testsJson,
-    totalAmount: totalAmount.toFixed(2),
-    paymentMethod,
-    paymentAmount: amountNum.toFixed(2),
-    paymentDate: paymentDate as never,
-    paymentDetails,
-    status: "pending",
-    notes,
-    uploadLinkToken: randomToken(),
-    createdAt: now,
-    updatedAt: now,
-  });
+  const [createdBooking] = await db
+    .insert(testBookings)
+    .values({
+      doctorId,
+      patientId: patient.id,
+      vendorId,
+      bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : now,
+      bookingTime,
+      tests: testsJson,
+      totalAmount: totalAmount.toFixed(2),
+      paymentMethod,
+      paymentAmount: amountNum.toFixed(2),
+      paymentDate: paymentDate as never,
+      paymentDetails,
+      status: "pending",
+      notes,
+      uploadLinkToken: randomToken(),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .$returningId();
+  const bookingId = Number(createdBooking.id);
 
   await createBillingForBooking({
     doctorId,
@@ -277,6 +283,7 @@ export async function createTestBooking(
     receivedAmount: amountNum,
     paymentMethod,
     paymentDetails,
+    bookingId,
   });
 
   void audit.transactionCreated(doctorId, { source: "test_booking", vendorId, patientId: patient.id, totalAmount });
@@ -367,9 +374,30 @@ export async function deleteTestBooking(bookingId: number): Promise<TestBookingA
     .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
   if (!existing) return { error: "Test booking not found." };
 
+  // Cascade soft-delete the auto-generated bill + its income transaction so
+  // no orphaned financial record remains after the booking is deleted.
+  const linkedBills = await db
+    .select({ id: billings.id })
+    .from(billings)
+    .where(eq(billings.testBookingId, bookingId));
+  for (const bill of linkedBills) {
+    await db
+      .update(transactions)
+      .set({ deletedAt: new Date() })
+      .where(eq(transactions.billingId, bill.id));
+    await db
+      .update(billings)
+      .set({ deletedAt: new Date() })
+      .where(eq(billings.id, bill.id));
+  }
+
   await db.delete(testBookings).where(eq(testBookings.id, bookingId));
 
-  void audit.transactionDeleted(doctorId, { source: "test_booking", bookingId });
+  void audit.transactionDeleted(doctorId, {
+    source: "test_booking",
+    bookingId,
+    linkedBills: linkedBills.length,
+  });
 
   revalidatePath("/doctor/test-bookings");
   return { error: null };
