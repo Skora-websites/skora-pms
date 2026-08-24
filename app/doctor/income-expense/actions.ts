@@ -1,26 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, incomeTypes, expenseTypes } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import {
   ensureIncomeTypeOfUser,
   ensureExpenseTypeOfUser,
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 type ActionResult = { error: string | null };
 
@@ -79,7 +71,8 @@ export async function updateTransaction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-edit");
+  if (!doctorId) return { error: "You don't have permission to edit transactions." };
   const now = new Date();
   const txId = Number(formData.get("id"));
   const type = Number(formData.get("type"));
@@ -169,7 +162,8 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(txId: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-delete");
+  if (!doctorId) return { error: "You don't have permission to delete transactions." };
   if (!txId || !Number.isInteger(txId)) return { error: "Invalid transaction ID." };
 
   const [existing] = await db
@@ -202,7 +196,8 @@ export async function updateTransactionStatus(
   txId: number,
   status: string
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-approve");
+  if (!doctorId) return { error: "You don't have permission to approve transactions." };
   if (!txId || !Number.isInteger(txId)) return { error: "Invalid transaction ID." };
   if (!(TX_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
 
@@ -229,7 +224,8 @@ export async function createIncomeType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-create");
+  if (!doctorId) return { error: "You don't have permission to add categories." };
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Category name is required." };
   if (name.length > 150) return { error: "Category name must be at most 150 characters." };
@@ -257,7 +253,8 @@ export async function updateIncomeType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-edit");
+  if (!doctorId) return { error: "You don't have permission to edit categories." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
@@ -282,7 +279,8 @@ export async function updateIncomeType(
 }
 
 export async function deleteIncomeType(id: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-delete");
+  if (!doctorId) return { error: "You don't have permission to delete categories." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
 
   const [existing] = await db
@@ -307,7 +305,8 @@ export async function createExpenseType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-create");
+  if (!doctorId) return { error: "You don't have permission to add categories." };
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Category name is required." };
   if (name.length > 150) return { error: "Category name must be at most 150 characters." };
@@ -335,7 +334,8 @@ export async function updateExpenseType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-edit");
+  if (!doctorId) return { error: "You don't have permission to edit categories." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
@@ -360,7 +360,8 @@ export async function updateExpenseType(
 }
 
 export async function deleteExpenseType(id: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-delete");
+  if (!doctorId) return { error: "You don't have permission to delete categories." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
 
   const [existing] = await db

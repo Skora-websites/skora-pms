@@ -51,8 +51,16 @@ const cspDirectives = [
 
 // ── Middleware ───────────────────────────────────────────────────────
 export function proxy(request: NextRequest) {
+  // Expose the pathname to server components. Layouts can't call
+  // usePathname(), so this header lets the doctor layout enforce
+  // permissions server-side (redirect before restricted pages fetch data).
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+
   // Create response with security headers.
-  const response = NextResponse.next();
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   // ── Standard security headers ─────────────────────────────────
   response.headers.set("X-Content-Type-Options", "nosniff");

@@ -1,24 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
 
 export type RoleActionResult = { error: string | null };
 
 const USER_MODEL = "App\\Models\\User";
 const SYSTEM_ROLE_NAMES = ["Super Admin", "Doctor", "Receptionist", "Nurse", "Accountant"];
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 async function getUserRoles(userId: number): Promise<string[]> {
   const rows = await db
@@ -68,7 +61,8 @@ export async function createRole(
   _prev: RoleActionResult,
   formData: FormData
 ): Promise<RoleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("roles-create");
+  if (!doctorId) return { error: "You don't have permission to create roles." };
   const name = String(formData.get("name") ?? "").trim();
   const permissionsRaw = String(formData.get("permissions") ?? "");
 
@@ -112,7 +106,8 @@ export async function updateRole(
   _prev: RoleActionResult,
   formData: FormData
 ): Promise<RoleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("roles-edit");
+  if (!doctorId) return { error: "You don't have permission to edit roles." };
   const roleId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const permissionsRaw = String(formData.get("permissions") ?? "");
@@ -157,7 +152,8 @@ export async function updateRole(
 }
 
 export async function deleteRole(roleId: number): Promise<RoleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("roles-delete");
+  if (!doctorId) return { error: "You don't have permission to delete roles." };
   if (!roleId || !Number.isInteger(roleId)) return { error: "Invalid role ID." };
 
   const [existing] = await db
@@ -199,7 +195,8 @@ export async function saveStaffPermissions(
   staffId: number,
   permissionNames: string[]
 ): Promise<RoleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("roles-edit");
+  if (!doctorId) return { error: "You don't have permission to edit staff permissions." };
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
 
   // The staff member must belong to this doctor.

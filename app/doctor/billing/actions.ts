@@ -1,21 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { billings, billingTypes, transactions } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor, ensureBillingTypeOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { billSchema } from "@/lib/validation";
 import { generateBillNumber } from "@/lib/utils";
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 type ActionResult = { error: string | null };
 
@@ -27,7 +20,8 @@ export async function createBill(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-create");
+  if (!doctorId) return { error: "You don't have permission to create bills." };
   const now = new Date();
   const patientId = Number(formData.get("patient_id"));
   const billingTypeId = Number(formData.get("billing_type_id"));
@@ -124,7 +118,8 @@ export async function createBill(
 
 /** Mark a 48h-credit bill as collected — creates the income transaction. */
 export async function collectCreditPayment(billId: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-approve");
+  if (!doctorId) return { error: "You don't have permission to collect payments." };
   if (!billId || !Number.isInteger(billId)) return { error: "Invalid bill ID." };
 
   const [bill] = await db
@@ -176,7 +171,8 @@ export async function updateBill(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-edit");
+  if (!doctorId) return { error: "You don't have permission to edit bills." };
   const now = new Date();
   const billId = Number(formData.get("bill_id"));
   const patientId = Number(formData.get("patient_id"));
@@ -267,7 +263,8 @@ export async function updateBill(
 }
 
 export async function deleteBill(billId: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-delete");
+  if (!doctorId) return { error: "You don't have permission to delete bills." };
   if (!billId || !Number.isInteger(billId)) return { error: "Invalid bill ID." };
 
   const [existing] = await db
@@ -301,7 +298,8 @@ export async function createBillingType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-create");
+  if (!doctorId) return { error: "You don't have permission to create billing types." };
   const name = String(formData.get("name") ?? "").trim();
   const defaultAmount = String(formData.get("default_amount") ?? "0");
 
@@ -326,7 +324,8 @@ export async function updateBillingType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-edit");
+  if (!doctorId) return { error: "You don't have permission to edit billing types." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const defaultAmount = String(formData.get("default_amount") ?? "0");
@@ -352,7 +351,8 @@ export async function updateBillingType(
 }
 
 export async function deleteBillingType(id: number): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-delete");
+  if (!doctorId) return { error: "You don't have permission to delete billing types." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid billing type ID." };
 
   const [bt] = await db

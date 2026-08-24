@@ -13,7 +13,7 @@ import {
   doctorSchedules,
   users,
 } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
@@ -23,13 +23,6 @@ import { appointmentSchema } from "@/lib/validation";
 // ── Shared helpers ────────────────────────────────────────────────────────
 
 export type AppointmentActionResult = { error: string | null };
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 const CASE_TYPES = ["clinical_visit", "home_visit", "online_visit", "on_call_visit"] as const;
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -130,7 +123,8 @@ export async function createAppointment(
   _prev: AppointmentActionResult,
   formData: FormData
 ): Promise<AppointmentActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-create");
+  if (!doctorId) return { error: "You don't have permission to book appointments." };
   const now = new Date();
 
   const patientIdRaw = String(formData.get("patient_id") ?? "").trim();
@@ -312,7 +306,8 @@ export async function updateAppointment(
   _prev: AppointmentActionResult,
   formData: FormData
 ): Promise<AppointmentActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-edit");
+  if (!doctorId) return { error: "You don't have permission to edit appointments." };
   const now = new Date();
 
   const appointmentIdRaw = String(formData.get("appointment_id") ?? "").trim();
@@ -457,7 +452,8 @@ export async function updateAppointment(
 // ── Cancel ────────────────────────────────────────────────────────────────
 
 export async function cancelAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-cancel");
+  if (!doctorId) return { error: "You don't have permission to cancel appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
@@ -553,7 +549,8 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
 // ── Complete ──────────────────────────────────────────────────────────────
 
 export async function completeAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-complete");
+  if (!doctorId) return { error: "You don't have permission to complete appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
@@ -626,7 +623,8 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
 // ── Delete ────────────────────────────────────────────────────────────────
 
 export async function deleteAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-delete");
+  if (!doctorId) return { error: "You don't have permission to delete appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {

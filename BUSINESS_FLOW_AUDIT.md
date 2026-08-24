@@ -14,7 +14,7 @@ Second pass added 4 more findings, all verified live:
 |---|---|---|---|---|
 | B10 | MEDIUM | `deleteVendor` hard-deletes; FK cascades to ALL its test bookings (completed reports destroyed) while auto-bills remain | Guard: refuse deletion when bookings exist ("edit its details instead"); UI surfaces the error | ✅ typecheck + code path |
 | B11 | HIGH | Bill numbers `INV-<last 6 digits of ms timestamp>` repeat every ~16.7 min; DB column is globally unique → random duplicate-key failures on bill creation (3 call sites) | New `generateBillNumber()` (`INV-<full ms>-<random 3-digit>`) in `lib/utils.ts`; used by all 3 creators | ✅ typecheck |
-| B12 | MEDIUM | Permission system is **nav-only** — `requireRoleWithPermission` exists but is never used; any doctor/receptionist with dashboard access can reach every module by URL (billing, income-expense, staff…). Roles & Permission UI suggests restrictions the server doesn't enforce | **Not changed** — requires systematic enforcement across all layouts + server actions; flagged for product decision | — |
+| B12 | MEDIUM | Permission system is **nav-only** — `requireRoleWithPermission` exists but is never used; any doctor/receptionist with dashboard access can reach every module by URL (billing, income-expense, staff…). Roles & Permission UI suggests restrictions the server doesn't enforce | **FIXED**: server-action guards (`requireDoctorPermission`) in 9 action files; client `DoctorPermissionGate` redirects restricted URLs; server-side layout redirect (307) via `x-pathname` header prevents data queries on restricted pages. Pure-route map in `lib/auth/permissions.ts` (client-safe); server-only guard in `lib/auth/server-permissions.ts` | ✅ typecheck + lint + E2E (full-perm doctor, limited-perm staff) |
 | B13 | HIGH | `saveConsultation` never checked appointment status → a cancelled or `pending_consent` appointment could be "completed" via consultation (bypassing consent, re-opening cancelled visits) | Guard: reject `cancelled` ("Cancelled appointments cannot be consulted") and `pending_consent` ("Patient consent is required…") | ✅ E2E: form shows consent error, appointment stays `pending_consent`, no consultation row created |
 
 Also noted: billing page has no filter/search (usability); staff hard-delete cascades attendance history (minor).
@@ -108,7 +108,12 @@ Enforced server-side (not just UI):
 
 Gaps closed in this audit: test-booking transitions, vendor upload guards, patient-delete guard, deactivation session invalidation, KPI calculation correctness, consultation status guard, bill-number uniqueness, vendor-delete guard.
 
-**Open enforcement gap (B12):** the permission system controls nav visibility only. `requireRoleWithPermission` is never used; every doctor-dashboard page/action checks only `requireRole(["doctor","receptionist","admin"])`. A receptionist restricted to "appointments" in the Roles & Permission UI can still open `/doctor/billing` or `/doctor/income-expense` directly. Fixing this requires adding permission checks to every doctor layout + server action (systematic change — recommended as a dedicated task).
+**Closed enforcement gap (B12):** server-side permission enforcement now implemented at 3 layers:
+- **Server actions** (9 files): `requireDoctorPermission("billing-create")` etc. rejects unauthorized invocations with `{error: "…"}`.
+- **Server layout** (`app/doctor/layout.tsx`): reads `x-pathname` header (set by `proxy.ts`), checks `hasDoctorModuleAccess`, issues a 307 redirect before the page component fetches data.
+- **Client gate** (`components/doctor/permission-gate.tsx`): `DoctorPermissionGate` mirrors the redirect for SPA client-side navigation.
+- **Shared map** (`lib/auth/permissions.ts`): `DOCTOR_ROUTE_PERMISSIONS` is the single source of truth for nav + guards; import-safe (no server deps) so the client gate can use it.
+- **Verified**: full-perm doctor (all 19 nav items), limited-perm staff (12 permitted items, 7 hidden), direct-URL redirects, 307 server-side redirect.
 
 ---
 

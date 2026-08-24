@@ -1,24 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorClinics, doctorSchedules } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
 
 export type ScheduleActionResult = { error: string | null };
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 const SESSION_TYPES = ["morning", "afternoon", "evening", "night", "full_day"] as const;
@@ -76,7 +68,8 @@ export async function createClinic(
   _prev: ScheduleActionResult,
   formData: FormData
 ): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-create");
+  if (!doctorId) return { error: "You don't have permission to create clinics." };
   const clinicName = String(formData.get("clinic_name") ?? "").trim();
   const addressType = String(formData.get("address_type") ?? "manual");
   const address = String(formData.get("address") ?? "").trim();
@@ -139,7 +132,8 @@ export async function updateClinic(
   _prev: ScheduleActionResult,
   formData: FormData
 ): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-edit");
+  if (!doctorId) return { error: "You don't have permission to edit clinics." };
   const clinicId = Number(formData.get("id"));
   const clinicName = String(formData.get("clinic_name") ?? "").trim();
   const addressType = String(formData.get("address_type") ?? "manual");
@@ -204,7 +198,8 @@ export async function updateClinic(
 }
 
 export async function deleteClinic(clinicId: number): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-delete");
+  if (!doctorId) return { error: "You don't have permission to delete clinics." };
   if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic ID." };
 
   const [existing] = await db
@@ -269,7 +264,8 @@ export async function saveSchedules(
   _prev: ScheduleActionResult,
   formData: FormData
 ): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-create");
+  if (!doctorId) return { error: "You don't have permission to manage schedules." };
   const clinicId = Number(formData.get("doctor_clinic_id"));
   const is24Hours = formData.get("is_24_hours") === "1" || formData.get("is_24_hours") === "true";
   const days = (formData.get("days") ?? "")
@@ -404,7 +400,8 @@ export async function updateSchedule(
   _prev: ScheduleActionResult,
   formData: FormData
 ): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-edit");
+  if (!doctorId) return { error: "You don't have permission to edit schedules." };
   const scheduleId = Number(formData.get("id"));
   const startTime = String(formData.get("start_time") ?? "").trim() || null;
   const endTime = String(formData.get("end_time") ?? "").trim() || null;
@@ -458,7 +455,8 @@ export async function updateSchedule(
 
 /** Soft-delete a weekly slot. Mirrors legacy `destroySchedule`. */
 export async function deleteSchedule(scheduleId: number): Promise<ScheduleActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("schedule-delete");
+  if (!doctorId) return { error: "You don't have permission to delete schedules." };
   if (!scheduleId || !Number.isInteger(scheduleId)) return { error: "Invalid schedule ID." };
 
   const [rows] = await db

@@ -18,7 +18,8 @@ import {
   supportTicketMessages,
   users,
 } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import {
   ensurePatientOfDoctor,
   ensureAppointmentOfDoctor,
@@ -31,12 +32,6 @@ import { audit } from "@/lib/security/audit-log";
 import { generateBillNumber } from "@/lib/utils";
 import { billSchema, supportTicketReplySchema } from "@/lib/validation";
 
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
-
 type ActionResult = { error: string | null };
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -46,7 +41,8 @@ const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
   if (!APPOINTMENT_STATUSES.includes(status)) return;
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-edit");
+  if (!doctorId) return;
   // Business state machine: only the confirm transition (-> confirmed) is a
   // generic status change. Complete/cancel have dedicated validated actions;
   // reversal (completed/pending etc.) must not be possible via this action.
@@ -76,7 +72,8 @@ export async function createBill(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("billing-create");
+  if (!doctorId) return { error: "You don't have permission to create bills." };
   const now = new Date();
   const patientId = Number(formData.get("patient_id"));
   const billingTypeId = Number(formData.get("billing_type_id"));
@@ -197,7 +194,8 @@ export async function createTransaction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("income-expense-create");
+  if (!doctorId) return { error: "You don't have permission to add transactions." };
   const now = new Date();
   const type = Number(formData.get("type"));
   const amount = String(formData.get("amount") ?? "0");
@@ -269,7 +267,10 @@ export async function saveConsultation(
   _prev: { error: string | null; consultationId: number | null },
   formData: FormData
 ): Promise<{ error: string | null; consultationId: number | null }> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("appointments-complete");
+  if (!doctorId) {
+    return { error: "You don't have permission to record consultations.", consultationId: null };
+  }
   const now = new Date();
   const appointmentId = Number(formData.get("appointment_id"));
   const patientId = Number(formData.get("patient_id"));
@@ -414,7 +415,8 @@ type TicketAction = { error: string | null };
 
 export async function updateFollowUpStatus(consultationId: number, status: string) {
   if (!FOLLOW_UP_STATUSES.includes(status)) return;
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("follow-up-status-update");
+  if (!doctorId) return;
   await db
     .update(consultations)
     .set({ followUpStatus: status, updatedAt: new Date() })
@@ -431,6 +433,11 @@ export async function createSupportTicket(
 ): Promise<TicketAction> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+    redirect(homePathForRole(user.role));
+  }
+  const allowed = await hasPermission(user.id, "support-view");
+  if (!allowed) return { error: "You don't have permission to open support tickets." };
   const subject = String(formData.get("subject") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 

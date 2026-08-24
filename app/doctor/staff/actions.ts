@@ -1,24 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, roles, modelHasRoles, staffAttendances } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
 
 export type StaffActionResult = { error: string | null };
 
 const USER_MODEL = "App\\Models\\User";
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 const ATTENDANCE_STATUSES = ["present", "absent", "half_day", "leave"] as const;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -37,7 +29,8 @@ export async function createStaff(
   _prev: StaffActionResult,
   formData: FormData
 ): Promise<StaffActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("staff-create");
+  if (!doctorId) return { error: "You don't have permission to add staff." };
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const phone = String(formData.get("phone") ?? "").trim() || null;
@@ -88,7 +81,8 @@ export async function updateStaff(
   _prev: StaffActionResult,
   formData: FormData
 ): Promise<StaffActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("staff-edit");
+  if (!doctorId) return { error: "You don't have permission to edit staff." };
   const staffId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -137,7 +131,8 @@ export async function updateStaff(
 }
 
 export async function deleteStaff(staffId: number): Promise<StaffActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("staff-delete");
+  if (!doctorId) return { error: "You don't have permission to delete staff." };
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
 
   const [existing] = await db
@@ -161,7 +156,8 @@ export async function saveAttendance(
   _prev: StaffActionResult,
   formData: FormData
 ): Promise<StaffActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("staff-edit");
+  if (!doctorId) return { error: "You don't have permission to manage attendance." };
   const date = String(formData.get("date") ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
 

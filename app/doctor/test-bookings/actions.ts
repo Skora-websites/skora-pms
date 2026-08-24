@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import { and, eq, like, or } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -14,18 +13,11 @@ import {
   billingTypes,
   transactions,
 } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
 import { generateBillNumber } from "@/lib/utils";
 
 export type TestBookingActionResult = { error: string | null };
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 const BOOKING_STATUSES = ["pending", "in-progress", "completed", "cancelled"] as const;
 
@@ -205,7 +197,8 @@ export async function createTestBooking(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-create");
+  if (!doctorId) return { error: "You don't have permission to create test bookings." };
   const registrationId = String(formData.get("registration_id") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const vendorId = Number(formData.get("vendor_id"));
@@ -298,7 +291,8 @@ export async function updateTestBooking(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-edit");
+  if (!doctorId) return { error: "You don't have permission to edit test bookings." };
   const bookingId = Number(formData.get("id"));
   const vendorId = Number(formData.get("vendor_id"));
   const testIds = String(formData.get("test_ids") ?? "")
@@ -363,7 +357,8 @@ export async function updateTestBooking(
 }
 
 export async function deleteTestBooking(bookingId: number): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-delete");
+  if (!doctorId) return { error: "You don't have permission to delete test bookings." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
 
   const [existing] = await db
@@ -384,7 +379,8 @@ export async function updateTestBookingStatus(
   bookingId: number,
   status: string
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-edit");
+  if (!doctorId) return { error: "You don't have permission to change booking status." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
   if (!(BOOKING_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
 
@@ -415,7 +411,8 @@ export async function updateTestBookingStatus(
 }
 
 export async function regenerateUploadLink(bookingId: number): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-edit");
+  if (!doctorId) return { error: "You don't have permission to manage upload links." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
 
   const [existing] = await db
@@ -439,7 +436,8 @@ export async function createVendor(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-create");
+  if (!doctorId) return { error: "You don't have permission to add vendors." };
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
@@ -472,7 +470,8 @@ export async function updateVendor(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-edit");
+  if (!doctorId) return { error: "You don't have permission to edit vendors." };
   const vendorId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
@@ -498,7 +497,8 @@ export async function updateVendor(
 }
 
 export async function deleteVendor(vendorId: number): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-delete");
+  if (!doctorId) return { error: "You don't have permission to delete vendors." };
   if (!vendorId || !Number.isInteger(vendorId)) return { error: "Invalid vendor ID." };
 
   const [existing] = await db
@@ -535,7 +535,8 @@ export async function createTest(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-create");
+  if (!doctorId) return { error: "You don't have permission to add tests." };
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
   const price = String(formData.get("price") ?? "0");
@@ -562,7 +563,8 @@ export async function updateTest(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-edit");
+  if (!doctorId) return { error: "You don't have permission to edit tests." };
   const testId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -589,7 +591,8 @@ export async function updateTest(
 }
 
 export async function deleteTest(testId: number): Promise<TestBookingActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("test-booking-delete");
+  if (!doctorId) return { error: "You don't have permission to delete tests." };
   if (!testId || !Number.isInteger(testId)) return { error: "Invalid test ID." };
 
   const [existing] = await db

@@ -8,8 +8,8 @@ import path from "node:path";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, consultations, billings } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
 import { hashPassword } from "@/lib/auth/password";
+import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { patientSchema } from "@/lib/validation";
@@ -18,13 +18,6 @@ export type PatientActionResult = { error: string | null };
 
 // Profile photos are stored outside public/ (PHI-safe); served via authenticated route.
 const PHOTO_DIR = path.join(process.cwd(), "storage", "uploads", "patient-photos");
-
-async function getDoctorId(): Promise<number> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
 
 /** Magic-byte check — only real JPEG/PNG/WEBP images pass (spoofed extensions rejected). */
 function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | null {
@@ -69,7 +62,8 @@ export async function createPatient(
   _prev: PatientActionResult,
   formData: FormData
 ): Promise<PatientActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("registrations-create");
+  if (!doctorId) return { error: "You don't have permission to register patients." };
   const now = new Date();
 
   const parsed = patientSchema.safeParse({
@@ -153,7 +147,8 @@ export async function updatePatient(
   _prev: PatientActionResult,
   formData: FormData
 ): Promise<PatientActionResult> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("registrations-edit");
+  if (!doctorId) return { error: "You don't have permission to edit patients." };
   const patientId = Number(formData.get("patient_id"));
 
   if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient." };
@@ -239,7 +234,8 @@ export async function updatePatient(
 }
 
 export async function deletePatient(patientId: number): Promise<PatientActionResult | undefined> {
-  const doctorId = await getDoctorId();
+  const doctorId = await requireDoctorPermission("registrations-delete");
+  if (!doctorId) return { error: "You don't have permission to delete patients." };
   if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient ID." };
   if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
     return { error: "Patient not found for this doctor." };
