@@ -39,7 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/marketing/logo";
 
-const ICON_MAP: Record<string, LucideIcon> = {
+export const ICON_MAP: Record<string, LucideIcon> = {
   "layout-dashboard": LayoutDashboard,
   "calendar-clock": CalendarClock,
   "user-plus": UserPlus,

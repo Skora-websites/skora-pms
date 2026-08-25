@@ -6,9 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "capacitor:init": "cap init SkoraCare com.skoracare.app --web-dir=out",
+    "capacitor:add:android": "npm run build && cap add android",
+    "capacitor:add:ios": "npm run build && cap add ios",
+    "capacitor:sync": "npm run build && cap sync",
+    "capacitor:open:android": "cap open android",
+    "capacitor:open:ios": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "@react-pdf/renderer": "^4.6.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
