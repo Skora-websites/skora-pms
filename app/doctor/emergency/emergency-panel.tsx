@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
-import { acceptSos, declineSos, setDoctorOnDuty, updateDoctorLocation } from "@/lib/dispatch/actions";
+import { acceptSos, completeSos, declineSos, setDoctorOnDuty, updateDoctorLocation } from "@/lib/dispatch/actions";
 
 type Offer = {
   id: number;
@@ -17,14 +17,16 @@ type Offer = {
 export function EmergencyPanel({
   initialOffers,
   initialOnDuty,
+  initialActiveCase,
 }: {
   initialOffers: Offer[];
   initialOnDuty: boolean;
+  initialActiveCase?: number | null;
 }) {
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [onDuty, setOnDuty] = useState(initialOnDuty);
   const [busy, setBusy] = useState(false);
-  const [activeCase, setActiveCase] = useState<number | null>(null);
+  const [activeCase, setActiveCase] = useState<number | null>(initialActiveCase ?? null);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const shareTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -118,6 +120,16 @@ export function EmergencyPanel({
     });
   };
 
+  const complete = (requestId: number) => {
+    setBusy(true);
+    startTransition(async () => {
+      await completeSos(requestId);
+      setActiveCase(null);
+      setBusy(false);
+      router.refresh();
+    });
+  };
+
   return (
     <div className="space-y-4">
       {/* Active case banner — sharing live location */}
@@ -130,9 +142,18 @@ export function EmergencyPanel({
               <p className="text-xs text-slate-500">Your GPS position is visible to the patient (updated every 5s).</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> LIVE
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> LIVE
+            </span>
+            <button
+              onClick={() => complete(activeCase)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
+            </button>
+          </div>
         </div>
       )}
       {/* On-duty toggle */}

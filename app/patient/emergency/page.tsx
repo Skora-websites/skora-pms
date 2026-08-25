@@ -3,6 +3,7 @@ import { Phone, PhoneCall } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getCompanySettings } from "@/lib/queries/landing";
 import { PageHeader } from "@/components/ui/dashboard-ui";
+import { getMyActiveRequest } from "@/lib/dispatch/actions";
 import { SosDispatchButton } from "./sos-dispatch";
 
 export const metadata: Metadata = { title: "Emergency · Patient" };
@@ -12,6 +13,8 @@ export default async function EmergencyPage() {
   await requireRole(["patient"]);
   const settings = await getCompanySettings();
   const supportPhone = settings?.companyMobile1 ?? "+91 108";
+  // Resume an in-flight SOS if the patient reloads mid-dispatch.
+  const active = await getMyActiveRequest();
 
   return (
     <div className="mx-auto max-w-xl">
@@ -22,7 +25,7 @@ export default async function EmergencyPage() {
 
       <div className="space-y-4">
         {/* Uber-style SOS dispatch (big red button + live map tracking) */}
-        <SosDispatchButton />
+        <SosDispatchButton initialRequestId={active?.id ?? null} />
 
         {/* Call cards */}
         <div className="overflow-hidden rounded-3xl border-2 border-red-200 bg-white shadow-lg">

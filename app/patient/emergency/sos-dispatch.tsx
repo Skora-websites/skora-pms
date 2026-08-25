@@ -29,10 +29,10 @@ type StatusPayload = {
  * - After dispatch, shows a live map with the patient marker and the
  *   doctor marker that moves in real time as the doctor drives over.
  */
-export function SosDispatchButton() {
+export function SosDispatchButton({ initialRequestId = null }: { initialRequestId?: number | null }) {
   const [locating, setLocating] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [requestId, setRequestId] = useState<number | null>(null);
+  const [requestId, setRequestId] = useState<number | null>(initialRequestId);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [useGps, setUseGps] = useState(true);

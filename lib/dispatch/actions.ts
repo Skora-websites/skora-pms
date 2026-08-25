@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { sosRequests, sosOffers, sosCases, users } from "@/lib/db/schema";
@@ -277,6 +277,11 @@ export async function completeSos(requestId: number): Promise<SosActionResult> {
     .update(sosCases)
     .set({ status: "completed", updatedAt: new Date() })
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
+  // Keep the request in sync so the patient tracker flips to resolved.
+  await db
+    .update(sosRequests)
+    .set({ status: "completed", updatedAt: new Date() })
+    .where(and(eq(sosRequests.id, requestId), eq(sosRequests.acceptedBy, doctorId)));
   const [req] = await db
     .select({ patientId: sosRequests.patientId })
     .from(sosRequests)
@@ -361,14 +366,27 @@ export async function getMySosOffers() {
   }));
 }
 
-/** Patient's latest request (for the status tracker initial state). */
+/** Patient's latest ACTIVE request (pending or accepted) — for tracker resume. */
 export async function getMyActiveRequest() {
   const user = await requirePatient();
   const [req] = await db
     .select()
     .from(sosRequests)
-    .where(and(eq(sosRequests.patientId, user.id), eq(sosRequests.status, "pending")))
+    .where(and(eq(sosRequests.patientId, user.id), sql`${sosRequests.status} IN ('pending','accepted')`))
     .orderBy(desc(sosRequests.createdAt))
     .limit(1);
   return req ?? null;
+}
+
+/** Doctor's current open case request id (for the en-route banner resume). */
+export async function getMyActiveCase() {
+  const doctor = await requireDoctor();
+  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const [caseRow] = await db
+    .select({ sosRequestId: sosCases.sosRequestId })
+    .from(sosCases)
+    .where(and(eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")))
+    .orderBy(desc(sosCases.createdAt))
+    .limit(1);
+  return caseRow?.sosRequestId ?? null;
 }
