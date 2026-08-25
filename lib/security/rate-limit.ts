@@ -77,4 +77,6 @@ export const authRateLimit = {
   consent: (slug: string) => rateLimit(`consent:${slug}`, 10, 60 * 60_000),
   demo: (email: string) => rateLimit(`demo:${email}`, 5, 60 * 60_000),
   chatPoll: (userId: number) => rateLimit(`chat-poll:${userId}`, 30, 60_000),
+  // SOS: at most 1 emergency request per minute per patient.
+  emergency: (userId: number) => rateLimit(`emergency:${userId}`, 1, 60_000),
 };

@@ -20,6 +20,7 @@ export type CurrentUser = {
   phone: string | null;
   role: string;
   status: string | null;
+  onDuty: boolean | null;
   profilePhotoPath: string | null;
   signaturePath: string | null;
   notificationPreferences: unknown;
@@ -44,6 +45,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       phone: users.phone,
       role: users.role,
       status: users.status,
+      onDuty: users.onDuty,
       profilePhotoPath: users.profilePhotoPath,
       signaturePath: users.signaturePath,
       notificationPreferences: users.notificationPreferences,

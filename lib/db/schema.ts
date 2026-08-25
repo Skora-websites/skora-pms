@@ -63,6 +63,7 @@ export const users = mysqlTable(
     latitude: varchar("latitude", { length: 255 }),
     longitude: varchar("longitude", { length: 255 }),
     status: varchar("status", { length: 255 }).default("active"),
+    onDuty: boolean("on_duty").default(false),
     emailVerifiedAt: timestamp("email_verified_at"),
     rememberToken: varchar("remember_token", { length: 100 }),
     currentTeamId: bigint("current_team_id", { mode: "number" }),
@@ -1420,6 +1421,90 @@ export const leads = mysqlTable("leads", {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SOS Emergency Dispatch (Uber-style: patient SOS → nearby on-duty doctors
+// → first-accept-wins dispatch → case record)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Patient's emergency request (pending → accepted → completed | cancelled | expired). */
+export const sosRequests = mysqlTable(
+  "sos_requests",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    status: mysqlEnum("status", ["pending", "accepted", "completed", "cancelled", "expired"])
+      .default("pending")
+      .notNull(),
+    latitude: varchar("latitude", { length: 255 }).notNull(),
+    longitude: varchar("longitude", { length: 255 }).notNull(),
+    radiusKm: int("radius_km").default(10),
+    complaint: varchar("complaint", { length: 500 }),
+    patientNotes: text("patient_notes"),
+    acceptedBy: bigint("accepted_by", { mode: "number" }),
+    acceptedAt: timestamp("accepted_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("sos_requests_status_index").on(t.status),
+    index("sos_requests_patient_id_index").on(t.patientId),
+    foreignKey({ columns: [t.patientId], foreignColumns: [users.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.acceptedBy], foreignColumns: [users.id] }).onDelete("set null"),
+  ]
+);
+
+/** Per-doctor offer to accept a request (race-condition handling). */
+export const sosOffers = mysqlTable(
+  "sos_offers",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    sosRequestId: bigint("sos_request_id", { mode: "number" }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    clinicId: bigint("clinic_id", { mode: "number" }),
+    distanceKm: decimal("distance_km", { precision: 8, scale: 2 }),
+    status: mysqlEnum("status", ["broadcast", "accepted", "declined", "expired"])
+      .default("broadcast")
+      .notNull(),
+    respondedAt: timestamp("responded_at"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => [
+    uniqueIndex("sos_offers_request_doctor_unique").on(t.sosRequestId, t.doctorId),
+    index("sos_offers_doctor_id_index").on(t.doctorId),
+    index("sos_offers_status_index").on(t.status),
+    foreignKey({ columns: [t.sosRequestId], foreignColumns: [sosRequests.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.doctorId], foreignColumns: [users.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.clinicId], foreignColumns: [doctorClinics.id] }).onDelete("set null"),
+  ]
+);
+
+/** Post-accept emergency case record. */
+export const sosCases = mysqlTable(
+  "sos_cases",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    sosRequestId: bigint("sos_request_id", { mode: "number" }).notNull(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    clinicId: bigint("clinic_id", { mode: "number" }),
+    acceptedAt: timestamp("accepted_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    patientSymptoms: text("patient_symptoms"),
+    notes: text("notes"),
+    status: mysqlEnum("status", ["open", "completed", "cancelled"]).default("open").notNull(),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("sos_cases_doctor_id_index").on(t.doctorId),
+    index("sos_cases_patient_id_index").on(t.patientId),
+    foreignKey({ columns: [t.sosRequestId], foreignColumns: [sosRequests.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.patientId], foreignColumns: [users.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.doctorId], foreignColumns: [users.id] }).onDelete("cascade"),
+    foreignKey({ columns: [t.clinicId], foreignColumns: [doctorClinics.id] }).onDelete("set null"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1433,3 +1518,9 @@ export type Consultation = typeof consultations.$inferSelect;
 export type NewConsultation = typeof consultations.$inferInsert;
 export type LandingSection = typeof landingSections.$inferSelect;
 export type LandingItem = typeof landingItems.$inferSelect;
+export type SosRequest = typeof sosRequests.$inferSelect;
+export type NewSosRequest = typeof sosRequests.$inferInsert;
+export type SosOffer = typeof sosOffers.$inferSelect;
+export type NewSosOffer = typeof sosOffers.$inferInsert;
+export type SosCase = typeof sosCases.$inferSelect;
+export type NewSosCase = typeof sosCases.$inferInsert;

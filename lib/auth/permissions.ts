@@ -38,6 +38,7 @@ export const DOCTOR_ROUTE_PERMISSIONS: { prefix: string; perm: DoctorNavPerm }[]
   { prefix: "/doctor/staff", perm: "roles-permissions" },
   { prefix: "/doctor/roles", perm: "roles-permissions" },
   // Dashboard-scoped pages: not visible without the dashboard module.
+  { prefix: "/doctor/emergency", perm: "dashboard" },
   { prefix: "/doctor/consultations", perm: "dashboard" },
   { prefix: "/doctor/online-consultations", perm: "dashboard" },
   { prefix: "/doctor/notifications", perm: "dashboard" },
