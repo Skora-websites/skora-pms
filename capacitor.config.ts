@@ -4,20 +4,16 @@ const config: CapacitorConfig = {
   appId: "com.skoracare.app",
   appName: "SkoraCare",
   webDir: "out",
-  server: {
-    // Capacitor Live URL approach: the app loads the live site directly.
-    // Start at the LOGIN page. Both HTTPS (production) and HTTP (dev /
-    // cleartext fallback) are supported — cleartext:true permits http.
-    url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com/login",
-    androidScheme: "https",
-    cleartext: true,
-  },
+  // NOTE: intentionally NO server.url — the app ships a local launcher
+  // (out/index.html) that immediately redirects to the live site via JS.
+  // This avoids the Capacitor remote-URL blank-screen issue: the splash
+  // hides on the local page (reliable), then navigates to the server.
   android: {
     allowMixedContent: true,
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 2000,
+      launchShowDuration: 1500,
       launchAutoHide: true,
       backgroundColor: "#0f1b33",
       showSpinner: true,
