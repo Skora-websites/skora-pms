@@ -5,10 +5,9 @@ const config: CapacitorConfig = {
   appName: "SkoraCare",
   webDir: "out",
   server: {
-    // Dev: point at the local Next.js server for hot reload during
-    // Capacitor development. Replace with the production URL when the app
-    // is served remotely (pms.skorainfotech.com).
-    url: process.env.CAPACITOR_SERVER_URL || undefined,
+    // Production: the APK loads the live app at pms.skorainfotech.com.
+    // For local dev, set CAPACITOR_SERVER_URL=http://localhost:3000
+    url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com",
     androidScheme: "https",
     cleartext: true,
   },
