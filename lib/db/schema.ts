@@ -1490,6 +1490,10 @@ export const sosCases = mysqlTable(
     acceptedAt: timestamp("accepted_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
     patientSymptoms: text("patient_symptoms"),
     notes: text("notes"),
+    // Live doctor location (updated during the trip for real-time tracking).
+    doctorLatitude: varchar("doctor_latitude", { length: 255 }),
+    doctorLongitude: varchar("doctor_longitude", { length: 255 }),
+    doctorLastSeenAt: timestamp("doctor_last_seen_at"),
     status: mysqlEnum("status", ["open", "completed", "cancelled"]).default("open").notNull(),
     createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
     updatedAt: timestamp("updated_at"),

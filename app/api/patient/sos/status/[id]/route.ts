@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { sosRequests, users } from "@/lib/db/schema";
+import { sosRequests, sosCases, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 
 export const runtime = "nodejs";
@@ -12,6 +12,9 @@ export const runtime = "nodejs";
  * Live status tracker for the patient's own SOS request.
  * Ownership check: only the patient who created the request can see it
  * (IDOR-safe — any other patient gets a 404).
+ *
+ * When the request is accepted, also returns the doctor's LIVE location
+ * (updated by the doctor while en route) for the map tracking view.
  */
 export async function GET(
   _req: Request,
@@ -39,11 +42,28 @@ export async function GET(
   let doctor = null;
   if (req.status === "accepted" && req.acceptedBy) {
     const [d] = await db
-      .select({ name: users.name, phone: users.phone })
+      .select({
+        name: users.name,
+        phone: users.phone,
+        caseLatitude: sosCases.doctorLatitude,
+        caseLongitude: sosCases.doctorLongitude,
+        lastSeenAt: sosCases.doctorLastSeenAt,
+        caseStatus: sosCases.status,
+      })
       .from(users)
+      .leftJoin(sosCases, and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, req.acceptedBy)))
       .where(eq(users.id, req.acceptedBy))
       .limit(1);
-    doctor = d ?? null;
+    doctor = d
+      ? {
+          name: d.name,
+          phone: d.phone,
+          liveLatitude: d.caseLatitude ?? null,
+          liveLongitude: d.caseLongitude ?? null,
+          lastSeenAt: d.lastSeenAt ?? null,
+          caseStatus: d.caseStatus ?? null,
+        }
+      : null;
   }
 
   return NextResponse.json({
@@ -51,6 +71,8 @@ export async function GET(
     status: req.status,
     complaint: req.complaint,
     createdAt: req.createdAt,
+    patientLatitude: req.latitude,
+    patientLongitude: req.longitude,
     doctor,
   });
 }

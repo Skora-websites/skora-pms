@@ -74,7 +74,9 @@ export function proxy(request: NextRequest) {
     [
       "camera=()",
       "microphone=()",
-      "geolocation=()",
+      // Geolocation is used by the SOS emergency dispatch (patient +
+      // doctor live tracking), so allow it on this origin.
+      "geolocation=(self)",
       "interest-cohort=()",
     ].join(", ")
   );

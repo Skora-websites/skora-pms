@@ -302,6 +302,35 @@ export async function setDoctorOnDuty(onDuty: boolean): Promise<SosActionResult>
   return { error: null };
 }
 
+/**
+ * Doctor updates their live location for the accepted emergency case.
+ * Called periodically (e.g. every 5s) while en route so the patient sees
+ * the doctor moving on the map (Uber-style live tracking).
+ */
+export async function updateDoctorLocation(
+  requestId: number,
+  latitude: number,
+  longitude: number
+): Promise<SosActionResult> {
+  const doctor = await requireDoctor();
+  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  if (!Number.isInteger(requestId) || requestId <= 0) return { error: "Invalid request." };
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: "Invalid location." };
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return { error: "Invalid coordinates." };
+
+  // Only the accepting doctor of an open case may update location.
+  await db
+    .update(sosCases)
+    .set({
+      doctorLatitude: String(latitude),
+      doctorLongitude: String(longitude),
+      doctorLastSeenAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")));
+  return { error: null };
+}
+
 /** Doctor's own broadcast offers (initial load / polling fallback). */
 export async function getMySosOffers() {
   const doctor = await requireDoctor();

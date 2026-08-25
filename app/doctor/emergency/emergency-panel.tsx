@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
-import { acceptSos, declineSos, setDoctorOnDuty } from "@/lib/dispatch/actions";
+import { acceptSos, declineSos, setDoctorOnDuty, updateDoctorLocation } from "@/lib/dispatch/actions";
 
 type Offer = {
   id: number;
@@ -24,8 +24,10 @@ export function EmergencyPanel({
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [onDuty, setOnDuty] = useState(initialOnDuty);
   const [busy, setBusy] = useState(false);
+  const [activeCase, setActiveCase] = useState<number | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
+  const shareTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Live SSE subscription when on duty.
   useEffect(() => {
@@ -60,6 +62,28 @@ export function EmergencyPanel({
     return () => es.close();
   }, [onDuty]);
 
+  // When an active case exists, share live GPS every 5s (Uber-style tracking).
+  useEffect(() => {
+    if (activeCase == null) return;
+    if (!navigator.geolocation) return;
+    const send = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          void updateDoctorLocation(activeCase, pos.coords.latitude, pos.coords.longitude);
+        },
+        () => {
+          /* ignore — retry next tick */
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    };
+    send();
+    shareTimer.current = setInterval(send, 5000);
+    return () => {
+      if (shareTimer.current) clearInterval(shareTimer.current);
+    };
+  }, [activeCase]);
+
   const toggleDuty = () => {
     setBusy(true);
     startTransition(async () => {
@@ -75,7 +99,10 @@ export function EmergencyPanel({
     startTransition(async () => {
       const res = await acceptSos(requestId);
       if (res.error) alert(res.error);
-      else setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
+      else {
+        setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
+        setActiveCase(requestId);
+      }
       setBusy(false);
       router.refresh();
     });
@@ -93,6 +120,21 @@ export function EmergencyPanel({
 
   return (
     <div className="space-y-4">
+      {/* Active case banner — sharing live location */}
+      {activeCase != null && (
+        <div className="card flex items-center justify-between border-emerald-200 p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg">🚑</span>
+            <div>
+              <p className="font-bold text-emerald-700">En route — sharing live location</p>
+              <p className="text-xs text-slate-500">Your GPS position is visible to the patient (updated every 5s).</p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> LIVE
+          </span>
+        </div>
+      )}
       {/* On-duty toggle */}
       <div className="card flex items-center justify-between p-6">
         <div>
