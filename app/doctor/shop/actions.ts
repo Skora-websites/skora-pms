@@ -5,14 +5,21 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { medicines } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth/guard";
+import { hasPermission } from "@/lib/auth/user";
 
 export type MedicineActionResult = { error: string | null };
+
+/** Shop module requires the shop-view permission. */
+async function requireShopView(userId: number): Promise<boolean> {
+  return hasPermission(userId, "shop-view");
+}
 
 export async function addMedicine(
   _prev: MedicineActionResult,
   formData: FormData
 ): Promise<MedicineActionResult> {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  if (!(await requireShopView(user.id))) return { error: "You don't have permission to manage the shop." };
 
   const name = String(formData.get("name") ?? "").trim();
   const strength = String(formData.get("strength") ?? "").trim() || null;
@@ -32,7 +39,8 @@ export async function editMedicine(
   _prev: MedicineActionResult,
   formData: FormData
 ): Promise<MedicineActionResult> {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  if (!(await requireShopView(user.id))) return { error: "You don't have permission to manage the shop." };
 
   const medicineId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
@@ -51,7 +59,8 @@ export async function editMedicine(
 }
 
 export async function deleteMedicine(medicineId: number): Promise<MedicineActionResult> {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  if (!(await requireShopView(user.id))) return { error: "You don't have permission to manage the shop." };
 
   if (!Number.isInteger(medicineId) || medicineId < 1) return { error: "Invalid medicine ID." };
 

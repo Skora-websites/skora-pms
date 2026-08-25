@@ -7,7 +7,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission } from "@/lib/auth/user";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
 
 export type ProfileState = { error: string | null };

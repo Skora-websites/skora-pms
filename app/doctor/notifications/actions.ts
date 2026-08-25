@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { and, eq, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notifications } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission } from "@/lib/auth/user";
 
 export type NotifState = { error: string | null };
 
@@ -18,15 +18,17 @@ export type NotifRow = {
   read: boolean | null;
   createdAt: Date;
 };
-async function getDoctorId(): Promise<number> {
+async function getDoctorId(): Promise<number | null> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
+  if (!(await hasPermission(user.id, "dashboard"))) return null;
   return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 }
 
 export async function getNotifications(): Promise<NotifRow[]> {
   const doctorId = await getDoctorId();
+  if (!doctorId) return [];
   const rows = await db
     .select({
       id: notifications.id,
@@ -46,6 +48,7 @@ export async function getNotifications(): Promise<NotifRow[]> {
 
 export async function markAsRead(notificationId: number): Promise<void> {
   const doctorId = await getDoctorId();
+  if (!doctorId) return;
   await db
     .update(notifications)
     .set({ read: true, updatedAt: new Date() })
@@ -55,6 +58,7 @@ export async function markAsRead(notificationId: number): Promise<void> {
 
 export async function markAllAsRead(): Promise<void> {
   const doctorId = await getDoctorId();
+  if (!doctorId) return;
   await db
     .update(notifications)
     .set({ read: true, updatedAt: new Date() })
@@ -64,6 +68,7 @@ export async function markAllAsRead(): Promise<void> {
 
 export async function getUnreadCount(): Promise<number> {
   const doctorId = await getDoctorId();
+  if (!doctorId) return 0;
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
     .from(notifications)

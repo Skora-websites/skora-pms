@@ -8,7 +8,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorConsultPdfs } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission } from "@/lib/auth/user";
 
 export type ConsultPdfActionResult = { error: string | null };
 
@@ -23,6 +23,9 @@ export async function uploadConsultPdf(
   if (!user) redirect("/login");
   if (!["doctor", "receptionist", "admin"].includes(user.role)) {
     return { error: "Not authorized." };
+  }
+  if (!(await hasPermission(user.id, "dashboard"))) {
+    return { error: "You don't have permission to upload consultation PDFs." };
   }
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 

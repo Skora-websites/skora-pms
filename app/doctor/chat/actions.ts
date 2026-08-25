@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chatRooms, messages, favorites, userChatSettings, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 
 async function getChatRoomId(): Promise<number> {
@@ -20,7 +20,19 @@ async function getChatRoomId(): Promise<number> {
 async function authedUser() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+    redirect(homePathForRole(user.role));
+  }
   return user;
+}
+
+/** Chat module requires the chat-view permission (nav already filters it). */
+async function requireChatView(user: { id: number }): Promise<boolean> {
+  return hasPermission(user.id, "chat-view");
+}
+
+async function requireChatSend(user: { id: number }): Promise<boolean> {
+  return hasPermission(user.id, "chat-send");
 }
 
 export type ChatActionResult = { error: string | null };
@@ -30,6 +42,7 @@ export async function sendChatMessage(
   formData: FormData
 ): Promise<ChatActionResult> {
   const user = await authedUser();
+  if (!(await requireChatSend(user))) return { error: "You don't have permission to send messages." };
   const content = String(formData.get("content") ?? "").trim();
   if (!content) return { error: "Message cannot be empty." };
   const roomId = await getChatRoomId();
@@ -51,6 +64,7 @@ export async function sendChatMessage(
 /** Polls for messages newer than the last seen id. */
 export async function pollChatMessages(sinceId: number) {
   const user = await authedUser();
+  if (!(await requireChatView(user))) return [];
   const { allowed } = authRateLimit.chatPoll(user.id);
   if (!allowed) {
     // Quietly return nothing so the poller just retries next tick.
@@ -78,6 +92,7 @@ export async function pollChatMessages(sinceId: number) {
 
 export async function toggleChatFavorite(messageId: number) {
   const user = await authedUser();
+  if (!(await requireChatView(user))) return;
   const [existing] = await db
     .select({ id: favorites.id })
     .from(favorites)
@@ -98,6 +113,7 @@ export async function toggleChatFavorite(messageId: number) {
 
 export async function deleteChatMessage(messageId: number) {
   const user = await authedUser();
+  if (!(await requireChatView(user))) return;
   await db
     .update(messages)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -107,6 +123,7 @@ export async function deleteChatMessage(messageId: number) {
 
 export async function toggleChatMute() {
   const user = await authedUser();
+  if (!(await requireChatView(user))) return;
   const roomId = await getChatRoomId();
   const now = new Date();
   const [existing] = await db
@@ -133,6 +150,7 @@ export async function toggleChatMute() {
 
 export async function clearChat() {
   const user = await authedUser();
+  if (!(await requireChatView(user))) return;
   const roomId = await getChatRoomId();
   const now = new Date();
   const [existing] = await db
@@ -160,6 +178,7 @@ export async function clearChat() {
 /** Edit one of your own messages (legacy ChatController@update parity). */
 export async function updateChatMessage(messageId: number, content: string) {
   const user = await authedUser();
+  if (!(await requireChatSend(user))) return { error: "You don't have permission to edit messages." };
   const text = String(content ?? "").trim();
   if (!text) return { error: "Message cannot be empty." };
   const [existing] = await db
