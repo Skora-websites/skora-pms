@@ -36,10 +36,12 @@ export function SosDispatchButton() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [useGps, setUseGps] = useState(true);
-  const [manualLat, setManualLat] = useState("");
-  const [manualLng, setManualLng] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // formRef reads CURRENT DOM input values at click time (no React state
+  // batching races between the toggle/fill and the SOS tap).
+  const formRef = useRef<HTMLFormElement>(null);
+  const gpsModeRef = useRef(true);
 
   const getPosition = useCallback((): Promise<{ lat: number; lng: number }> => {
     return new Promise((resolve, reject) => {
@@ -55,21 +57,32 @@ export function SosDispatchButton() {
     });
   }, []);
 
+  const toggleMode = () => {
+    const next = !gpsModeRef.current;
+    gpsModeRef.current = next;
+    setUseGps(next);
+  };
+
   const fireSos = () => {
     setError(null);
     startTransition(async () => {
       try {
         let lat: number;
         let lng: number;
-        if (useGps) {
+        if (gpsModeRef.current) {
           setLocating(true);
           const pos = await getPosition();
           lat = pos.lat;
           lng = pos.lng;
           setLocating(false);
         } else {
-          lat = Number(manualLat);
-          lng = Number(manualLng);
+          // Read from the DOM directly via form data — no stale state races.
+          if (!formRef.current) { setError("Form not ready."); return; }
+          const fd = new FormData(formRef.current);
+          const rawLat = fd.get("latitude") as string;
+          const rawLng = fd.get("longitude") as string;
+          lat = Number(rawLat ?? "");
+          lng = Number(rawLng ?? "");
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
             setError("Enter valid coordinates.");
             return;
@@ -218,7 +231,7 @@ export function SosDispatchButton() {
           <p className="text-xs font-semibold text-slate-500">YOUR LOCATION</p>
           <button
             type="button"
-            onClick={() => setUseGps(!useGps)}
+            onClick={toggleMode}
             className="text-xs font-semibold text-brand-700 hover:text-brand-600"
           >
             {useGps ? "Use manual coords" : "Use GPS"}
@@ -238,10 +251,10 @@ export function SosDispatchButton() {
             <MapPin className="h-4 w-4" /> Use my current location
           </button>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <input value={manualLat} onChange={(e) => setManualLat(e.target.value)} placeholder="Latitude" className="input" inputMode="decimal" />
-            <input value={manualLng} onChange={(e) => setManualLng(e.target.value)} placeholder="Longitude" className="input" inputMode="decimal" />
-          </div>
+          <form ref={formRef} className="grid grid-cols-2 gap-3">
+            <input name="latitude" placeholder="Latitude" className="input" inputMode="decimal" />
+            <input name="longitude" placeholder="Longitude" className="input" inputMode="decimal" />
+          </form>
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>

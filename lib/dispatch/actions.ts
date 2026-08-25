@@ -17,8 +17,9 @@ const sosSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
   radiusKm: z.coerce.number().int().min(1).max(50).default(10),
-  complaint: z.string().trim().max(500).optional().or(z.literal("")),
-  notes: z.string().trim().max(2000).optional().or(z.literal("")),
+  // FormData.get returns null for missing keys — accept null/empty/absent.
+  complaint: z.string().trim().max(500).optional().or(z.literal("")).or(z.null()),
+  notes: z.string().trim().max(2000).optional().or(z.literal("")).or(z.null()),
 });
 
 export type SosActionResult = { error: string | null; requestId?: number };
