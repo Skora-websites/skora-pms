@@ -3,6 +3,7 @@ import { and, desc, eq, gte, inArray, like, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { todayStr } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
   // Default to today when no date/search filters are given (legacy behaviour).
   const hasFilters = Boolean(startDate || endDate || searchName || searchPhone);
   if (!hasFilters) {
-    conds.push(eq(appointments.date, new Date().toISOString().slice(0, 10) as never));
+    conds.push(eq(appointments.date, todayStr() as never));
   }
 
   let ids: number[] = [];

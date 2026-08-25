@@ -26,7 +26,8 @@ import {
   doctorConsultPdfs,
 } from "@/lib/db/schema";
 
-const dateStr = (d: Date) => d.toISOString().slice(0, 10);
+const dateStr = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export type AppointmentRow = {
   id: number;

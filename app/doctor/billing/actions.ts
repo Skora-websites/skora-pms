@@ -8,7 +8,7 @@ import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor, ensureBillingTypeOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { billSchema } from "@/lib/validation";
-import { generateBillNumber } from "@/lib/utils";
+import { generateBillNumber, todayStr } from "@/lib/utils";
 
 type ActionResult = { error: string | null };
 
@@ -75,7 +75,7 @@ export async function createBill(
     paymentMethod: paymentMethod as never,
     status: isCredit ? "pending" : "paid",
     notes,
-    billDate: now.toISOString().slice(0, 10),
+    billDate: todayStr(now),
     createdAt: now,
     updatedAt: now,
   });
@@ -99,7 +99,7 @@ export async function createBill(
     type: 1,
     billingId,
     amount,
-    date: now.toISOString().slice(0, 10),
+    date: todayStr(now),
     status: "approved",
     description: `Bill ${billNumber}${billingType ? ` — ${billingType.name}` : ""}${notes ? ` (${notes})` : ""}`,
     paymentMethod,
@@ -150,7 +150,7 @@ export async function collectCreditPayment(billId: number): Promise<ActionResult
     type: 1,
     billingId: billId,
     amount,
-    date: now.toISOString().slice(0, 10),
+    date: todayStr(now),
     status: "approved",
     description: `Bill ${bill.billNumber} — credit payment collected`,
     paymentMethod: "credit",
@@ -235,7 +235,7 @@ export async function updateBill(
       .set({
         amount: receivedAmount,
         paymentMethod,
-        date: now.toISOString().slice(0, 10),
+        date: todayStr(now),
         updatedAt: now,
       })
       .where(eq(transactions.id, tx.id));
@@ -245,7 +245,7 @@ export async function updateBill(
       type: 1,
       billingId: billId,
       amount: receivedAmount,
-      date: now.toISOString().slice(0, 10),
+      date: todayStr(now),
       status: "approved",
       description: `Bill update — #${billId}`,
       paymentMethod,

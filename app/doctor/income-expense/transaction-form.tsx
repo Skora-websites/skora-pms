@@ -19,7 +19,7 @@ export function TransactionForm({
   const [type, setType] = useState<"1" | "2">("1");
 
   const categories = type === "1" ? incomeTypes : expenseTypes;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA");
 
   return (
     <div className="card h-fit p-7">

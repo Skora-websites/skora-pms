@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
 
   // Build 30-min slots across each schedule window, skip booked + past.
   const now = new Date();
-  const isToday = date === now.toISOString().slice(0, 10);
+  const isToday = date === new Date().toLocaleDateString("en-CA");
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
   const slots = new Set<string>();

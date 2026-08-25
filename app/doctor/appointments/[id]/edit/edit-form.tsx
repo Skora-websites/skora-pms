@@ -31,7 +31,7 @@ export function EditAppointmentForm({
   patients: Patient[];
 }) {
   const [state, formAction, pending] = useActionState(updateAppointment, initialState);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA");
 
   return (
     <div className="card p-7">

@@ -28,7 +28,7 @@ export function ConsultationForm({
 }) {
   const [state, formAction, pending] = useActionState(saveConsultation, initialState);
   const [meds, setMeds] = useState("");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA");
 
   const addMedicine = (name: string) => {
     setMeds((prev) => (prev.trim() ? `${prev.trim()}\n${name}` : name));

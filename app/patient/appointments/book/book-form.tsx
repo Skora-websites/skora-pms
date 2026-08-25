@@ -37,7 +37,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
   const [selectedSlot, setSelectedSlot] = useState("");
   const [slotMessage, setSlotMessage] = useState<string | null>(null);
   const [visitType, setVisitType] = useState<"clinical_visit" | "home_visit">("clinical_visit");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA");
 
   const selectedDoctor = doctors.find((d) => String(d.id) === doctorId) ?? null;
 

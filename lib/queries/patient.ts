@@ -2,6 +2,7 @@ import { cache } from "react";
 import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
+import { todayStr } from "@/lib/utils";
 
 /** Patient's bill receipts with doctor + billing type names. */
 export const getPatientBills = cache(async (patientId: number) => {
@@ -179,7 +180,7 @@ export const getPatientStats = cache(async (patientId: number) => {
       .where(
         and(
           eq(appointments.patientId, patientId),
-          gte(appointments.date, new Date().toISOString().slice(0, 10)),
+          gte(appointments.date, todayStr()),
           sql`${appointments.status} NOT IN ('cancelled','completed')`
         )
       ),

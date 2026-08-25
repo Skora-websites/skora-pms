@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { sendMail } from "@/lib/mail/send";
 import { notifyUser } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
+import { todayStr } from "@/lib/utils";
 
 export type PatientBookingState = { error: string | null };
 
@@ -79,7 +80,7 @@ export async function createPatientAppointment(
   if (!["clinical_visit", "home_visit"].includes(caseType)) return { error: "Invalid visit type." };
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const today = todayStr(now);
   if (date < today) return { error: "Date cannot be in the past." };
   const tMin = parseTimeToMinutes(timeRaw);
   if (tMin === null) return { error: "Invalid time." };

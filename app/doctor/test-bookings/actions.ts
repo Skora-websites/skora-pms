@@ -15,7 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
-import { generateBillNumber } from "@/lib/utils";
+import { generateBillNumber, todayStr } from "@/lib/utils";
 
 export type TestBookingActionResult = { error: string | null };
 
@@ -166,7 +166,7 @@ async function createBillingForBooking(args: {
         paymentDetails: args.paymentDetails,
         status: pending <= 0 ? "paid" : args.receivedAmount > 0 ? "partial" : "pending",
         notes: "Automated bill from Test Booking",
-        billDate: now.toISOString().slice(0, 10),
+        billDate: todayStr(now),
         createdAt: now,
         updatedAt: now,
       })

@@ -21,7 +21,7 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
   const [state, formAction, pending] = useActionState(createAppointment, initialState);
   const [showConsent, setShowConsent] = useState(false);
   const [consentType, setConsentType] = useState("otp");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA");
 
   return (
     <div className="card p-7">

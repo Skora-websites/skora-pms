@@ -19,6 +19,7 @@ import { audit } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
+import { todayStr } from "@/lib/utils";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
 
@@ -151,7 +152,7 @@ export async function createAppointment(
   }
 
   // ── Business validation (mirrors legacy store) ──
-  const today = now.toISOString().slice(0, 10);
+  const today = todayStr(now);
   if (date < today) return { error: "Appointment date must be today or later." };
 
   const tMin = parseTimeToMinutes(timeRaw);
@@ -356,7 +357,7 @@ export async function updateAppointment(
   }
 
   // ── Business validation ──
-  const today = now.toISOString().slice(0, 10);
+  const today = todayStr(now);
   if (date < today) return { error: "Appointment date must be today or later." };
 
   const tMin = parseTimeToMinutes(timeRaw);

@@ -29,7 +29,7 @@ import {
   ensureTicketOwner,
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
-import { generateBillNumber } from "@/lib/utils";
+import { generateBillNumber, todayStr } from "@/lib/utils";
 import { billSchema, supportTicketReplySchema } from "@/lib/validation";
 
 type ActionResult = { error: string | null };
@@ -131,7 +131,7 @@ export async function createBill(
     paymentMethod: paymentMethod as never,
     status: "paid",
     notes,
-    billDate: now.toISOString().slice(0, 10),
+    billDate: todayStr(now),
     createdAt: now,
     updatedAt: now,
   });
@@ -149,7 +149,7 @@ export async function createBill(
     type: 1,
     billingId,
     amount,
-    date: now.toISOString().slice(0, 10),
+    date: todayStr(now),
     status: "approved",
     description: `Bill ${billNumber}${billingType ? ` — ${billingType.name}` : ""}${notes ? ` (${notes})` : ""}`,
     paymentMethod,
@@ -213,7 +213,7 @@ export async function createTransaction(
   const now = new Date();
   const type = Number(formData.get("type"));
   const amount = String(formData.get("amount") ?? "0");
-  const date = String(formData.get("date") ?? now.toISOString().slice(0, 10));
+  const date = String(formData.get("date") ?? todayStr(now));
   const incomeTypeRaw = String(formData.get("income_type_id") ?? "");
   const expenseTypeRaw = String(formData.get("expense_type_id") ?? "");
   const incomeTypeId = incomeTypeRaw ? Number(incomeTypeRaw) : null;

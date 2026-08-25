@@ -17,6 +17,22 @@ export function generateBillNumber(): string {
   return `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
 }
 
+/**
+ * Local server date as YYYY-MM-DD.
+ *
+ * The app is used by Indian clinics (server runs IST, UTC+05:30). Using
+ * `toISOString().slice(0,10)` (UTC) makes "today" wrong for 5.5 hours every
+ * day (00:00–05:30 IST): bookings, KPI "today" counts, bill dates and
+ * patient-facing records would be dated yesterday. This helper is the single
+ * source of truth for server-side date-of-day.
+ */
+export function todayStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /** Format a number as Indian Rupees. */
 export function formatINR(value: number | string | null | undefined) {
   const n = Number(value ?? 0);
