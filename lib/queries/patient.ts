@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
 import { todayStr } from "@/lib/utils";
@@ -117,7 +117,10 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
 
   const available: AvailableDoctor[] = [];
   for (const d of doctors) {
-    const clinic = await db
+    // Any active clinic with at least one active schedule makes the doctor
+    // bookable. Checking ALL clinics (not just the first) avoids hiding a
+    // doctor whose earliest clinic has no schedules but a later one does.
+    const clinics = await db
       .select({
         id: doctorClinics.id,
         clinicName: doctorClinics.clinicName,
@@ -126,30 +129,38 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
       })
       .from(doctorClinics)
       .where(and(eq(doctorClinics.doctorId, d.id), eq(doctorClinics.isActive, true)))
-      .limit(1);
-    if (!clinic[0]) continue;
-    const [schedule] = await db
-      .select({ id: doctorSchedules.id })
+      .orderBy(asc(doctorClinics.id));
+    if (clinics.length === 0) continue;
+
+    const clinicIds = clinics.map((c) => c.id);
+    const scheduleRows = await db
+      .select({ id: doctorSchedules.id, doctorClinicId: doctorSchedules.doctorClinicId })
       .from(doctorSchedules)
       .where(
-        and(eq(doctorSchedules.doctorClinicId, clinic[0].id), eq(doctorSchedules.isActive, true))
+        and(inArray(doctorSchedules.doctorClinicId, clinicIds), eq(doctorSchedules.isActive, true))
       )
       .limit(1);
-    if (schedule) {
-      available.push({
-        id: d.id,
-        name: d.name,
-        qualification: d.qualification,
-        registrationNumber: d.registrationNumber,
-        salutation: d.salutation,
-        profilePhotoPath: d.profilePhotoPath,
-        city: d.city,
-        state: d.state,
-        clinicName: clinic[0]?.clinicName ?? null,
-        clinicAddress: clinic[0]?.address ?? null,
-        consultationFee: clinic[0]?.consultationFee ?? null,
-      });
-    }
+    if (scheduleRows.length === 0) continue;
+
+    // Use the first clinic that actually has a schedule for display.
+    const scheduledClinicId = scheduleRows[0].doctorClinicId;
+    const clinic =
+      clinics.find((c) => c.id === scheduledClinicId) ??
+      clinics.find((c) => c.id === clinics[0].id) ??
+      clinics[0];
+    available.push({
+      id: d.id,
+      name: d.name,
+      qualification: d.qualification,
+      registrationNumber: d.registrationNumber,
+      salutation: d.salutation,
+      profilePhotoPath: d.profilePhotoPath,
+      city: d.city,
+      state: d.state,
+      clinicName: clinic.clinicName,
+      clinicAddress: clinic.address,
+      consultationFee: clinic.consultationFee,
+    });
   }
   return available;
 });

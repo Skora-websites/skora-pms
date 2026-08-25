@@ -223,6 +223,15 @@ export async function cancelPatientAppointment(appointmentId: number): Promise<P
 
   void audit.appointmentCancelled(user.id, { appointmentId, doctorId: appt.doctorId, source: "patient_cancelled" });
 
+  // Notify the doctor their patient cancelled (in-app), fire-and-forget.
+  void notifyUser({
+    userId: appt.doctorId,
+    title: "Appointment cancelled by patient",
+    message: `${user.name} cancelled the ${appt.date} appointment.`,
+    type: "warning",
+    link: "/doctor/appointments",
+  });
+
   revalidatePath("/patient");
   revalidatePath("/patient/appointments");
   return { error: null };
