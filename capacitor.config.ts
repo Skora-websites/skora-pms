@@ -5,8 +5,10 @@ const config: CapacitorConfig = {
   appName: "SkoraCare",
   webDir: "out",
   server: {
-    // Fully-live: load the production app directly (no offline mode).
-    url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com",
+    // Capacitor Live URL approach: the app loads the live site directly.
+    // Start at the LOGIN page. Both HTTPS (production) and HTTP (dev /
+    // cleartext fallback) are supported — cleartext:true permits http.
+    url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com/login",
     androidScheme: "https",
     cleartext: true,
   },
