@@ -201,9 +201,20 @@ export async function updateBill(
   const pendingAmount = Math.max(0, totalNum - receivedNum);
   const status = pendingAmount <= 0 ? "paid" : receivedNum > 0 ? "partial" : "pending";
 
-  // Ownership-scoped update
+  // Ownership-scoped update — capture the previous values for the audit trail
+  // so payment history is never silently overwritten (the bill's linked
+  // income transaction is rewritten below; the snapshot preserves what was
+  // there before).
   const [existing] = await db
-    .select({ id: billings.id, appointmentId: billings.appointmentId })
+    .select({
+      id: billings.id,
+      appointmentId: billings.appointmentId,
+      totalAmount: billings.totalAmount,
+      receivedAmount: billings.receivedAmount,
+      pendingAmount: billings.pendingAmount,
+      paymentMethod: billings.paymentMethod,
+      status: billings.status,
+    })
     .from(billings)
     .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId)));
   if (!existing) return { error: "Bill not found." };
@@ -255,7 +266,23 @@ export async function updateBill(
     });
   }
 
-  void audit.billCreated(doctorId, { billId, action: "updated", patientId, billingTypeId, totalAmount, receivedAmount });
+  void audit.billCreated(doctorId, {
+    billId,
+    action: "updated",
+    patientId,
+    billingTypeId,
+    totalAmount,
+    receivedAmount,
+    // Snapshot of the previous state (before this edit) — preserves payment
+    // history when the linked income transaction is rewritten.
+    previous: {
+      totalAmount: existing.totalAmount,
+      receivedAmount: existing.receivedAmount,
+      pendingAmount: existing.pendingAmount,
+      paymentMethod: existing.paymentMethod,
+      status: existing.status,
+    },
+  });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
