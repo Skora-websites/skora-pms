@@ -89,6 +89,16 @@ body {
   color: var(--foreground);
   font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Native-app feel: no page drag/overscroll bounce, no pull-to-refresh.
+     Scrolling happens inside the content container with momentum instead. */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Kill the browser's rubber-band edge bounce on mobile. */
+  overscroll-behavior-y: none;
 }
 
 h1,

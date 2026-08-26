@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Sora, DM_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -39,6 +39,16 @@ export const metadata: Metadata = {
       "Purpose-built tools for modern healthcare professionals.",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  // Native-app feel: no pinch-zoom or pan, covers the whole screen on
+  // notched devices, and fits the iOS safe area.
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
