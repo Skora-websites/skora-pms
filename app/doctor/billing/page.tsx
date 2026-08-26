@@ -5,6 +5,7 @@ import { getBillingOverview, getDoctorPatients } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { BillForm } from "./bill-form";
 import { BillTable } from "./bill-table";
+import { BillCards } from "./bill-cards";
 import { BillingTypesManager } from "./billing-types-manager";
 import { formatINR } from "@/lib/utils";
 
@@ -28,20 +29,22 @@ export default async function BillingPage() {
         subtitle="Generate bills and track payments"
       />
 
-      <div className="mb-6 grid gap-5 sm:grid-cols-3">
+      {/* Summary cards — horizontal on mobile, grid on desktop */}
+      <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-5">
         {[
           { label: "Total billed", value: formatINR(collected + pending), tone: "text-brand-800" },
           { label: "Collected", value: formatINR(collected), tone: "text-accent-700" },
           { label: "Pending", value: formatINR(pending), tone: "text-amber-600" },
         ].map((s) => (
-          <div key={s.label} className="card p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{s.label}</p>
-            <p className={`mt-2 font-display text-2xl font-extrabold ${s.tone}`}>{s.value}</p>
+          <div key={s.label} className="card p-3 sm:p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">{s.label}</p>
+            <p className={`mt-1 font-display text-lg font-extrabold sm:text-2xl ${s.tone}`}>{s.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="space-y-6 lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:space-y-0">
+        {/* Bill table (desktop) + card list (mobile) */}
         <div>
           {bills.length === 0 ? (
             <EmptyState
@@ -50,10 +53,18 @@ export default async function BillingPage() {
               description="Generate your first bill from the form."
             />
           ) : (
-            <BillTable
-              bills={bills}
-              billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
-            />
+            <>
+              <div className="hidden sm:block">
+                <BillTable
+                  bills={bills}
+                  billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
+                />
+              </div>
+              <BillCards
+                bills={bills}
+                billingTypes={billingTypes.map((t) => ({ id: t.id, name: t.name, defaultAmount: t.defaultAmount }))}
+              />
+            </>
           )}
         </div>
 
