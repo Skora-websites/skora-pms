@@ -8,7 +8,6 @@
 
 # next.js
 /.next/
-/out/
 
 # production
 /build
@@ -38,16 +37,6 @@ next-env.d.ts
 
 # playwright
 /test-results/
-
-# android / capacitor build artifacts (never commit APKs or signing keys)
-/android/build/
-/android/app/build/
-/android/.gradle/
-/android/local.properties
-/android/app/skoracare.keystore
-/android/app/*.keystore
-/dist/
-*.apk
 /playwright-report/
 /e2e/.auth/
 

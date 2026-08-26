@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Sidebar, type NavItem } from "./sidebar";
 import { DashboardHeader } from "./header";
-import { MobileChrome } from "./mobile-app-shell";
+import { MobileAppShell } from "./mobile-app-shell";
 
 export function DashboardShell({
   navItems,
@@ -25,10 +25,12 @@ export function DashboardShell({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Chrome — mobile app bar + bottom tabs (visible on < lg only). */}
-      <MobileChrome navItems={navItems} user={user} unreadCount={unreadCount} />
+      {/* Native-app-style mobile layer (< lg): bottom tabs + app bar. */}
+      <MobileAppShell navItems={navItems} user={user} unreadCount={unreadCount} footerLabel={footerLabel}>
+        {children}
+      </MobileAppShell>
 
-      {/* Chrome — desktop sidebar (visible on >= lg only). */}
+      {/* Desktop layer (>= lg): existing sidebar layout. */}
       <div className="hidden lg:block">
         <Sidebar
           items={navItems}
@@ -39,16 +41,10 @@ export function DashboardShell({
           footerHref={footerHref}
           footerLabel={footerLabel}
         />
-      </div>
-
-      {/* Content — rendered ONCE, shared by both breakpoints. */}
-      <div className="lg:pl-64">
-        {/* Desktop header sits above the content on >= lg; hidden on mobile
-            (the mobile app bar renders instead). */}
-        <div className="hidden lg:block">
+        <div className={`transition-all duration-300 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
           <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} />
+          <main className="p-4 lg:p-8">{children}</main>
         </div>
-        <main className="px-4 py-4 pb-24 lg:p-8 lg:pb-8">{children}</main>
       </div>
     </div>
   );
