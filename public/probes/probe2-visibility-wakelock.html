@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Probe 2: Visibility API + Wake Lock + sendBeacon</title>
+  <style>
+    body { font-family: system-ui; padding: 20px; max-width: 900px; margin: 0 auto; }
+    .log { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 500px; overflow: auto; white-space: pre-wrap; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .warn { color: #dcdcaa; }
+    button { padding: 10px 16px; margin: 5px; cursor: pointer; }
+    .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+    .status.pass { background: #1b3a2c; border: 1px solid #4ec9b0; }
+    .status.fail { background: #3a1b1b; border: 1px solid #f44747; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0; }
+    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 15px 0; background: #fafafa; }
+    .timer { font-size: 24px; font-weight: bold; font-family: monospace; color: #007acc; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Probe 2: Visibility API + Wake Lock + Foreground Heartbeat (5s loop) + sendBeacon</h1>
+  <p>Tests: visibilitychange pause/resume → wakeLock persistence → sendBeacon on pagehide/beforeunload → background survival time</p>
+
+  <div class="controls">
+    <button id="btnStartLoop">Start 5s GPS Loop</button>
+    <button id="btnStopLoop">Stop Loop</button>
+    <button id="btnRequestWakeLock">Request Wake Lock</button>
+    <button id="btnReleaseWakeLock">Release Wake Lock</button>
+    <button id="btnSimulatePageHide">Simulate pagehide (test sendBeacon)</button>
+    <button id="btnClear">Clear Log</button>
+  </div>
+
+  <div class="panel">
+    <h3>Status</h3>
+    <div>Visibility: <span id="visState">visible</span></div>
+    <div>Wake Lock: <span id="wlState">released</span></div>
+    <div>Loop: <span id="loopState">stopped</span></div>
+    <div class="timer" id="timer">00:00</div>
+    <div>Background time survived: <span id="bgSurvival">0s</span></div>
+  </div>
+
+  <div id="status" class="status" style="display:none;"></div>
+  <div class="log" id="log"></div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    let loopInterval = null;
+    let wakeLock = null;
+    let loopStart = 0;
+    let bgStart = null;
+    let totalBgTime = 0;
+    let lastLat = 0, lastLng = 0;
+
+    function log(msg, type = 'info') {
+      const prefix = type === 'pass' ? '✅ PASS' : type === 'fail' ? '❌ FAIL' : type === 'warn' ? '⚠️ WARN' : 'ℹ️ INFO';
+      logEl.textContent += `[${new Date().toISOString()}] ${prefix} ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = `status ${type}`;
+      statusEl.style.display = 'block';
+    }
+
+    document.getElementById('btnClear').onclick = () => { logEl.textContent = ''; statusEl.style.display = 'none'; };
+
+    // Update timer display
+    function updateTimer() {
+      const elapsed = Date.now() - loopStart;
+      const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
+      const secs = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+      document.getElementById('timer').textContent = `${mins}:${secs}`;
+      if (bgStart) {
+        totalBgTime = Date.now() - bgStart;
+        document.getElementById('bgSurvival').textContent = (totalBgTime / 1000).toFixed(1) + 's';
+      }
+    }
+
+    // 1. Start 5s GPS Loop (simulated)
+    document.getElementById('btnStartLoop').onclick = () => {
+      if (loopInterval) { log('Loop already running', 'warn'); return; }
+      if (!navigator.geolocation) { log('Geolocation not supported', 'fail'); return; }
+
+      loopStart = Date.now();
+      document.getElementById('loopState').textContent = 'running';
+      log('Starting 5s GPS loop...', 'info');
+
+      const send = () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            lastLat = pos.coords.latitude;
+            lastLng = pos.coords.longitude;
+            log(`GPS: ${lastLat.toFixed(6)}, ${lastLng.toFixed(6)}`, 'pass');
+            // In real app: fetch('/api/doctor/sos/last-location', { method: 'POST', body: JSON.stringify({lat, lng, caseId: 1}) })
+          },
+          (err) => log(`GPS error: ${err.message}`, 'fail'),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      };
+
+      send(); // immediate first
+      loopInterval = setInterval(send, 5000);
+      setInterval(updateTimer, 1000);
+    };
+
+    document.getElementById('btnStopLoop').onclick = () => {
+      if (loopInterval) { clearInterval(loopInterval); loopInterval = null; }
+      document.getElementById('loopState').textContent = 'stopped';
+      log('GPS loop stopped', 'info');
+    };
+
+    // 2. Wake Lock
+    document.getElementById('btnRequestWakeLock').onclick = async () => {
+      try {
+        if (!('wakeLock' in navigator)) { log('Wake Lock API not supported', 'fail'); return; }
+        wakeLock = await navigator.wakeLock.request('screen');
+        document.getElementById('wlState').textContent = 'acquired';
+        log('Wake Lock acquired (screen)', 'pass');
+
+        wakeLock.addEventListener('release', () => {
+          document.getElementById('wlState').textContent = 'released (auto)';
+          log('Wake Lock released (auto)', 'warn');
+        });
+      } catch (e) { log(`Wake Lock failed: ${e.message}`, 'fail'); }
+    };
+
+    document.getElementById('btnReleaseWakeLock').onclick = async () => {
+      if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+      document.getElementById('wlState').textContent = 'released';
+      log('Wake Lock released (manual)', 'info');
+    };
+
+    // 3. Visibility API - pause/resume loop
+    document.addEventListener('visibilitychange', () => {
+      const state = document.visibilityState;
+      document.getElementById('visState').textContent = state;
+      log(`Visibility changed: ${state}`, state === 'hidden' ? 'warn' : 'pass');
+
+      if (state === 'hidden') {
+        bgStart = Date.now();
+        // Loop continues but we log that we're in background
+        log('APP MOVED TO BACKGROUND - loop continues but OS may throttle', 'warn');
+      } else {
+        if (bgStart) {
+          const survived = Date.now() - bgStart;
+          log(`APP RETURNED TO FOREGROUND - background survival: ${(survived/1000).toFixed(1)}s`, 'pass');
+          bgStart = null;
+        }
+      }
+    });
+
+    // 4. sendBeacon on pagehide/beforeunload
+    window.addEventListener('pagehide', (e) => {
+      log(`pagehide fired (persisted: ${e.persisted})`, 'warn');
+      testSendBeacon();
+    });
+
+    window.addEventListener('beforeunload', (e) => {
+      log('beforeunload fired', 'warn');
+      testSendBeacon();
+    });
+
+    document.getElementById('btnSimulatePageHide').onclick = () => {
+      log('Simulating pagehide...', 'info');
+      testSendBeacon();
+    };
+
+    function testSendBeacon() {
+      const data = JSON.stringify({
+        lat: lastLat,
+        lng: lastLng,
+        caseId: 1,
+        timestamp: Date.now()
+      });
+      const success = navigator.sendBeacon('/api/test/beacon', data);
+      log(`sendBeacon queued: ${success} (data: ${data})`, success ? 'pass' : 'fail');
+    }
+
+    // Check wake lock behavior on visibility change
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && wakeLock && wakeLock.released) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          log('Wake Lock re-acquired after visibility restore', 'pass');
+        } catch (e) {
+          log(`Wake Lock re-acquire failed: ${e.message}`, 'fail');
+        }
+      }
+    });
+
+    log('Ready. Test sequence: Start Loop → Request Wake Lock → Switch tabs/apps → Return → Check survival time');
+    log('Note: On iOS Safari, wakeLock may not persist. On Android Chrome, it should persist when tab backgrounded.');
+  </script>
+</body>
+</html>

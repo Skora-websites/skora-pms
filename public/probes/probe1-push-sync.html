@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Probe 1: Push API + Periodic Background Sync + Geolocation in SW</title>
+  <style>
+    body { font-family: system-ui; padding: 20px; max-width: 800px; margin: 0 auto; }
+    .log { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 13px; max-height: 400px; overflow: auto; white-space: pre-wrap; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .warn { color: #dcdcaa; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+    .status.pass { background: #1b3a2c; border: 1px solid #4ec9b0; }
+    .status.fail { background: #3a1b1b; border: 1px solid #f44747; }
+  </style>
+</head>
+<body>
+  <h1>Probe 1: Push API + Periodic Background Sync + Geolocation in SW</h1>
+  <p>Tests: SW registration → Push subscription → Periodic Sync registration → Geolocation in SW context</p>
+
+  <div>
+    <button id="btnRegisterSW">Register Service Worker</button>
+    <button id="btnSubscribePush">Subscribe to Push (VAPID)</button>
+    <button id="btnRegisterPeriodicSync">Register Periodic Sync (15 min)</button>
+    <button id="btnTestGeoInSW">Test Geolocation in SW (postMessage)</button>
+    <button id="btnClear">Clear Log</button>
+  </div>
+
+  <div id="status" class="status" style="display:none;"></div>
+  <div class="log" id="log"></div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    let swRegistration = null;
+
+    function log(msg, type = 'info') {
+      const prefix = type === 'pass' ? '✅ PASS' : type === 'fail' ? '❌ FAIL' : type === 'warn' ? '⚠️ WARN' : 'ℹ️ INFO';
+      logEl.textContent += `[${new Date().toISOString()}] ${prefix} ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = `status ${type}`;
+      statusEl.style.display = 'block';
+    }
+
+    document.getElementById('btnClear').onclick = () => { logEl.textContent = ''; statusEl.style.display = 'none'; };
+
+    // 1. Register SW
+    document.getElementById('btnRegisterSW').onclick = async () => {
+      try {
+        if (!('serviceWorker' in navigator)) { log('Service Worker not supported', 'fail'); return; }
+        swRegistration = await navigator.serviceWorker.register('/test-probes/sw-probe1.js');
+        log(`SW registered: ${swRegistration.scope}`, 'pass');
+      } catch (e) { log(`SW registration failed: ${e.message}`, 'fail'); }
+    };
+
+    // 2. Subscribe to Push
+    document.getElementById('btnSubscribePush').onclick = async () => {
+      if (!swRegistration) { log('Register SW first', 'warn'); return; }
+      try {
+        // Using a test VAPID key (won't work for real push but tests subscription flow)
+        const vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa40HI80Yh9YyJv6B4Vhc5f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7';
+        const sub = await swRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+        });
+        log(`Push subscribed: ${sub.endpoint.substring(0,50)}...`, 'pass');
+      } catch (e) { log(`Push subscribe failed: ${e.message}`, 'fail'); }
+    };
+
+    // 3. Register Periodic Sync
+    document.getElementById('btnRegisterPeriodicSync').onclick = async () => {
+      if (!swRegistration) { log('Register SW first', 'warn'); return; }
+      try {
+        if (!('periodicSync' in swRegistration)) { log('Periodic Sync not supported', 'fail'); return; }
+        const reg = await swRegistration.periodicSync.register('location-sync', { minInterval: 15 * 60 * 1000 });
+        log(`Periodic Sync registered: ${reg}`, 'pass');
+        log('NOTE: minInterval 15min = 900000ms. Browser may enforce longer intervals.', 'warn');
+      } catch (e) { log(`Periodic Sync registration failed: ${e.message}`, 'fail'); }
+    };
+
+    // 4. Test Geolocation in SW via postMessage
+    document.getElementById('btnTestGeoInSW').onclick = async () => {
+      if (!swRegistration || !swRegistration.active) { log('SW not active', 'warn'); return; }
+      log('Sending message to SW to test geolocation...', 'info');
+      swRegistration.active.postMessage({ type: 'TEST_GEOLOCATION' });
+
+      // Listen for response
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data.type === 'GEO_RESULT') {
+          if (e.data.success) log(`SW geolocation succeeded: ${e.data.lat}, ${e.data.lng}`, 'pass');
+          else log(`SW geolocation failed: ${e.data.error}`, 'fail');
+        }
+      }, { once: true });
+    };
+
+    // Listen for SW messages
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      log(`SW message: ${JSON.stringify(e.data)}`, 'info');
+    });
+
+    // Check for periodic sync events
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data.type === 'PERIODIC_SYNC_FIRED') {
+          log(`PERIODIC SYNC FIRED at ${e.data.time}`, 'pass');
+        }
+      });
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+    }
+
+    log('Ready. Click buttons in order: Register SW → Subscribe Push → Register Periodic Sync → Test Geo in SW');
+  </script>
+</body>
+</html>
