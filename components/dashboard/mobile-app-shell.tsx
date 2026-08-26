@@ -10,28 +10,23 @@ import { cn } from "@/lib/utils";
 import { ICON_MAP, type NavItem } from "./sidebar";
 
 /**
- * Native-app-style mobile shell for the SkoraCare dashboards.
+ * Native-app-style MOBILE CHROME for the SkoraCare dashboards.
  *
- * Mobile (< lg): fixed bottom tab bar with the 4 primary destinations +
- * a "More" sheet for the remaining nav items; a compact app-bar header with
- * title, notifications and profile. Feels like a native app, not a shrunk
- * desktop page.
+ * Renders ONLY the mobile app bar (title + notifications + profile) and the
+ * fixed bottom tab bar (4 primary + "More" sheet). The page content is
+ * rendered once by the parent DashboardShell — this component never wraps
+ * children, so no double-mounting of page state/effects.
  *
- * Desktop (>= lg): falls back to the existing sidebar layout via the parent
- * wrapper — this component only controls the mobile layer.
+ * Visible on < lg only; the desktop sidebar takes over on >= lg.
  */
-export function MobileAppShell({
+export function MobileChrome({
   navItems,
   user,
   unreadCount = 0,
-  footerLabel,
-  children,
 }: {
   navItems: NavItem[];
   user: { name: string; role: string; email: string | null; profilePhotoPath: string | null };
   unreadCount?: number;
-  footerLabel: string;
-  children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -68,7 +63,7 @@ export function MobileAppShell({
 
   // Bottom padding so content isn't hidden behind the fixed tab bar.
   const pageTitle =
-    [...primary, ...moreItems].find((i) => isActive(i.href))?.label ?? footerLabel;
+    [...primary, ...moreItems].find((i) => isActive(i.href))?.label ?? "SkoraCare";
 
   return (
     <div className="min-h-dvh bg-slate-50 lg:hidden">
@@ -147,9 +142,6 @@ export function MobileAppShell({
           </div>
         </div>
       )}
-
-      {/* ── Page content (pb for tab bar) ── */}
-      <main className="pb-24">{children}</main>
 
       {/* ── Bottom tab bar (mobile) ── */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
