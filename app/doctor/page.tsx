@@ -67,9 +67,10 @@ export default async function DoctorDashboardPage() {
         <StatCard icon={Wallet} tone="rose" label="Income this month" value={formatINR(stats.monthIncome)} hint={`Expenses ${formatINR(stats.monthExpense)}`} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Chart card */}
-        <div className="card p-6">
+        <div className="min-w-0">
+          <div className="card p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-bold text-slate-900">Appointments — last 7 days</h2>
             <span className="badge bg-accent-100 text-accent-800">{stats.weekAppointments.reduce((a, b) => a + b.count, 0)} total</span>
@@ -106,10 +107,12 @@ export default async function DoctorDashboardPage() {
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         {/* Today's appointments */}
-        <div className="card p-6">
+        <div className="min-w-0">
+          <div className="card p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-bold text-slate-900">Today&apos;s schedule</h2>
             <Link href="/doctor/appointments" className="text-xs font-semibold text-brand-800 hover:text-brand-600">
@@ -147,7 +150,8 @@ export default async function DoctorDashboardPage() {
             ))}
           </div>
         </div>
-      </div>
+        </div>
+        </div>
 
       {/* Recent appointments */}
       <div className="mt-6">

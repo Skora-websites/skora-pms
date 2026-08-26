@@ -90,8 +90,8 @@ export default async function IncomeExpensePage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
+        <div className="min-w-0 space-y-6">
           <TransactionTable
             title="Recent income"
             rows={income}
@@ -110,7 +110,7 @@ export default async function IncomeExpensePage({
           />
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <TransactionForm incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
           <CategoryManager incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
         </div>
@@ -148,8 +148,8 @@ function TransactionTable({
   }
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-display text-base font-bold text-slate-900">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="min-w-0 truncate font-display text-base font-bold text-slate-900">{title}</h2>
         <a
           href={`/api/doctor/income-expense/export?type=${tone}&period=${period}`}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"

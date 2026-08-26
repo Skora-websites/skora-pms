@@ -20,8 +20,8 @@ export default async function SupportPage() {
         subtitle="Get help from the SkoraCares team"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
+        <div className="min-w-0 space-y-4">
           {tickets.length === 0 ? (
             <EmptyState
               icon={Headset}

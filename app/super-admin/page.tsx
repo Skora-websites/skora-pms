@@ -116,9 +116,9 @@ export default async function SuperAdminDashboardPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
         {/* Recent doctors */}
-        <div>
+        <div className="min-w-0">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-base font-bold text-slate-900">Recent doctor registrations</h2>
             <Link href="/super-admin/doctors" className="group inline-flex items-center gap-1 text-xs font-semibold text-brand-800 hover:text-brand-600">
