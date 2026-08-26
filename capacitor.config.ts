@@ -5,11 +5,16 @@ const config: CapacitorConfig = {
   appName: "SkoraCare",
   webDir: "out",
   server: {
-    // Capacitor Live URL approach: the app loads the live site directly.
-    // Start at the LOGIN page. Both HTTPS (production) and HTTP (dev /
-    // cleartext fallback) are supported — cleartext:true permits http.
+    // Capacitor Live URL: the app loads the live site DIRECTLY inside the
+    // WebView — never opens an external browser.
+    // - androidScheme MUST be "http" (NOT "https"): with server.url also on
+    //   https, the WebView can't tell its own scheme from the remote one, so
+    //   navigation falls through to Chrome. "http" keeps it internal.
+    // - allowNavigation: only this host may load in the WebView (blocks
+    //   external redirects from opening the system browser).
     url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com/login",
-    androidScheme: "https",
+    androidScheme: "http",
+    allowNavigation: ["pms.skorainfotech.com", "*.skorainfotech.com"],
     cleartext: true,
   },
   android: {
