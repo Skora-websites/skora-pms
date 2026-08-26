@@ -5,14 +5,11 @@ const config: CapacitorConfig = {
   appName: "SkoraCare",
   webDir: "out",
   server: {
-    // Capacitor Live URL: the app loads the live site DIRECTLY inside the
-    // WebView — never opens an external browser.
-    // - androidScheme MUST be "http" (NOT "https"): with server.url also on
-    //   https, the WebView can't tell its own scheme from the remote one, so
-    //   navigation falls through to Chrome. "http" keeps it internal.
-    // - allowNavigation: only this host may load in the WebView (blocks
-    //   external redirects from opening the system browser).
-    url: process.env.CAPACITOR_SERVER_URL || "https://pms.skorainfotech.com/login",
+    // No server.url — the app ships a local launcher (out/index.html) that
+    // immediately JS-redirects to the live site. This is the proven fix for
+    // BOTH the black screen (splash hides on the local page reliably) and the
+    // Chrome redirect (androidScheme "http" + allowNavigation keep all
+    // navigation inside the WebView).
     androidScheme: "http",
     allowNavigation: ["pms.skorainfotech.com", "*.skorainfotech.com"],
     cleartext: true,
