@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getFollowUps } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { FollowUpActions } from "./follow-up-actions";
+import { FollowUpList } from "@/components/mobile-view/follow-ups-list";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Follow Ups · Doctor" };
@@ -31,46 +32,51 @@ export default async function FollowUpsPage() {
         />
       ) : (
         <div className="space-y-6">
-          <div className="table-shell">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Patient</th>
-                  <th>Follow-up date</th>
-                  <th>Last consultation</th>
-                  <th>Status</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pending.map((f) => (
-                  <tr key={f.id}>
-                    <td>
-                      <p className="font-semibold text-slate-900">{f.patientName}</p>
-                      <p className="text-xs text-slate-400">{f.patientPhone}</p>
-                    </td>
-                    <td className="font-semibold text-brand-800">{f.followUpDate}</td>
-                    <td>{formatDate(f.consultationDate)}</td>
-                    <td><StatusBadge status={f.followUpStatus ?? "pending"} /></td>
-                    <td className="text-right">
-                      <FollowUpActions consultationId={f.id} status={f.followUpStatus ?? "pending"} />
-                    </td>
+          {/* Mobile: card list */}
+          <FollowUpList pending={pending} done={done} />
+          {/* Desktop: table */}
+          <div className="hidden sm:block">
+            <div className="table-shell">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Patient</th>
+                    <th>Follow-up date</th>
+                    <th>Last consultation</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
                   </tr>
-                ))}
-                {done.map((f) => (
-                  <tr key={f.id} className="opacity-60">
-                    <td>
-                      <p className="font-semibold text-slate-900">{f.patientName}</p>
-                      <p className="text-xs text-slate-400">{f.patientPhone}</p>
-                    </td>
-                    <td>{f.followUpDate}</td>
-                    <td>{formatDate(f.consultationDate)}</td>
-                    <td><StatusBadge status={f.followUpStatus ?? "pending"} /></td>
-                    <td />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pending.map((f) => (
+                    <tr key={f.id}>
+                      <td>
+                        <p className="font-semibold text-slate-900">{f.patientName}</p>
+                        <p className="text-xs text-slate-400">{f.patientPhone}</p>
+                      </td>
+                      <td className="font-semibold text-brand-800">{f.followUpDate}</td>
+                      <td>{formatDate(f.consultationDate)}</td>
+                      <td><StatusBadge status={f.followUpStatus ?? "pending"} /></td>
+                      <td className="text-right">
+                        <FollowUpActions consultationId={f.id} status={f.followUpStatus ?? "pending"} />
+                      </td>
+                    </tr>
+                  ))}
+                  {done.map((f) => (
+                    <tr key={f.id} className="opacity-60">
+                      <td>
+                        <p className="font-semibold text-slate-900">{f.patientName}</p>
+                        <p className="text-xs text-slate-400">{f.patientPhone}</p>
+                      </td>
+                      <td>{f.followUpDate}</td>
+                      <td>{formatDate(f.consultationDate)}</td>
+                      <td><StatusBadge status={f.followUpStatus ?? "pending"} /></td>
+                      <td />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

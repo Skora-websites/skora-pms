@@ -83,7 +83,100 @@ export function TestBookingsTable({
   }
 
   return (
-    <div className="card overflow-hidden">
+    <div>
+      {/* Mobile: card-per-booking list */}
+      <div className="space-y-3 sm:hidden">
+        {bookings.map((b) => {
+          const testList = (b.tests as { name: string }[] | null) ?? [];
+          const token = b.uploadLinkToken;
+          return (
+            <div key={b.id} className="card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/doctor/patients/${b.patientId}`} className="truncate text-sm font-semibold text-slate-800 hover:text-brand-800">
+                    {b.patientName}
+                  </Link>
+                  <p className="truncate text-xs text-slate-400">
+                    {b.patientRegistrationId ?? "—"} · {b.patientPhone ?? "—"}
+                  </p>
+                </div>
+                <StatusBadge status={b.status} />
+              </div>
+              <p className="mt-2 truncate text-xs text-slate-500">
+                {testList.map((t) => t.name).join(", ") || (b.notes ?? "")}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-slate-400">Vendor</p>
+                  <p className="truncate font-medium text-slate-700">{b.vendorName ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Booking</p>
+                  <p className="font-medium text-slate-700">{formatDateTime(b.bookingDate)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Total</p>
+                  <p className="font-semibold text-slate-900">{formatINR(b.totalAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Paid</p>
+                  <p className="font-medium capitalize text-slate-700">
+                    {formatINR(b.paymentAmount)} {b.paymentMethod ? `· ${b.paymentMethod}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
+                {b.uploadedFilePath ? (
+                  <Link
+                    href={`/api/doctor/test-bookings/${b.id}/report`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-200 px-2.5 py-1.5 text-xs font-semibold text-accent-700 hover:bg-accent-50"
+                  >
+                    <FileText className="h-3.5 w-3.5" /> View report
+                  </Link>
+                ) : token ? (
+                  <button
+                    type="button"
+                    onClick={() => copyLink(token)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-accent-700" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? "Copied!" : "Copy link"}
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-300">—</span>
+                )}
+                <select
+                  value={b.status ?? "pending"}
+                  disabled={busyId === b.id}
+                  onChange={(e) => run(b.id, () => updateTestBookingStatus(b.id, e.target.value))}
+                  className="input !w-auto !py-1.5 !text-xs"
+                >
+                  {(TRANSITIONS[b.status ?? "pending"] ?? STATUSES).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button type="button" title="Edit booking" onClick={() => setEditing(b)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button type="button" title="Regenerate upload link" onClick={() => run(b.id, () => regenerateUploadLink(b.id))} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  title="Delete booking"
+                  onClick={() => { if (confirm(`Delete test booking for ${b.patientName}?`)) run(b.id, () => deleteTestBooking(b.id)); }}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: full table */}
+      <div className="card hidden overflow-hidden sm:block">
       <div className="slim-scroll overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -201,6 +294,7 @@ export function TestBookingsTable({
             })}
           </tbody>
         </table>
+      </div>
       </div>
 
       {editing && <BookingForm vendors={vendors} tests={tests} booking={editing} onClose={() => setEditing(null)} />}

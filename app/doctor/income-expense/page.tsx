@@ -4,6 +4,7 @@ import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getTransactions } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
+import { TransactionList } from "@/components/mobile-view/transactions-list";
 import { TransactionForm } from "./transaction-form";
 import { TransactionRowActions } from "./transaction-row-actions";
 import { CategoryManager } from "./category-manager";
@@ -158,41 +159,51 @@ function TransactionTable({
           Export {tone}
         </a>
       </div>
-      <div className="table-shell">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th>Category</th>
-              <th>Date</th>
-              <th className="text-right">Amount</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td className="font-medium text-slate-900">{r.description ?? "—"}</td>
-                <td className="text-slate-500">{r.incomeType ?? r.expenseType ?? "—"}</td>
-                <td>{formatDate(r.date)}</td>
-                <td
-                  className={`text-right font-semibold ${
-                    tone === "income" ? "text-accent-700" : "text-rose-600"
-                  }`}
-                >
-                  {tone === "income" ? "+" : "−"}{formatINR(r.amount)}
-                </td>
-                <td>
-                  <TransactionRowActions
-                    tx={r}
-                    incomeTypes={incomeTypes}
-                    expenseTypes={expenseTypes}
-                  />
-                </td>
+      {/* Mobile: card list */}
+      <TransactionList
+        rows={rows}
+        tone={tone}
+        incomeTypes={incomeTypes}
+        expenseTypes={expenseTypes}
+      />
+      {/* Desktop: table */}
+      <div className="hidden sm:block">
+        <div className="table-shell">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Date</th>
+                <th className="text-right">Amount</th>
+                <th className="text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="font-medium text-slate-900">{r.description ?? "—"}</td>
+                  <td className="text-slate-500">{r.incomeType ?? r.expenseType ?? "—"}</td>
+                  <td>{formatDate(r.date)}</td>
+                  <td
+                    className={`text-right font-semibold ${
+                      tone === "income" ? "text-accent-700" : "text-rose-600"
+                    }`}
+                  >
+                    {tone === "income" ? "+" : "−"}{formatINR(r.amount)}
+                  </td>
+                  <td>
+                    <TransactionRowActions
+                      tx={r}
+                      incomeTypes={incomeTypes}
+                      expenseTypes={expenseTypes}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

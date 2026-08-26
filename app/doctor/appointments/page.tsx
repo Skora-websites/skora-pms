@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getAppointments } from "@/lib/queries/doctor";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { AppointmentRowActions } from "@/components/doctor/appointment-actions";
+import { AppointmentList } from "@/components/mobile-view/appointments-list";
 import { ExportAppointmentsButton } from "./export-button";
 import { formatDate } from "@/lib/utils";
 
@@ -74,37 +75,44 @@ export default async function AppointmentsPage({
           action={{ href: "/doctor/appointments/book", label: "Book appointment" }}
         />
       ) : (
-        <div className="table-shell">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Patient</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Visit type</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {appointments.map((a) => (
-                <tr key={a.id}>
-                  <td>
-                    <p className="font-semibold text-slate-900">{a.patientName}</p>
-                    <p className="text-xs text-slate-400">{a.mobileNumber ?? a.patientPhone ?? ""}</p>
-                  </td>
-                  <td>{formatDate(a.date)}</td>
-                  <td>{a.time}</td>
-                  <td className="capitalize">{a.caseType.replace(/_/g, " ")}</td>
-                  <td><StatusBadge status={a.status} /></td>
-                  <td className="text-right">
-                    <AppointmentRowActions appointmentId={a.id} status={a.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Mobile: card list (no table scroll) */}
+          <AppointmentList appointments={appointments} />
+          {/* Desktop: full table */}
+          <div className="hidden sm:block">
+            <div className="table-shell">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Patient</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Visit type</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {appointments.map((a) => (
+                    <tr key={a.id}>
+                      <td>
+                        <p className="font-semibold text-slate-900">{a.patientName}</p>
+                        <p className="text-xs text-slate-400">{a.mobileNumber ?? a.patientPhone ?? ""}</p>
+                      </td>
+                      <td>{formatDate(a.date)}</td>
+                      <td>{a.time}</td>
+                      <td className="capitalize">{a.caseType.replace(/_/g, " ")}</td>
+                      <td><StatusBadge status={a.status} /></td>
+                      <td className="text-right">
+                        <AppointmentRowActions appointmentId={a.id} status={a.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
