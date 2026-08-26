@@ -191,8 +191,8 @@ export function MobileAppShell({
         </div>
       )}
 
-      {/* ── Page content (pb for tab bar) ── */}
-      <main className="pb-24">{children}</main>
+      {/* ── Page content (guttered for mobile, pb for tab bar, prevent overflow) ── */}
+      <main className="overflow-x-hidden px-4 pb-24 pt-4">{children}</main>
 
       {/* ── Bottom tab bar ── */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
