@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Sora, DM_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { PwaSetup } from "@/components/pwa-setup";
 
 const sora = Sora({
   variable: "--font-sora",
@@ -39,6 +40,20 @@ export const metadata: Metadata = {
       "Purpose-built tools for modern healthcare professionals.",
     type: "website",
   },
+  // PWA
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "SkoraCare",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [{ url: "/icons/icon-192.png" }, { url: "/icons/icon-512.png" }],
+    apple: [{ url: "/icons/icon-192.png" }],
+  },
+  other: {
+    "theme-color": "#0a6e8a",
+  },
 };
 
 export const viewport: Viewport = {
@@ -57,7 +72,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${sora.variable} ${dmSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <PwaSetup />
+      </body>
     </html>
   );
 }

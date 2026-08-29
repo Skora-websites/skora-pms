@@ -247,6 +247,29 @@ export const notifications = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Web Push subscriptions (PWA — background notifications for SOS etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const pushSubscriptions = mysqlTable(
+  "push_subscriptions",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    endpoint: text("endpoint").notNull(),
+    auth: varchar("auth", { length: 255 }).notNull(),
+    p256dh: varchar("p256dh", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => [
+    index("push_subscriptions_user_id_index").on(t.userId),
+    foreignKey({
+      columns: [t.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
