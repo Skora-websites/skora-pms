@@ -5,6 +5,7 @@ import { Pencil, Plus, ShieldCheck, UserCheck, UserX, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { storeUser, toggleUserStatus, updateUser } from "../actions";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
+import { UsersList } from "@/components/mobile-view/users-list";
 import { formatDate, initials } from "@/lib/utils";
 
 const initialState = { error: null as string | null };
@@ -185,18 +186,29 @@ export function UsersTable({
         </p>
       )}
 
-      <div className="table-shell">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Role</th>
-              <th>Phone</th>
-              <th>Status</th>
-              <th>Joined</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
+      {/* Mobile: card list */}
+      <UsersList
+        users={users}
+        currentUserId={currentUserId}
+        onEdit={setEditing}
+        onToggle={handleToggle}
+        toggling={toggling}
+      />
+
+      {/* Desktop: table */}
+      <div className="hidden sm:block">
+        <div className="table-shell">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Phone</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
@@ -251,6 +263,7 @@ export function UsersTable({
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {creating && <UserForm onDone={() => setCreating(false)} />}
