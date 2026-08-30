@@ -20,8 +20,7 @@ export default function SignupPage() {
               Create your free account in minutes.
             </h1>
             <p className="mt-4 max-w-md text-white/70">
-              No credit card required. Start with a 14-day free trial and see why thousands of
-              Indian clinics run on SkoraCares.
+              No credit card required. Doctor accounts start with a 14-day free trial.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-white/80">
               {[
@@ -39,7 +38,7 @@ export default function SignupPage() {
             </ul>
           </div>
           <p className="text-sm text-white/50">
-            © {new Date().getFullYear()} SkoraCares · Trusted by 2,000+ providers
+            © {new Date().getFullYear()} SkoraCares
           </p>
         </div>
       </div>

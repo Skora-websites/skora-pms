@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Grid2x2, LogOut, Menu, UserRound, X } from "lucide-react";
+import { Bell, Grid2x2, LogOut, UserRound, X } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 import { initials, cn } from "@/lib/utils";
 import { ICON_MAP, type NavItem } from "./sidebar";
@@ -22,17 +22,14 @@ export function MobileAppShell({
   user,
   unreadCount = 0,
   footerLabel,
-  children,
 }: {
   navItems: NavItem[];
   user: { name: string; role: string; email: string | null; profilePhotoPath: string | null };
   unreadCount?: number;
   footerLabel: string;
-  children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -45,13 +42,12 @@ export function MobileAppShell({
 
   const closeAll = () => {
     setMoreOpen(false);
-    setDrawerOpen(false);
     setProfileOpen(false);
   };
 
   // Close sheets on outside tap.
   useEffect(() => {
-    if (!moreOpen && !profileOpen && !drawerOpen) return;
+    if (!moreOpen && !profileOpen) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
       const el = e.target as HTMLElement;
       if (sheetRef.current && !sheetRef.current.contains(el)) closeAll();
@@ -62,24 +58,17 @@ export function MobileAppShell({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("touchstart", onDown);
     };
-  }, [moreOpen, profileOpen, drawerOpen]);
+  }, [moreOpen, profileOpen]);
 
   const pageTitle =
     navItems.find((i) => isActive(i.href))?.label ??
     (user.role === "patient" ? "My Care" : footerLabel);
 
   return (
-    <div className="min-h-dvh bg-surface lg:hidden">
+    <div className="lg:hidden">
       {/* ── Top app bar ── */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
         <div className="flex h-14 items-center gap-1.5 px-3">
-          <button
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 active:bg-slate-100"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
           <span className="truncate font-display text-[15px] font-bold text-ink">{pageTitle}</span>
           <div className="ml-auto flex items-center gap-1">
             {user.role !== "patient" && user.role !== "super_admin" && (
@@ -151,48 +140,8 @@ export function MobileAppShell({
         </div>
       )}
 
-      {/* ── Full drawer nav ── */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/50" onClick={closeAll} />
-          <div ref={sheetRef} className="absolute inset-y-0 left-0 flex w-[80%] max-w-xs flex-col bg-navy-950 shadow-2xl">
-            <div className="flex items-center justify-between px-4 py-4">
-              <span className="font-display text-base font-extrabold text-white">SkoraCares</span>
-              <button onClick={closeAll} className="rounded-lg p-1.5 text-white/60 hover:text-white" aria-label="Close menu">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="slim-scroll flex-1 space-y-0.5 overflow-y-auto px-2 pb-6">
-              {navItems.map((item) => {
-                const active = isActive(item.href);
-                const Icon = ICON_MAP[item.icon] ?? Grid2x2;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={closeAll}
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-gradient-to-r from-brand-700 to-accent-700 text-white"
-                        : "text-white/60 hover:bg-white/5 hover:text-white"
-                    )}
-                  >
-                    <Icon className={cn("h-5 w-5 flex-shrink-0", active ? "text-white" : "text-white/40")} />
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-            <div className="border-t border-white/10 p-3">
-              <p className="px-3 py-2 text-xs text-white/40">{footerLabel}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Page content (guttered for mobile, pb for tab bar, prevent overflow) ── */}
-      <main className="overflow-x-hidden px-4 pb-24 pt-4">{children}</main>
+      {/* ── Full drawer nav removed — hamburger hidden on mobile/tablet;
+          bottom tab bar + More sheet cover all navigation. ── */}
 
       {/* ── Bottom tab bar ── */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">

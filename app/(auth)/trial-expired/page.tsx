@@ -41,12 +41,11 @@ export default async function TrialExpiredPage() {
               Your trial plan has expired!
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-white/80">
-              Your trial period has ended. Upgrade your plan now to keep using the SkoraCares
-              doctor dashboard and smart clinic management tools seamlessly.
+              Your trial period has ended. Upgrade your plan to continue using the doctor dashboard.
             </p>
           </div>
           <div className="mt-10 rounded-2xl border-2 border-dashed border-white/25 bg-accent-400 p-5 text-slate-900">
-            <h3 className="font-display text-base font-bold">🎁 Wait! Just for you…</h3>
+            <h3 className="font-display text-base font-bold">Need more time?</h3>
             <p className="mt-1 text-sm opacity-90">
               Need more time to evaluate? Request a temporary trial extension from our support
               team on WhatsApp.
@@ -67,17 +66,17 @@ export default async function TrialExpiredPage() {
         <div className="flex flex-col justify-between bg-white p-10">
           <div>
             <h2 className="font-display text-2xl font-extrabold text-slate-900">
-              Don&apos;t lose your digital advantage!
+              Upgrade your plan
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Upgrade your plan to continue using premium features:
+              Continue using premium features:
             </p>
             <ul className="mt-6 space-y-4 text-sm text-slate-700">
               {[
-                "Seamless clinic management and staff portal access all in one place.",
-                "Secure, cloud-based, instant access to patient medical records.",
-                "Effortless e-prescriptions with less paperwork and zero errors.",
-                "Generate AI-powered smart prescriptions in seconds.",
+                "Clinic management and staff portal access in one place.",
+                "Secure, cloud-based access to patient medical records.",
+                "E-prescriptions with less paperwork.",
+                "AI-powered smart prescriptions.",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs text-brand-800">

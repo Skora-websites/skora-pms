@@ -6,24 +6,34 @@ test.describe("P3.1 Billing", () => {
     const billingTypeName = unique("E2E Billing Type");
     const defaultAmount = "250";
 
-    // Use the seeded patient "Rohit Malhotra" (mobile 9876501234).
-    const patientName = "Rohit Malhotra";
-
     // ── Navigate to billing page ────────────────────────────────────────────
     await page.goto("/doctor/billing");
     await expect(page.getByRole("heading", { name: /Billing/i }).first()).toBeVisible();
 
     // ── Add billing type ────────────────────────────────────────────────────
-    // The BillingTypesManager is within a card with heading "Billing types".
-    const billingTypesSection = page.locator("h2", { hasText: "Billing types" }).locator("..");
-    await billingTypesSection.getByPlaceholder("e.g. Consultation fee").fill(billingTypeName);
-    await billingTypesSection.getByPlaceholder("0").fill(defaultAmount);
+    // The BillingTypesManager renders a card with heading "Billing types".
+    // The form inputs have id="bt-name" and id="bt-amount".
+    const billingTypesSection = page.locator(".card", { hasText: "Billing types" }).first();
+    await billingTypesSection.getByLabel("Name").fill(billingTypeName);
+    await billingTypesSection.getByLabel("Default amount (₹)").fill(defaultAmount);
     await billingTypesSection.getByRole("button", { name: /Add billing type/i }).click();
     await expect(billingTypesSection.getByText(billingTypeName)).toBeVisible({ timeout: 10_000 });
 
     // ── Create bill ─────────────────────────────────────────────────────────
-    // Patient select: "Rohit Malhotra · 9876501234"
-    await page.getByLabel("Patient").selectOption({ index: 1 });
+    // Pick first non-test-artifact patient (leftover E2E/QA patients sort first).
+    const patientSelect = page.getByLabel("Patient");
+    const optionCount = await patientSelect.locator("option").count();
+    let chosenIndex = 1;
+    for (let i = 1; i < optionCount; i++) {
+      const text = (await patientSelect.locator("option").nth(i).innerText()).trim();
+      if (!/E2E|QA User|Patient-/.test(text)) {
+        chosenIndex = i;
+        break;
+      }
+    }
+    const patientLabel = await patientSelect.locator("option").nth(chosenIndex).innerText();
+    const patientName = patientLabel.split("·")[0].trim();
+    await patientSelect.selectOption({ index: chosenIndex });
     // Billing type select: "{name} · ₹{amount}" — match by substring is unreliable in types,
     // select the newly created type by index (it's the last option).
     await page.getByLabel("Billing type").selectOption({ index: await page.getByLabel("Billing type").locator("option").count() - 1 });

@@ -25,9 +25,7 @@ import {
   consultationMedications,
   doctorConsultPdfs,
 } from "@/lib/db/schema";
-
-const dateStr = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+import { todayStr } from "@/lib/utils";
 
 export type AppointmentRow = {
   id: number;
@@ -82,7 +80,7 @@ async function appointmentRows(where: SQL | undefined, order: SQL) {
 }
 
 export const getTodaysAppointments = cache(async (doctorId: number) => {
-  const today = dateStr(new Date());
+  const today = todayStr();
   return appointmentRows(
     and(eq(appointments.doctorId, doctorId), eq(appointments.date, today)),
     asc(appointments.time)
@@ -307,12 +305,15 @@ export const getBillById = cache(async (doctorId: number, billId: number) => {
 export const getTransactions = cache(async (doctorId: number, period: "month" | "last_month" | "all" = "all") => {
   const conds = [eq(transactions.userId, doctorId), isNull(transactions.deletedAt)];
   const today = new Date();
+  // Local date (server is IST) — toISOString() would mislabel 00:00–05:30.
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   if (period === "month") {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const start = ymd(new Date(today.getFullYear(), today.getMonth(), 1));
     conds.push(gte(transactions.date, start));
   } else if (period === "last_month") {
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 10);
-    const end = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().slice(0, 10);
+    const start = ymd(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    const end = ymd(new Date(today.getFullYear(), today.getMonth(), 0));
     conds.push(gte(transactions.date, start), lte(transactions.date, end));
   }
   const rows = await db
@@ -750,8 +751,8 @@ export const getDoctorConsultPdf = cache(async (doctorId: number) => {
 });
 
 export const getDoctorStats = cache(async (doctorId: number) => {
-  const today = dateStr(new Date());
-  const monthStart = dateStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const today = todayStr();
+  const monthStart = todayStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   const [todayAppts, totalPatients, pendingFollowUps, monthIncome, monthExpense, weekAppts] =
     await Promise.all([
@@ -800,7 +801,7 @@ export const getDoctorStats = cache(async (doctorId: number) => {
       db
         .select({ date: appointments.date, count: sql<number>`count(*)` })
         .from(appointments)
-        .where(and(eq(appointments.doctorId, doctorId), gte(appointments.date, dateStr(new Date(Date.now() - 6 * 86400000)))))
+        .where(and(eq(appointments.doctorId, doctorId), gte(appointments.date, todayStr(new Date(Date.now() - 6 * 86400000)))))
         .groupBy(appointments.date),
     ]);
 

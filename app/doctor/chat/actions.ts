@@ -90,16 +90,18 @@ export async function pollChatMessages(sinceId: number) {
     .map((m) => ({ ...m, senderName: m.senderName ?? "Unknown" }));
 }
 
-export async function toggleChatFavorite(messageId: number) {
+export async function toggleChatFavorite(messageId: number): Promise<boolean> {
   const user = await authedUser();
-  if (!(await requireChatView(user))) return;
+  if (!(await requireChatView(user))) return false;
   const [existing] = await db
     .select({ id: favorites.id })
     .from(favorites)
     .where(and(eq(favorites.userId, user.id), eq(favorites.messageId, messageId)));
 
+  let nowFavorite: boolean;
   if (existing) {
     await db.delete(favorites).where(eq(favorites.id, existing.id));
+    nowFavorite = false;
   } else {
     await db.insert(favorites).values({
       userId: user.id,
@@ -107,8 +109,10 @@ export async function toggleChatFavorite(messageId: number) {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    nowFavorite = true;
   }
   revalidatePath("/doctor/chat");
+  return nowFavorite;
 }
 
 export async function deleteChatMessage(messageId: number) {

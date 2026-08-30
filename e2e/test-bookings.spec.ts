@@ -57,8 +57,9 @@ test.describe("P4.2 Test Bookings", () => {
     await expect(row.getByText("₹750")).toBeVisible();
 
     // ── Copy vendor upload link and upload a report ──────────────────────────
+    // The copy button label changes to "Copied!" after writeText succeeds.
     await row.getByRole("button", { name: /Copy link/i }).click();
-    await expect(page.getByText("Copied!").first()).toBeVisible({ timeout: 5_000 });
+    await expect(row.getByRole("button", { name: /Copied!/i })).toBeVisible({ timeout: 5_000 });
     const link = await page.evaluate(() => navigator.clipboard.readText());
     expect(link).toContain("/vendor/upload-test/");
 

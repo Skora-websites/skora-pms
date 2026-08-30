@@ -481,8 +481,13 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
 
   if (!appt) return { error: "Appointment not found." };
 
-  const apptTime = new Date(`${appt.date}T${appt.time}`);
-  if (apptTime < now) return { error: "Cannot cancel past appointments." };
+  // Compare using parseTimeToMinutes instead of new Date(legacy time format)
+  const today = todayStr(now);
+  const apptMinutes = parseTimeToMinutes(appt.time);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (appt.date < today || (appt.date === today && apptMinutes !== null && apptMinutes <= nowMinutes)) {
+    return { error: "Cannot cancel past appointments." };
+  }
 
   if (appt.status === "cancelled") return { error: "Appointment is already cancelled." };
   if (!["confirmed", "pending"].includes(appt.status)) {
@@ -648,8 +653,11 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
 
   if (!appt) return { error: "Appointment not found." };
 
-  const apptTime = new Date(`${appt.date}T${appt.time}`);
-  const isFuture = apptTime > now;
+  const today = todayStr(now);
+  const apptMinutes = parseTimeToMinutes(appt.time);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const isFuture =
+    appt.date > today || (appt.date === today && apptMinutes !== null && apptMinutes > nowMinutes);
   const canDelete = isFuture
     ? ["pending", "pending_consent", "completed"].includes(appt.status)
     : ["completed", "cancelled"].includes(appt.status);

@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
+import { sendPushToUser } from "@/lib/push/client";
 import { findNearbyOnDutyDoctors, maskPatient, SOS_TTL_MIN } from "./geo";
 import { broadcastToMany } from "./hub";
 
@@ -119,6 +120,17 @@ export async function triggerSos(
       type: "error",
       link: "/doctor/emergency",
     });
+  }
+
+  // Web Push to on-duty doctors even when the app tab is closed (PWA).
+  const payload = {
+    title: "🚨 Emergency request nearby",
+    body: `${maskPatient(user.name)} needs urgent help — ${nearby[0].distanceKm} km away${parsed.data.complaint ? ` (${parsed.data.complaint})` : ""}.`,
+    url: "/doctor/emergency",
+    tag: "sos-new",
+  } as const;
+  for (const doc of nearby) {
+    void sendPushToUser(doc.doctorId, payload);
   }
 
   void auditLog({

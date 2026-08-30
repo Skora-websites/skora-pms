@@ -332,17 +332,6 @@ export async function saveSchedules(
       } else {
         await db.insert(doctorSchedules).values({ ...data, createdAt: new Date() });
       }
-      await db
-        .update(doctorSchedules)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(doctorSchedules.doctorClinicId, clinicId),
-            eq(doctorSchedules.dayOfWeek, day as never),
-            eq(doctorSchedules.sessionType, "full_day" as never),
-            eq(doctorSchedules.isActive, true)
-          )
-        );
     } else {
       if (sessionTypes.length === 0) return { error: "Select at least one session type." };
       for (const sessionType of sessionTypes) {

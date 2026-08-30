@@ -13,7 +13,9 @@ test.describe("P2.1 Patient Registration", () => {
     await expect(page.getByRole("heading", { name: /Patient registrations/i }).first()).toBeVisible();
 
     // ── Register new patient ────────────────────────────────────────────────
-    await page.getByRole("link", { name: /Register/i }).click();
+    // The header action button is the only "Register" link in <main> (nav has
+    // "Registrations" links with the same icon).
+    await page.locator("main").getByRole("link", { name: "Register", exact: true }).first().click();
     await page.waitForURL("/doctor/patients/new");
     await expect(page.getByRole("heading", { name: /Register a patient/i })).toBeVisible();
 
@@ -24,22 +26,24 @@ test.describe("P2.1 Patient Registration", () => {
     await page.getByLabel("City").fill(city);
     await page.getByRole("button", { name: /Register patient/i }).click();
 
-    // On success, redirects to list; find the patient card.
-    await page.waitForURL("/doctor/patients");
-    const card = page.locator(".card", { hasText: patientName });
-    await expect(card).toBeVisible({ timeout: 15_000 });
-    await expect(card).toContainText(patientPhone.slice(0, 5));
-
-    // ── View patient details ────────────────────────────────────────────────
-    await card.click();
+    // createPatient redirects to /doctor/patients/{id}. Verify detail page.
     await page.waitForURL(/\/doctor\/patients\/\d+$/);
     await expect(page.getByRole("heading", { name: patientName })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(patientPhone)).toBeVisible();
     await expect(page.getByText(city)).toBeVisible();
 
+    // ── Go back to list to verify the card exists, then open detail ──
+    await page.goto("/doctor/patients");
+    await page.waitForLoadState("networkidle");
+    const card = page.locator(".card", { hasText: patientName });
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card).toContainText(patientPhone.slice(0, 5));
+    await card.click();
+    await page.waitForURL(/\/doctor\/patients\/\d+$/);
+
     // ── Edit patient ────────────────────────────────────────────────────────
     const renamed = `${patientName} Updated`;
-    await page.getByRole("link", { name: /Edit/i }).click();
+    await page.locator("main").getByRole("link", { name: /Edit/i }).first().click();
     await page.waitForURL(/\/edit$/);
     await page.getByLabel("Full name").clear();
     await page.getByLabel("Full name").fill(renamed);
@@ -54,7 +58,7 @@ test.describe("P2.1 Patient Registration", () => {
       expect(dialog.message()).toContain("Delete patient");
       dialog.accept();
     });
-    await page.getByRole("button", { name: /Delete/i }).click();
+    await page.locator("main").getByRole("button", { name: /Delete/i }).first().click();
 
     // After delete, redirects to /doctor/patients — verify the patient is gone.
     await page.waitForURL("/doctor/patients");

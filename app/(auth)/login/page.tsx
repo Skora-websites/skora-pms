@@ -17,17 +17,16 @@ export default function LoginPage() {
           </Link>
           <div>
             <h1 className="font-display text-4xl font-extrabold leading-tight text-white">
-              Welcome back to your
+              Clinic management,
               <br />
-              clinic&apos;s command center.
+              in one place.
             </h1>
             <p className="mt-4 max-w-md text-white/70">
-              Appointments, prescriptions, billing, staff and follow-ups — all in one secure
-              dashboard built for healthcare professionals.
+              Appointments, prescriptions, billing, staff and follow-ups in a single dashboard.
             </p>
           </div>
           <p className="text-sm text-white/50">
-            © {new Date().getFullYear()} SkoraCares · Trusted by 2,000+ providers
+            © {new Date().getFullYear()} SkoraCares
           </p>
         </div>
       </div>

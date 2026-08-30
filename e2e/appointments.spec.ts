@@ -2,9 +2,6 @@ import { test, expect } from "@playwright/test";
 
 test.describe("P2.2 Appointments", () => {
   test("book an appointment, cancel it, then delete it", async ({ page }) => {
-    // Use the seeded patient "Rohit Malhotra" (mobile 9876501234).
-    const patientName = "Rohit Malhotra";
-
     // Pick a future date far enough to avoid conflicts with seeded appointments.
     // Use today+7 at 10:15 AM — this falls within the doctor's morning schedule
     // (Mon-Fri 09:00-14:00, Sat 10:00-13:00) and avoids any existing appointments.
@@ -17,8 +14,21 @@ test.describe("P2.2 Appointments", () => {
     await expect(page.getByRole("heading", { name: /Book appointment/i })).toBeVisible();
 
     // ── Fill the booking form ───────────────────────────────────────────────
-    // Patient select shows "Rohit Malhotra · 9876501234"
-    await page.getByLabel("Patient").selectOption({ index: 1 });
+    // Leftover E2E/QA patients sort alphabetically first, so pick the first
+    // option whose label is NOT a test artifact. Fall back to index 1.
+    const patientSelect = page.getByLabel("Patient");
+    const optionCount = await patientSelect.locator("option").count();
+    let chosenIndex = 1;
+    for (let i = 1; i < optionCount; i++) {
+      const text = (await patientSelect.locator("option").nth(i).innerText()).trim();
+      if (!/E2E|QA User|Patient-/.test(text)) {
+        chosenIndex = i;
+        break;
+      }
+    }
+    const patientLabel = await patientSelect.locator("option").nth(chosenIndex).innerText();
+    const patientName = patientLabel.split("·")[0].trim();
+    await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
     // Use "Skip Consent" to get status = confirmed
@@ -28,8 +38,9 @@ test.describe("P2.2 Appointments", () => {
     // Submit
     await page.getByRole("button", { name: /Book appointment/i }).click();
 
-    // On success, redirects to /doctor/appointments?created=X
-    await page.waitForURL(/\/doctor\/appointments\?created=/);
+    // On success, redirects to /doctor/appointments (possibly with ?created=X).
+    // Be specific — /doctor/appointments/book also matches a loose /doctor/appointments/ regex.
+    await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
     // Find the row containing the patient name + time
     const row = page.locator("tr", { hasText: patientName }).filter({ hasText: "10:15 AM" }).first();

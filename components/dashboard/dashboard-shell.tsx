@@ -25,12 +25,14 @@ export function DashboardShell({
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Mobile app shell (< lg) */}
-      <MobileAppShell navItems={navItems} user={user} unreadCount={unreadCount} footerLabel={footerLabel}>
-        {children}
-      </MobileAppShell>
+      {/* Mobile app shell (< lg) — chrome only; page content is rendered ONCE
+          in the shared <main> below, so the DOM never duplicates IDs/forms. */}
+      <div className="lg:hidden">
+        <MobileAppShell navItems={navItems} user={user} unreadCount={unreadCount} footerLabel={footerLabel} />
+      </div>
 
-      {/* Desktop sidebar (>= lg) */}
+      {/* Desktop chrome (>= lg): fixed sidebar + sticky header in-flow.
+          The fixed sidebar overlays the left edge, so <main> gets the offset. */}
       <div className="hidden lg:block">
         <Sidebar
           items={navItems}
@@ -41,11 +43,20 @@ export function DashboardShell({
           footerHref={footerHref}
           footerLabel={footerLabel}
         />
-        <div className={`transition-all duration-300 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
+        <div>
           <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} />
-          <main className="p-4 lg:p-8">{children}</main>
         </div>
       </div>
+
+      {/* Single page content — never duplicated. Mobile: gutters + bottom tab
+          bar clearance. Desktop: offset for the fixed sidebar. */}
+      <main
+        className={`overflow-x-hidden px-4 pb-24 pt-14 transition-all duration-300 lg:px-8 lg:pb-8 lg:pt-6 ${
+          collapsed ? "lg:pl-[76px]" : "lg:pl-64"
+        }`}
+      >
+        {children}
+      </main>
     </div>
   );
 }

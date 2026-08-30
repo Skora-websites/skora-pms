@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
 import { acceptSos, completeSos, declineSos, setDoctorOnDuty, updateDoctorLocation } from "@/lib/dispatch/actions";
+import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 
 type Offer = {
   id: number;
@@ -25,11 +26,66 @@ export function EmergencyPanel({
 }) {
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [onDuty, setOnDuty] = useState(initialOnDuty);
+  const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeCase, setActiveCase] = useState<number | null>(initialActiveCase ?? null);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const shareTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Resolve push subscription state (permission + subscription) on mount.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushEnabled(false);
+      return;
+    }
+    const check = async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      setPushEnabled(Notification.permission === "granted" && !!sub);
+    };
+    check().catch(() => setPushEnabled(false));
+  }, []);
+
+  /** Opt in/out of Web Push alerts for this device. */
+  const togglePush = async () => {
+    if (pushEnabled) {
+      // Disable: unsubscribe this device.
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        if (sub) {
+          await unsubscribeFromPush(sub.endpoint).catch(() => {});
+          await sub.unsubscribe().catch(() => {});
+        }
+      } catch {
+        /* ignore */
+      }
+      setPushEnabled(false);
+      return;
+    }
+    // Enable: request permission + subscribe.
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") return;
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      const sub =
+        existing ??
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(
+            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""
+          ),
+        }));
+      const json = sub.toJSON();
+      await subscribeToPush(json.endpoint!, json.keys?.auth ?? "", json.keys?.p256dh ?? "");
+      setPushEnabled(true);
+      router.refresh();
+    } catch {
+      /* permission denied or subscribe failed — leave disabled */
+    }
+  };
 
   // Live SSE subscription when on duty.
   useEffect(() => {
@@ -173,6 +229,34 @@ export function EmergencyPanel({
         </button>
       </div>
 
+      {/* Push alerts toggle (browser notifications even when the tab is closed) */}
+      {pushEnabled !== null && (
+        <div className="card flex items-center justify-between p-6">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">Push alerts</h2>
+            <p className="text-xs text-slate-500">
+              Get emergency alerts as browser notifications, even when this tab is closed.
+            </p>
+          </div>
+          <button
+            onClick={togglePush}
+            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition ${
+              pushEnabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
+            }`}
+          >
+            {pushEnabled ? (
+              <>
+                <Bell className="h-4 w-4" /> Alerts On
+              </>
+            ) : (
+              <>
+                <BellOff className="h-4 w-4" /> Enable Alerts
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Incoming requests */}
       {offers.length === 0 ? (
         <div className="card p-10 text-center">
@@ -217,4 +301,14 @@ export function EmergencyPanel({
       )}
     </div>
   );
+}
+
+/** Convert a base64url-encoded VAPID public key into a Uint8Array for pushManager.subscribe(). */
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64Norm = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64Norm);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }

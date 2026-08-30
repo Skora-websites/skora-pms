@@ -47,8 +47,8 @@ export default async function DoctorDashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`}
-        subtitle={`Here's what's happening at your clinic · ${formatDate(new Date())}`}
+        title="Dashboard"
+        subtitle={formatDate(new Date())}
         action={
           <Link
             href="/doctor/appointments"

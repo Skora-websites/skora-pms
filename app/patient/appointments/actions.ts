@@ -209,12 +209,22 @@ export async function cancelPatientAppointment(appointmentId: number): Promise<P
   if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
 
   const [appt] = await db
-    .select({ id: appointments.id, status: appointments.status, date: appointments.date, doctorId: appointments.doctorId })
+    .select({ id: appointments.id, status: appointments.status, date: appointments.date, time: appointments.time, doctorId: appointments.doctorId })
     .from(appointments)
     .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, user.id)));
   if (!appt) return { error: "Appointment not found." };
   if (appt.status === "cancelled") return { error: "Appointment is already cancelled." };
   if (appt.status === "completed") return { error: "Completed appointments cannot be cancelled." };
+
+  // Business rule: past / already-started appointments cannot be cancelled
+  // (mirrors the doctor-side cancel guard).
+  const now = new Date();
+  const today = todayStr(now);
+  const tMin = parseTimeToMinutes(appt.time);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (appt.date < today || (appt.date === today && tMin !== null && tMin <= nowMinutes)) {
+    return { error: "Past appointments cannot be cancelled." };
+  }
 
   await db
     .update(appointments)

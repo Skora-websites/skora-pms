@@ -179,7 +179,7 @@ async function createBillingForBooking(args: {
         type: 1,
         billingId,
         amount: args.receivedAmount.toFixed(2),
-        date: now.toISOString().slice(0, 10),
+        date: todayStr(now),
         status: "approved",
         description: `Bill ${billNumber} — Medical Test (test booking)`,
         paymentMethod: args.paymentMethod,

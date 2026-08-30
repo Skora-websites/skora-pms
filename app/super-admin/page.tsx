@@ -41,8 +41,8 @@ export default async function SuperAdminDashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Platform overview`}
-        subtitle="Monitor your healthcare network at a glance"
+        title="Platform overview"
+        subtitle={formatDate(new Date())}
       />
 
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">

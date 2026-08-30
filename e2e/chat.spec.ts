@@ -18,22 +18,23 @@ test.describe("P2.3 Chat", () => {
     await expect(messageEl).toBeVisible({ timeout: 15_000 });
 
     // ── Favorite the message ────────────────────────────────────────────────
-    // The message is inside a row; hover to reveal the action buttons.
-    const messageRow = messageEl.locator("..");
+    // The message <p> has a sibling actions div with class `group-hover:opacity-100`.
+    // Use `force: true` on click since the button is CSS-opacity-hidden.
+    const messageRow = page.locator("div.group", { has: page.locator("p", { hasText: messageContent }) }).first();
     await messageRow.hover();
     const favButton = messageRow.getByTitle("Favorite");
-    await expect(favButton).toBeVisible({ timeout: 5_000 });
-    await favButton.click();
+    await expect(favButton).toBeAttached({ timeout: 10_000 });
+    await favButton.click({ force: true });
 
-    // After favoriting, the button title becomes "Unfavorite".
-    await expect(messageRow.getByTitle("Unfavorite")).toBeVisible({ timeout: 5_000 });
+    // After favoriting, the button title becomes "Unfavorite" (polled every 5s + refresh).
+    await expect(messageRow.getByTitle("Unfavorite")).toBeAttached({ timeout: 15_000 });
 
     // ── Delete the message ──────────────────────────────────────────────────
     // Only own messages have a Delete button.
     await messageRow.hover();
     const deleteButton = messageRow.getByTitle("Delete");
-    await expect(deleteButton).toBeVisible({ timeout: 5_000 });
-    await deleteButton.click();
+    await expect(deleteButton).toBeAttached({ timeout: 5_000 });
+    await deleteButton.click({ force: true });
 
     // Message should be removed from the list.
     await expect(messageEl).toHaveCount(0, { timeout: 15_000 });

@@ -29,8 +29,8 @@ export default async function PatientDashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Hello, ${user.name.split(" ")[0]} 👋`}
-        subtitle="Here's your health at a glance"
+        title="Dashboard"
+        subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} · ${consultations.length} consultation${consultations.length === 1 ? "" : "s"}`}
       />
 
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">

@@ -89,7 +89,7 @@ export default async function VendorUploadPage({ params }: PageProps) {
           )}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">
-          Powered by SkoraCares · Lab reports are stored securely and shared only with the treating doctor.
+          SkoraCares · Reports are stored securely and shared only with the treating doctor.
         </p>
       </div>
     </div>

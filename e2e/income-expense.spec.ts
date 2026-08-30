@@ -31,13 +31,13 @@ test.describe("P3.2 Income & Expense", () => {
     await page.getByLabel("Amount (₹)").fill("1500");
     const today = new Date().toISOString().slice(0, 10);
     await page.getByLabel("Date").fill(today);
-    await page.getByLabel("Category").selectOption({ label: incomeCatName });
+    await page.locator("#category").selectOption({ label: incomeCatName });
     await page.getByLabel("Description").fill(incomeDesc);
     await page.getByLabel("Payment method").selectOption("Cash");
     await page.getByRole("button", { name: /Add entry/i }).click();
 
-    // Verify row in "Recent income" table
-    const incomeRow = page.locator("table.data-table", { has: page.getByText("Recent income") }).locator("tr", { hasText: incomeDesc });
+    // Verify row in "Recent income" table (first data-table on the page)
+    const incomeRow = page.locator("table.data-table").nth(0).locator("tr", { hasText: incomeDesc });
     await expect(incomeRow).toBeVisible({ timeout: 15_000 });
     await expect(incomeRow.getByText("₹1,500")).toBeVisible();
 
@@ -47,13 +47,13 @@ test.describe("P3.2 Income & Expense", () => {
     await page.getByLabel("Amount (₹)").fill("800");
     await page.getByLabel("Date").fill(today);
     // Category select options have switched to expense categories
-    await page.getByLabel("Category").selectOption({ label: expenseCatName });
+    await page.locator("#category").selectOption({ label: expenseCatName });
     await page.getByLabel("Description").fill(expenseDesc);
     await page.getByLabel("Payment method").selectOption("UPI");
     await page.getByRole("button", { name: /Add entry/i }).click();
 
-    // Verify row in "Recent expenses" table
-    const expenseRow = page.locator("table.data-table", { has: page.getByText("Recent expenses") }).locator("tr", { hasText: expenseDesc });
+    // Verify row in "Recent expenses" table (second data-table on the page)
+    const expenseRow = page.locator("table.data-table").nth(1).locator("tr", { hasText: expenseDesc });
     await expect(expenseRow).toBeVisible({ timeout: 15_000 });
     await expect(expenseRow.getByText("₹800")).toBeVisible();
 

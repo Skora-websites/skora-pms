@@ -189,7 +189,7 @@ export function ChatRoom({
       <div className="slim-scroll h-[520px] space-y-1 overflow-y-auto bg-slate-50/60 px-5 py-4">
         {visible.length === 0 && (
           <p className="py-16 text-center text-sm text-slate-400">
-            {search ? "No messages match your search." : "No messages yet — say hello to the group!"}
+            {search ? "No messages match your search." : "No messages yet."}
           </p>
         )}
         {visible.map((m, i) => {
@@ -283,7 +283,14 @@ export function ChatRoom({
                   )}
                 >
                   <button
-                    onClick={() => run(() => toggleChatFavorite(m.id))}
+                    onClick={() =>
+                      run(async () => {
+                        const fav = await toggleChatFavorite(m.id);
+                        setMessages((prev) =>
+                          prev.map((x) => (x.id === m.id ? { ...x, isFavorite: fav } : x))
+                        );
+                      })
+                    }
                     title={m.isFavorite ? "Unfavorite" : "Favorite"}
                     className={cn(
                       "flex h-7 w-7 items-center justify-center rounded-lg border transition-colors",
@@ -307,7 +314,12 @@ export function ChatRoom({
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => run(() => deleteChatMessage(m.id))}
+                        onClick={() =>
+                          run(async () => {
+                            await deleteChatMessage(m.id);
+                            setMessages((prev) => prev.filter((x) => x.id !== m.id));
+                          })
+                        }
                         title="Delete"
                         className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:text-rose-500"
                       >
