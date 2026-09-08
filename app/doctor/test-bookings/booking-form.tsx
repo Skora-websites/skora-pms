@@ -62,17 +62,27 @@ export function BookingForm({
     if (!open || booking) return;
     if (!query.trim() || query.length < 2) return;
     const t = setTimeout(async () => {
-      const res = await fetch(`/api/doctor/test-bookings/suggestions?q=${encodeURIComponent(query)}&type=mobile`);
-      if (res.ok) setSuggestions((await res.json()) as Suggest[]);
+      try {
+        const res = await fetch(`/api/doctor/test-bookings/suggestions?q=${encodeURIComponent(query)}&type=mobile`);
+        if (res.ok) setSuggestions((await res.json()) as Suggest[]);
+        else setSuggestions([]);
+      } catch {
+        setSuggestions([]);
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [query, open, booking]);
 
+  // ponytail: fetch failure = no patient details, form still submits raw inputs; surface inline if UX complains.
   async function fetchPatient(type: string, value: string) {
-    const res = await fetch(`/api/doctor/test-bookings/patient-details?type=${type}&value=${encodeURIComponent(value)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.success) setSelectedPatient(data.patient as Suggest);
+    try {
+      const res = await fetch(`/api/doctor/test-bookings/patient-details?type=${type}&value=${encodeURIComponent(value)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success) setSelectedPatient(data.patient as Suggest);
+    } catch {
+      /* offline — raw inputs still submit via server action */
+    }
   }
 
   const selectedTestObjs = tests.filter((t) => selectedTests.includes(t.id));

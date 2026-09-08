@@ -122,10 +122,8 @@ export const getDoctorPatients = cache(async (doctorId: number, search?: string,
     const like = `%${search}%`;
     conds.push(sql`(${users.name} LIKE ${like} OR ${users.phone} LIKE ${like} OR ${users.email} LIKE ${like})`);
   }
-  if (startDate && endDate) {
-    conds.push(sql`${users.createdAt} >= ${startDate} 00:00:00`);
-    conds.push(sql`${users.createdAt} <= ${endDate} 23:59:59`);
-  }
+  if (startDate) conds.push(sql`${users.createdAt} >= ${startDate + " 00:00:00"}`);
+  if (endDate) conds.push(sql`${users.createdAt} <= ${endDate + " 23:59:59"}`);
   return db
     .select({
       id: users.id,

@@ -9,8 +9,6 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appointments,
-  billings,
-  billingTypes,
   transactions,
   consultations,
   consultationMedications,
@@ -23,14 +21,13 @@ import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import {
   ensurePatientOfDoctor,
   ensureAppointmentOfDoctor,
-  ensureBillingTypeOfDoctor,
   ensureIncomeTypeOfUser,
   ensureExpenseTypeOfUser,
   ensureTicketOwner,
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
-import { generateBillNumber, todayStr } from "@/lib/utils";
-import { billSchema, supportTicketReplySchema } from "@/lib/validation";
+import { todayStr } from "@/lib/utils";
+import { supportTicketReplySchema } from "@/lib/validation";
 
 type ActionResult = { error: string | null };
 
@@ -66,7 +63,10 @@ export async function updateAppointmentStatus(appointmentId: number, status: str
     .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
   if (!current) return;
   if (status === "confirmed") {
-    if (!["pending", "pending_consent"].includes(current.status)) return;
+    // pending_consent must not be confirmed manually — that would bypass the
+    // outstanding patient consent. Only the consent response (or patient
+    // booking) confirms it.
+    if (current.status !== "pending") return;
   } else {
     // Any other status is not a valid generic transition — no-op.
     return;
@@ -80,91 +80,8 @@ export async function updateAppointmentStatus(appointmentId: number, status: str
   revalidatePath("/doctor/appointments");
 }
 
-// ── Billing ──────────────────────────────────────────────────────────────
-
-export async function createBill(
-  _prev: ActionResult,
-  formData: FormData
-): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-create");
-  if (!doctorId) return { error: "You don't have permission to create bills." };
-  const now = new Date();
-  const patientId = Number(formData.get("patient_id"));
-  const billingTypeId = Number(formData.get("billing_type_id"));
-  const amount = String(formData.get("amount") ?? "0");
-  const paymentMethod = String(formData.get("payment_method") ?? "cash");
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-
-  // Zod validation
-  const parsed = billSchema.safeParse({
-    patientId: String(formData.get("patient_id") ?? "0"),
-    billingTypeId: String(formData.get("billing_type_id") ?? "0"),
-    amount: String(formData.get("amount") ?? "0"),
-    description: String(formData.get("notes") ?? ""),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
-  }
-
-  if (!patientId || !billingTypeId) return { error: "Patient and billing type are required." };
-  if (!Number.isInteger(patientId) || !Number.isInteger(billingTypeId)) {
-    return { error: "Invalid patient or billing type." };
-  }
-  if (!PAYMENT_METHODS.includes(paymentMethod)) return { error: "Invalid payment method." };
-
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-    return { error: "Patient not found for this doctor." };
-  }
-  if (!(await ensureBillingTypeOfDoctor(billingTypeId, doctorId))) {
-    return { error: "Billing type not found." };
-  }
-
-  const billNumber = generateBillNumber();
-  const [billResult] = await db.insert(billings).values({
-    billNumber,
-    patientId,
-    doctorId,
-    billingTypeId,
-    totalAmount: amount,
-    receivedAmount: amount,
-    pendingAmount: "0",
-    paymentMethod: paymentMethod as never,
-    status: "paid",
-    notes,
-    billDate: todayStr(now),
-    createdAt: now,
-    updatedAt: now,
-  });
-  const billingId = Number(billResult.insertId);
-
-  // Generate the income transaction automatically (as the legacy app does)
-  const [billingType] = await db
-    .select({ name: billingTypes.name })
-    .from(billingTypes)
-    .where(eq(billingTypes.id, billingTypeId));
-
-  const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, doctorId));
-  await db.insert(transactions).values({
-    userId: doctorId,
-    type: 1,
-    billingId,
-    amount,
-    date: todayStr(now),
-    status: "approved",
-    description: `Bill ${billNumber}${billingType ? ` — ${billingType.name}` : ""}${notes ? ` (${notes})` : ""}`,
-    paymentMethod,
-    createdBy: user?.name ?? "System",
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod });
-  void audit.transactionCreated(doctorId, { billingId, amount });
-
-  revalidatePath("/doctor/billing");
-  revalidatePath("/doctor/income-expense");
-  return { error: null };
-}
+// Billing lives in app/doctor/billing/actions.ts (the older duplicate here was
+// dead code — no UI imported it and it lacked credit-bill support).
 
 // ── Transactions ─────────────────────────────────────────────────────────
 
@@ -343,21 +260,42 @@ export async function saveConsultation(
     return { error: "Patient not found for this doctor.", consultationId: null };
   }
 
-  const [existing] = await db
-    .select({ id: consultations.id })
-    .from(consultations)
-    .where(and(eq(consultations.appointmentId, appointmentId), eq(consultations.doctorId, doctorId)));
-
-  let consultationId: number;
-  if (existing) {
-    consultationId = existing.id;
-    const [current] = await db
-      .select({ followUpStatus: consultations.followUpStatus })
+  // Consultation upsert + medication rewrite + appointment vitals/status in
+  // ONE transaction — a mid-way failure previously left a consultation saved
+  // but the appointment un-completed (or meds deleted but not re-inserted).
+  const consultationId = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: consultations.id })
       .from(consultations)
-      .where(eq(consultations.id, existing.id));
-    await db
-      .update(consultations)
-      .set({
+      .where(and(eq(consultations.appointmentId, appointmentId), eq(consultations.doctorId, doctorId)));
+
+    let consultationId: number;
+    if (existing) {
+      consultationId = existing.id;
+      const [current] = await tx
+        .select({ followUpStatus: consultations.followUpStatus })
+        .from(consultations)
+        .where(eq(consultations.id, existing.id));
+      await tx
+        .update(consultations)
+        .set({
+          symptomsNote,
+          examinationNote,
+          diagnosisNote,
+          labNote,
+          medicationsNote,
+          medicalHistory,
+          followUpDate,
+          followUpStatus: followUpDate ? "pending" : (current?.followUpStatus ?? "pending"),
+          updatedAt: now,
+        })
+        .where(and(eq(consultations.id, existing.id), eq(consultations.doctorId, doctorId)));
+    } else {
+      const [result] = await tx.insert(consultations).values({
+        patientId,
+        doctorId,
+        appointmentId,
+        consultationDate: now,
         symptomsNote,
         examinationNote,
         diagnosisNote,
@@ -365,60 +303,46 @@ export async function saveConsultation(
         medicationsNote,
         medicalHistory,
         followUpDate,
-        followUpStatus: followUpDate ? "pending" : (current?.followUpStatus ?? "pending"),
-        updatedAt: now,
-      })
-      .where(and(eq(consultations.id, existing.id), eq(consultations.doctorId, doctorId)));
-  } else {
-    const [result] = await db.insert(consultations).values({
-      patientId,
-      doctorId,
-      appointmentId,
-      consultationDate: now,
-      symptomsNote,
-      examinationNote,
-      diagnosisNote,
-      labNote,
-      medicationsNote,
-      medicalHistory,
-      followUpDate,
-      followUpStatus: "pending",
-      createdAt: now,
-      updatedAt: now,
-    });
-    consultationId = Number(result.insertId);
-  }
-
-  // Medications rows (comma separated medicine names, or per-line)
-  const medLines = String(formData.get("medications") ?? "")
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (medLines.length > 0) {
-    await db.delete(consultationMedications).where(eq(consultationMedications.consultationId, consultationId));
-    await db.insert(consultationMedications).values(
-      medLines.map((line, i) => ({
-        consultationId,
-        medicineName: line,
-        order: i,
+        followUpStatus: "pending",
         createdAt: now,
         updatedAt: now,
-      }))
-    );
-  }
+      });
+      consultationId = Number(result.insertId);
+    }
 
-  // Persist vitals + mark appointment completed
-  await db
-    .update(appointments)
-    .set({
-      bloodGroup,
-      bp,
-      weight: weight !== null ? String(weight) : null,
-      height: height !== null ? String(height) : null,
-      status: "completed",
-      updatedAt: now,
-    })
-    .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+    // Medications rows (comma separated medicine names, or per-line)
+    const medLines = String(formData.get("medications") ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (medLines.length > 0) {
+      await tx.delete(consultationMedications).where(eq(consultationMedications.consultationId, consultationId));
+      await tx.insert(consultationMedications).values(
+        medLines.map((line, i) => ({
+          consultationId,
+          medicineName: line,
+          order: i,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
+    }
+
+    // Persist vitals + mark appointment completed
+    await tx
+      .update(appointments)
+      .set({
+        bloodGroup,
+        bp,
+        weight: weight !== null ? String(weight) : null,
+        height: height !== null ? String(height) : null,
+        status: "completed",
+        updatedAt: now,
+      })
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+
+    return consultationId;
+  });
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");

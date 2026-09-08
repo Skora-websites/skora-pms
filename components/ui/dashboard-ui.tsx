@@ -105,6 +105,7 @@ const statusTones: Record<string, string> = {
   unapproved: "bg-amber-100 text-amber-800",
   open: "bg-brand-100 text-brand-800",
   closed: "bg-slate-100 text-slate-600",
+  expired: "bg-amber-100 text-amber-800",
   "in-progress": "bg-violet-100 text-violet-800",
   active: "bg-accent-100 text-accent-800",
   inactive: "bg-slate-100 text-slate-600",

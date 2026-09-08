@@ -5,6 +5,9 @@
  * Redis pub/sub (same API shape) — documented upgrade path.
  */
 
+import { notifyUser } from "@/lib/notifications";
+import { sendPushToUser } from "@/lib/push/client";
+
 export type SosEvent =
   | {
       type: "sos:new";
@@ -48,4 +51,42 @@ export function broadcastToDoctor(doctorId: number, event: SosEvent) {
 
 export function broadcastToMany(doctorIds: number[], event: SosEvent) {
   for (const id of doctorIds) broadcastToDoctor(id, event);
+}
+
+/**
+ * Announce a pending SOS to a set of doctors: live SSE event, in-app
+ * notification, and Web Push. Shared by the initial broadcast (triggerSos)
+ * and the late-joiner sweep (discovery) so the copy can't drift.
+ */
+export async function announceSosToDoctors(
+  doctorIds: number[],
+  info: { requestId: number; distanceKm: number; complaint: string | null; patient: string }
+): Promise<void> {
+  if (doctorIds.length === 0) return;
+  broadcastToMany(
+    doctorIds,
+    {
+      type: "sos:new",
+      requestId: info.requestId,
+      distanceKm: info.distanceKm,
+      complaint: info.complaint,
+      patient: info.patient,
+    }
+  );
+  const body = `${info.patient} needs urgent help${info.complaint ? ` (${info.complaint})` : ""}.`;
+  for (const doctorId of doctorIds) {
+    void notifyUser({
+      userId: doctorId,
+      title: "🚨 Emergency request nearby",
+      message: body,
+      type: "error",
+      link: "/doctor/emergency",
+    });
+    void sendPushToUser(doctorId, {
+      title: "🚨 Emergency request nearby",
+      body,
+      url: "/doctor/emergency",
+      tag: "sos-new",
+    });
+  }
 }

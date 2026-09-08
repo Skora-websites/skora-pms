@@ -6,6 +6,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, roles, modelHasRoles, staffAttendances } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { revokeAllSessionsForUser } from "@/lib/auth/session";
 import { audit } from "@/lib/security/audit-log";
 
 export type StaffActionResult = { error: string | null };
@@ -47,28 +48,32 @@ export async function createStaff(
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing) return { error: "A user with this email already exists." };
 
-  const [created] = await db
-    .insert(users)
-    .values({
-      referenceRoleId: doctorId,
-      doctorId,
-      name,
-      email,
-      phone,
-      password: await bcrypt.hash(password, 12),
-      role: "receptionist",
-      status: "active",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .$returningId();
-  const staffId = Number(created.id);
+  // User + role grant in one transaction — a crash between them would
+  // otherwise leave a staff account with no role (locked out).
+  const staffId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(users)
+      .values({
+        referenceRoleId: doctorId,
+        doctorId,
+        name,
+        email,
+        phone,
+        password: await bcrypt.hash(password, 12),
+        role: "receptionist",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .$returningId();
 
-  // Assign the practice role (spatie model_has_roles format).
-  await db.insert(modelHasRoles).values({
-    roleId,
-    modelType: USER_MODEL,
-    modelId: staffId,
+    // Assign the practice role (spatie model_has_roles format).
+    await tx.insert(modelHasRoles).values({
+      roleId,
+      modelType: USER_MODEL,
+      modelId: Number(created.id),
+    });
+    return Number(created.id);
   });
 
   void audit.roleChanged(doctorId, { action: "staff_created", staffId, roleId });
@@ -118,11 +123,21 @@ export async function updateStaff(
   };
   if (password) updates.password = await bcrypt.hash(password, 12);
 
-  await db.update(users).set(updates).where(eq(users.id, staffId));
+  // Profile update + role re-sync in one transaction — a crash between them
+  // would leave the staff member with zero practice roles (locked out).
+  await db.transaction(async (tx) => {
+    await tx.update(users).set(updates).where(eq(users.id, staffId));
 
-  // Sync practice role.
-  await db.delete(modelHasRoles).where(and(eq(modelHasRoles.modelId, staffId), eq(modelHasRoles.modelType, USER_MODEL)));
-  await db.insert(modelHasRoles).values({ roleId, modelType: USER_MODEL, modelId: staffId });
+    // Sync practice role.
+    await tx.delete(modelHasRoles).where(and(eq(modelHasRoles.modelId, staffId), eq(modelHasRoles.modelType, USER_MODEL)));
+    await tx.insert(modelHasRoles).values({ roleId, modelType: USER_MODEL, modelId: staffId });
+  });
+
+  // Staff credential reset → kill the staff member's active sessions.
+  if (password) {
+    await revokeAllSessionsForUser(staffId);
+    void audit.passwordChange(staffId);
+  }
 
   void audit.roleChanged(doctorId, { action: "staff_updated", staffId, roleId });
 
@@ -141,8 +156,17 @@ export async function deleteStaff(staffId: number): Promise<StaffActionResult> {
     .where(and(eq(users.id, staffId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
   if (!existing) return { error: "Staff member not found." };
 
-  await db.delete(modelHasRoles).where(and(eq(modelHasRoles.modelId, staffId), eq(modelHasRoles.modelType, USER_MODEL)));
-  await db.delete(users).where(eq(users.id, staffId));
+  // Attendance cleanup + role unlink + user delete in one transaction —
+  // a crash mid-sequence would leave orphan rows or a role-less zombie.
+  await db.transaction(async (tx) => {
+    await tx.delete(modelHasRoles).where(and(eq(modelHasRoles.modelId, staffId), eq(modelHasRoles.modelType, USER_MODEL)));
+    // Hard-deleting the user orphans their attendance rows (no DB cascade) —
+    // clean them up so attendance reports stay consistent.
+    await tx.delete(staffAttendances).where(eq(staffAttendances.staffId, staffId));
+    await tx.delete(users).where(eq(users.id, staffId));
+  });
+  // A deleted user's JWTs would otherwise stay valid until cookie expiry.
+  await revokeAllSessionsForUser(staffId);
 
   void audit.roleChanged(doctorId, { action: "staff_deleted", staffId });
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { requireRole } from "@/lib/auth/guard";
 import { getAvailableDoctors } from "@/lib/queries/patient";
 import { PageHeader } from "@/components/ui/dashboard-ui";
@@ -16,7 +17,9 @@ export default async function PatientBookAppointmentPage() {
         title="Book an appointment"
         subtitle="Pick a doctor and an available time slot"
       />
-      <BookAppointmentForm doctors={doctors} />
+      <Suspense>
+        <BookAppointmentForm doctors={doctors} />
+      </Suspense>
     </div>
   );
 }

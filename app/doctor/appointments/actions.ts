@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import crypto from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -16,7 +17,7 @@ import {
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
-import { notifyUser } from "@/lib/notifications";
+import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
 import { todayStr } from "@/lib/utils";
@@ -27,7 +28,9 @@ export type AppointmentActionResult = { error: string | null };
 
 const CASE_TYPES = ["clinical_visit", "home_visit", "online_visit", "on_call_visit"] as const;
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const CONSENT_TYPES = ["otp", "consent", "upload", "skipped", "email"];
+// "upload" removed: the book-form file input was dead (never read here) and
+// no consent file is stored at booking time.
+const CONSENT_TYPES = ["otp", "consent", "skipped", "email"];
 
 /** "h:mm AM/PM" or "HH:MM" -> minutes since midnight, or null. */
 function parseTimeToMinutes(t: string): number | null {
@@ -118,6 +121,15 @@ async function findTimeConflict(doctorId: number, date: string, time: string, ex
   return row ?? null;
 }
 
+/** Look up the consent slug generated for an appointment (post-commit link build). */
+async function slugFromAppointmentId(appointmentId: number): Promise<string> {
+  const [row] = await db
+    .select({ slug: appointmentConsultConsents.slug })
+    .from(appointmentConsultConsents)
+    .where(eq(appointmentConsultConsents.appointmentId, appointmentId));
+  return row?.slug ?? "";
+}
+
 // ── Create ────────────────────────────────────────────────────────────────
 
 export async function createAppointment(
@@ -206,53 +218,74 @@ export async function createAppointment(
   // ── Status derivation (mirrors legacy store) ──
   let status: string = "pending";
   if (consentType === "consent" || consentType === "email") status = "pending_consent";
-  else if (consentType === "otp" || consentType === "upload" || consentType === "skipped") status = "confirmed";
+  else if (consentType === "otp" || consentType === "skipped") status = "confirmed";
 
   const clinic = clinics[0] ?? null;
 
-  const [inserted] = await db
-    .insert(appointments)
-    .values({
-      doctorId,
-      patientId,
-      patientString: patientString || null,
-      date: date as never,
-      time,
-      caseType: caseType as never,
-      bloodGroup,
-      bp,
-      weight: weight !== null ? String(weight) : null,
-      height: height !== null ? String(height) : null,
-      remarks,
-      consentType: (consentType as never) ?? null,
-      mobileNumber,
-      status: status as never,
-      clinicId: clinic?.id ?? null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .$returningId();
+  // Appointment + consent row in ONE transaction, with a doctor-row lock
+  // (SELECT ... FOR UPDATE) serializing concurrent bookings for the same
+  // doctor — closes the check-then-insert double-booking race.
+  let appointmentId: number | undefined;
+  try {
+    appointmentId = await db.transaction(async (tx) => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, doctorId)).for("update");
+    const conflict = await findTimeConflict(doctorId, date, time);
+    if (conflict) throw new Error(`Time slot ${time} is already booked.`);
 
-  const appointmentId = inserted?.id;
+    const [inserted] = await tx
+      .insert(appointments)
+      .values({
+        doctorId,
+        patientId,
+        patientString: patientString || null,
+        date: date as never,
+        time,
+        caseType: caseType as never,
+        bloodGroup,
+        bp,
+        weight: weight !== null ? String(weight) : null,
+        height: height !== null ? String(height) : null,
+        remarks,
+        consentType: (consentType as never) ?? null,
+        mobileNumber,
+        status: status as never,
+        clinicId: clinic?.id ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const appointmentId = inserted?.id;
 
-  // ── Consent link for consent/email types (mirrors legacy store) ──
-  // Legacy requires a registered patient + mobile for consent links.
+    // ── Consent link for consent/email types (mirrors legacy store) ──
+    // Legacy requires a registered patient + mobile for consent links.
+    if ((consentType === "consent" || consentType === "email") && appointmentId && patientId) {
+      const slug = crypto.randomUUID();
+      await tx.insert(appointmentConsultConsents).values({
+        appointmentId,
+        doctorId,
+        patientId,
+        slug,
+        isAccepted: false,
+        isRejected: false,
+        status: "pending_consent",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    return appointmentId;
+    });
+  } catch (err) {
+    // The in-transaction conflict check threw — surface as a form error.
+    if (err instanceof Error && err.message.startsWith("Time slot")) {
+      return { error: err.message };
+    }
+    throw err;
+  }
+
   let consentLink: string | null = null;
   if ((consentType === "consent" || consentType === "email") && appointmentId && patientId) {
-    const slug = crypto.randomUUID();
-    await db.insert(appointmentConsultConsents).values({
-      appointmentId,
-      doctorId,
-      patientId,
-      slug,
-      isAccepted: false,
-      isRejected: false,
-      status: "pending_consent",
-      createdAt: now,
-      updatedAt: now,
-    });
     const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    consentLink = `${base}/my-consent/${slug}`;
+    consentLink = `${base}/my-consent/${await slugFromAppointmentId(appointmentId)}`;
   }
 
   void audit.appointmentCreated(doctorId, {
@@ -284,6 +317,7 @@ export async function createAppointment(
           .from(users)
           .where(eq(users.id, patientId));
         if (!patient?.email) return;
+        if (!(await wantsNotification(patientId, "email", "appointment_booking"))) return;
         await sendMail({
           to: patient.email,
           subject: "Appointment booked — SkoraCares",
@@ -423,6 +457,9 @@ export async function updateAppointment(
       remarks,
       mobileNumber,
       clinicId: clinic?.id ?? null,
+      // consent_type is immutable here by design (a sent consent link must
+      // not silently change meaning mid-flight) — status stays untouched
+      // because cancel/complete own it exclusively.
       updatedAt: now,
     })
     .where(eq(appointments.id, appointmentId));
@@ -490,7 +527,7 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
   }
 
   if (appt.status === "cancelled") return { error: "Appointment is already cancelled." };
-  if (!["confirmed", "pending"].includes(appt.status)) {
+  if (!["confirmed", "pending", "pending_consent"].includes(appt.status)) {
     return { error: "Only confirmed and pending appointments can be cancelled." };
   }
 
@@ -498,6 +535,18 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
     .update(appointments)
     .set({ status: "cancelled", updatedAt: now })
     .where(eq(appointments.id, appointmentId));
+
+  // Sync any outstanding consent request to cancelled so the patient link
+  // stops accepting responses after the appointment is cancelled.
+  await db
+    .update(appointmentConsultConsents)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(
+      and(
+        eq(appointmentConsultConsents.appointmentId, appointmentId),
+        eq(appointmentConsultConsents.status, "pending_consent")
+      )
+    );
 
   void audit.appointmentCancelled(doctorId, {
     appointmentId,
@@ -532,7 +581,10 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
             type: "warning",
             link: "/patient/appointments",
           });
-          if (patient.email) {
+          if (
+            patient.email &&
+            (await wantsNotification(cancelledPatientId, "email", "appointment_cancellation"))
+          ) {
             await sendMail({
               to: patient.email,
               subject: "Appointment cancelled — SkoraCares",
@@ -606,7 +658,10 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
             type: "success",
             link: "/patient/records",
           });
-          if (patient.email) {
+          if (
+            patient.email &&
+            (await wantsNotification(completedPatientId, "email", "appointment_booking"))
+          ) {
             await sendMail({
               to: patient.email,
               subject: "Your visit is complete — SkoraCares",
@@ -658,9 +713,14 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const isFuture =
     appt.date > today || (appt.date === today && apptMinutes !== null && apptMinutes > nowMinutes);
-  const canDelete = isFuture
-    ? ["pending", "pending_consent", "completed"].includes(appt.status)
-    : ["completed", "cancelled"].includes(appt.status);
+  // Deletable states: cancelled (dead record, any date), pending/pending_consent
+  // (never happened yet), or completed past visits. Confirmed future visits must
+  // be cancelled first so the patient is notified before the record disappears.
+  const canDelete =
+    appt.status === "cancelled" ||
+    (isFuture
+      ? ["pending", "pending_consent", "completed"].includes(appt.status)
+      : ["completed"].includes(appt.status));
 
   if (!canDelete) {
     if (isFuture && appt.status === "confirmed") {

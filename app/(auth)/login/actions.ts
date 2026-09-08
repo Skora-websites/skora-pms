@@ -48,13 +48,13 @@ export async function loginAction(
 
   if (!user) {
     await audit.loginFailed({ email, reason: "no_account" });
-    return { error: "No account found with that email address." };
+    return { error: "Invalid email or password." };
   }
 
   const valid = await verifyPassword(password, user.password);
   if (!valid) {
     await audit.loginFailed({ email, userId: user.id, reason: "bad_password" });
-    return { error: "Incorrect password. Please try again." };
+    return { error: "Invalid email or password." };
   }
 
   if (user.status && user.status !== "active") {
@@ -75,6 +75,9 @@ export async function loginAction(
   }
 
   await setSessionCookie(user.id);
+  // Successful login clears the failure counter — a legitimate user who
+  // logs in/out several times in a row must not hit "too many attempts".
+  authRateLimit.loginReset(email);
   await audit.login(user.id, { email, role: user.role });
   redirect(homePathForRole(user.role));
 }

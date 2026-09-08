@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Paperclip, Pencil, Trash2 } from "lucide-react";
 import { deleteTransaction, updateTransaction, updateTransactionStatus } from "./actions";
 
@@ -168,6 +168,16 @@ function EditTransactionModal({
   const [state, formAction, pending] = useActionState(updateTransaction, initialState);
   const [type, setType] = useState<"1" | "2">(tx.type === 2 ? "2" : "1");
   const categories = type === "1" ? incomeTypes : expenseTypes;
+
+  // Close the modal once the update succeeds (no error) so the user isn't
+  // stuck on a stale form over the refreshed table.
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (state !== initialState) submittedRef.current = true;
+  }, [state]);
+  useEffect(() => {
+    if (submittedRef.current && !pending && !state.error) onClose();
+  }, [state, pending, onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

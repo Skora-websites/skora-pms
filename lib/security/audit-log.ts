@@ -46,7 +46,12 @@ export type AuditAction =
   | "settings_updated"
   | "support_ticket_created"
   | "file_uploaded"
-  | "demo_booked";
+  | "demo_booked"
+  | "sos_triggered"
+  | "sos_accepted"
+  | "sos_declined"
+  | "sos_completed"
+  | "sos_cancelled";
 
 export interface AuditLogEntry {
   userId?: number | null;

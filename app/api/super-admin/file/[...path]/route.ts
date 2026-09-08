@@ -38,6 +38,9 @@ export async function GET(
   }
 
   const segments = (await params).path;
+  // Legacy DB rows store "uploads/clinic/x.jpg"; callers pass the raw value —
+  // drop the stale leading segment so both layouts resolve.
+  if (segments[0] === "uploads") segments.shift();
   if (segments.length < 2 || !ALLOWED_DIRS.has(segments[0])) {
     return new Response("Not found", { status: 404 });
   }
@@ -55,12 +58,16 @@ export async function GET(
 
   try {
     const bytes = await fs.readFile(resolved);
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": contentType,
+      "Cache-Control": "private, max-age=3600",
+    };
+    // SVGs can embed scripts — serve them with a no-exec CSP so direct
+    // navigation can never run same-origin script.
+    if (ext === ".svg") {
+      headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'";
+    }
+    return new Response(bytes, { headers });
   } catch {
     return new Response("Not found", { status: 404 });
   }

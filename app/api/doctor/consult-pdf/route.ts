@@ -23,7 +23,10 @@ export async function GET() {
 
   void audit.pdfDownloaded(user.id, { doctorId });
 
-  const filePath = path.join(STORAGE_DIR, consultPdf.pdfPath);
+  // Path comes from the doctor's own DB row, but guard anyway (parity with
+  // every other serving route).
+  const filePath = path.resolve(STORAGE_DIR, consultPdf.pdfPath);
+  if (!filePath.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
   try {
     const bytes = await fs.readFile(filePath);
     return new Response(bytes, {

@@ -42,35 +42,50 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<number, { status: string; check_in: string; check_out: string; notes: string }>>({});
   const router = useRouter();
 
   async function loadDaily(d: string) {
     setLoading(true);
-    const res = await fetch(`/api/doctor/staff/attendance?date=${d}`);
-    if (res.ok) {
-      const data = await res.json();
-      setDaily(data.data as DailyAtt[]);
-      const next: typeof edits = {};
-      for (const row of data.data as DailyAtt[]) {
-        next[row.id] = {
-          status: row.attendance?.status ?? "present",
-          check_in: row.attendance?.check_in ?? "09:00",
-          check_out: row.attendance?.check_out ?? "18:00",
-          notes: row.attendance?.notes ?? "",
-        };
+    setLoadErr(null);
+    try {
+      const res = await fetch(`/api/doctor/staff/attendance?date=${d}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDaily(data.data as DailyAtt[]);
+        const next: typeof edits = {};
+        for (const row of data.data as DailyAtt[]) {
+          next[row.id] = {
+            status: row.attendance?.status ?? "present",
+            check_in: row.attendance?.check_in ?? "09:00",
+            check_out: row.attendance?.check_out ?? "18:00",
+            notes: row.attendance?.notes ?? "",
+          };
+        }
+        setEdits(next);
+      } else {
+        setLoadErr(`Failed to load attendance (HTTP ${res.status}).`);
       }
-      setEdits(next);
+    } catch {
+      setLoadErr("Failed to load attendance. Check your connection and retry.");
     }
     setLoading(false);
   }
 
   async function loadReport(m: number, y: number) {
     setLoading(true);
-    const res = await fetch(`/api/doctor/staff/attendance/report?month=${m}&year=${y}`);
-    if (res.ok) {
-      const data = await res.json();
-      setReport({ rows: data.report as ReportRow[], daysInMonth: data.days_in_month as number });
+    setLoadErr(null);
+    try {
+      const res = await fetch(`/api/doctor/staff/attendance/report?month=${m}&year=${y}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReport({ rows: data.report as ReportRow[], daysInMonth: data.days_in_month as number });
+      } else {
+        setLoadErr(`Failed to load report (HTTP ${res.status}).`);
+      }
+    } catch {
+      setLoadErr("Failed to load report. Check your connection and retry.");
     }
     setLoading(false);
   }
@@ -158,6 +173,10 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
 
             {msg && (
               <p className="mb-4 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800">{msg}</p>
+            )}
+
+            {loadErr && (
+              <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadErr}</p>
             )}
 
             {loading ? (
@@ -268,6 +287,10 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
                 aria-label="Report year"
               />
             </div>
+
+            {loadErr && (
+              <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadErr}</p>
+            )}
 
             {loading ? (
               <p className="py-8 text-center text-sm text-slate-400">Loading…</p>

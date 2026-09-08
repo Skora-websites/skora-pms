@@ -3,7 +3,7 @@ import { unique, tinyPdf } from "./helpers";
 
 test.describe("P4.2 Test Bookings", () => {
   test("create vendor, create test, book for a patient, upload report via vendor link", async ({ page, context }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:3000" });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:3100" });
     await page.goto("/doctor/test-bookings");
     await expect(page.getByRole("heading", { name: /Test Bookings/i }).first()).toBeVisible();
 

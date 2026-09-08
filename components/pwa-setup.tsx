@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
+import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
 
 /**
  * PWA setup (client-only):
@@ -15,6 +16,17 @@ import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 export function PwaSetup() {
   const [installPrompt, setInstallPrompt] = useState<{ prompt: () => Promise<void> } | null>(null);
   const [showInstall, setShowInstall] = useState(false);
+
+  /** Persist a PushSubscription to the server (idempotent). */
+  async function persistSubscription(sub: PushSubscription) {
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys) return;
+    await subscribeToPush(
+      json.endpoint,
+      json.keys.auth ?? "",
+      json.keys.p256dh ?? ""
+    ).catch(() => {});
+  }
 
   // Register service worker on mount, then subscribe to push when the user
   // has granted notification permission.
@@ -55,17 +67,6 @@ export function PwaSetup() {
       cancelled = true;
     };
   }, []);
-
-  /** Persist a PushSubscription to the server (idempotent). */
-  async function persistSubscription(sub: PushSubscription) {
-    const json = sub.toJSON();
-    if (!json.endpoint || !json.keys) return;
-    await subscribeToPush(
-      json.endpoint,
-      json.keys.auth ?? "",
-      json.keys.p256dh ?? ""
-    ).catch(() => {});
-  }
 
   // Clean up the server-side subscription when the user revokes permission.
   useEffect(() => {
@@ -139,14 +140,4 @@ export function PwaSetup() {
       </button>
     </div>
   );
-}
-
-/** Convert a base64url-encoded VAPID public key into a Uint8Array for pushManager.subscribe(). */
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const base64Norm = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64Norm);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
 }

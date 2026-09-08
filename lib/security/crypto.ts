@@ -16,7 +16,15 @@ const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
 function deriveKey(): Buffer {
-  const secret = process.env.AUTH_SECRET ?? "skoracare-local-dev";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      // Silent weak-key fallback in production would let anyone decrypt
+      // stored secrets. Fail loudly instead.
+      throw new Error("AUTH_SECRET env var is not set — cannot use secret encryption.");
+    }
+    return crypto.createHash("sha256").update("skoracare-local-dev").digest();
+  }
   return crypto.createHash("sha256").update(secret).digest();
 }
 

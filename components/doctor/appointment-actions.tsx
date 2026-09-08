@@ -44,7 +44,7 @@ export function AppointmentRowActions({
 
   return (
     <div className="flex items-center justify-end gap-1.5">
-      {status !== "confirmed" && status !== "cancelled" && status !== "completed" && (
+      {status === "pending" && (
         <button
           disabled={pending}
           onClick={() => act("confirmed")}
@@ -92,7 +92,7 @@ export function AppointmentRowActions({
         </button>
       )}
 
-      {status !== "completed" && status !== "pending_consent" && (
+      {status !== "cancelled" && status !== "completed" && (
         <button
           disabled={pending}
           onClick={cancel}

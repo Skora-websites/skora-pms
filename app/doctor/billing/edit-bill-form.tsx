@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useTransition } from "react";
 import { ReceiptText, X } from "lucide-react";
 import { updateBill, deleteBill } from "./actions";
 
@@ -27,6 +27,16 @@ export function EditBillForm({
   onClose: () => void;
 }) {
   const [state, formAction, pending] = useActionState(updateBill, initialState);
+
+  // Close the modal once the update succeeds (no error) so the user isn't
+  // stuck on a stale form over the refreshed table.
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (state !== initialState) submittedRef.current = true;
+  }, [state]);
+  useEffect(() => {
+    if (submittedRef.current && !pending && !state.error) onClose();
+  }, [state, pending, onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">

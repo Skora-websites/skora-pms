@@ -5,6 +5,14 @@ import { users, doctorClinics } from "@/lib/db/schema";
 /** Pending SOS requests expire after this many minutes (business TTL). */
 export const SOS_TTL_MIN = 5;
 
+/**
+ * The dispatch-owning doctor for a staff member: receptionists act on
+ * behalf of their linked doctor; everyone else acts as themselves.
+ */
+export function resolveDoctorId(user: { role: string; id: number; doctorId?: number | null }): number {
+  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+}
+
 /** Privacy-first masking until a doctor accepts: show initials only. */
 export function maskPatient(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

@@ -54,7 +54,7 @@ export async function GET(
     return new Response(bytes, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `inline; filename="report-${bookingId}.pdf"`,
+        "Content-Disposition": `inline; filename="report-${bookingId}${ext}"`,
         "Cache-Control": "private, no-store",
       },
     });

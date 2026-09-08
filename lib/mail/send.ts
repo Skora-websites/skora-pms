@@ -42,6 +42,18 @@ async function loadSmtpConfig(): Promise<SmtpConfig | null> {
  * Send a single SMTP command and wait for a reply whose code starts with
  * `expected`. The command is skipped when null (used to await the greeting).
  */
+/**
+ * SMTP header values must never contain CR/LF — a crafted subject or
+ * recipient could otherwise inject additional headers or commands
+ * (header/SMTP injection).
+ */
+function assertHeaderSafe(value: string, label: string): string {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`[mail] ${label} contains CR/LF — rejected`);
+  }
+  return value;
+}
+
 function smtpCommand(
   socket: net.Socket,
   command: string | null,
@@ -89,7 +101,11 @@ export async function sendMail(opts: {
   const config = await loadSmtpConfig();
   if (!config) return false;
 
-  const toList = Array.isArray(opts.to) ? opts.to : [opts.to];
+  const toList = (Array.isArray(opts.to) ? opts.to : [opts.to]).map((to) =>
+    assertHeaderSafe(to, "recipient")
+  );
+  const subject = assertHeaderSafe(opts.subject, "subject");
+  const fromName = assertHeaderSafe(config.fromName, "from name");
   const toHeader = toList.join(", ");
 
   const socket: net.Socket = config.secure
@@ -118,9 +134,9 @@ export async function sendMail(opts: {
 
     await smtpCommand(socket, "DATA", "354");
     const headers = [
-      `From: ${config.fromName} <${config.from}>`,
+      `From: ${fromName} <${config.from}>`,
       `To: ${toHeader}`,
-      `Subject: ${opts.subject}`,
+      `Subject: ${subject}`,
       "MIME-Version: 1.0",
       `Content-Type: ${opts.html ? "text/html" : "text/plain"}; charset=utf-8`,
       "",

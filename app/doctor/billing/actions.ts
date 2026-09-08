@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { billings, billingTypes, transactions } from "@/lib/db/schema";
+import { appointments, billings, billingTypes, consultations, transactions } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor, ensureBillingTypeOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
@@ -57,59 +57,77 @@ export async function createBill(
   if (!(await ensureBillingTypeOfDoctor(billingTypeId, doctorId))) {
     return { error: "Billing type not found." };
   }
+  // Ownership: linked appointment/consultation must belong to THIS doctor —
+  // otherwise a forged form field could attach another doctor's records.
+  if (appointmentId != null) {
+    if (!Number.isInteger(appointmentId)) return { error: "Invalid appointment." };
+    const [appt] = await db
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+    if (!appt) return { error: "Appointment not found for this doctor." };
+  }
+  if (consultationId != null) {
+    if (!Number.isInteger(consultationId)) return { error: "Invalid consultation." };
+    const [con] = await db
+      .select({ id: consultations.id })
+      .from(consultations)
+      .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)));
+    if (!con) return { error: "Consultation not found for this doctor." };
+  }
 
-  const billNumber = generateBillNumber();
   // Credit payment: bill is created as PENDING (48h credit), income is only
   // recognized once the doctor marks it collected (see collectCreditPayment).
   const isCredit = paymentMethod === "credit";
-  const [billResult] = await db.insert(billings).values({
-    billNumber,
-    patientId,
-    doctorId,
-    billingTypeId,
-    appointmentId,
-    consultationId,
-    totalAmount: amount,
-    receivedAmount: isCredit ? "0" : amount,
-    pendingAmount: isCredit ? amount : "0",
-    paymentMethod: paymentMethod as never,
-    status: isCredit ? "pending" : "paid",
-    notes,
-    billDate: todayStr(now),
-    createdAt: now,
-    updatedAt: now,
+
+  // Bill + auto income transaction in ONE transaction — no orphan income
+  // if either write fails.
+  const { billNumber, billingId } = await db.transaction(async (tx) => {
+    const billNumber = generateBillNumber();
+    const [billResult] = await tx.insert(billings).values({
+      billNumber,
+      patientId,
+      doctorId,
+      billingTypeId,
+      appointmentId,
+      consultationId,
+      totalAmount: amount,
+      receivedAmount: isCredit ? "0" : amount,
+      pendingAmount: isCredit ? amount : "0",
+      paymentMethod: paymentMethod as never,
+      status: isCredit ? "pending" : "paid",
+      notes,
+      billDate: todayStr(now),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const billingId = Number(billResult.insertId);
+
+    if (!isCredit) {
+      const [billingType] = await tx
+        .select({ name: billingTypes.name })
+        .from(billingTypes)
+        .where(eq(billingTypes.id, billingTypeId));
+
+      await tx.insert(transactions).values({
+        userId: doctorId,
+        type: 1,
+        billingId,
+        amount,
+        date: todayStr(now),
+        status: "approved",
+        description: `Bill ${billNumber}${billingType ? ` — ${billingType.name}` : ""}${notes ? ` (${notes})` : ""}`,
+        paymentMethod,
+        createdBy: "System",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    return { billNumber, billingId };
   });
-  const billingId = Number(billResult.insertId);
 
-  if (isCredit) {
-    void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod: "credit" });
-    revalidatePath("/doctor/billing");
-    revalidatePath("/doctor/income-expense");
-    return { error: null };
-  }
-
-  // Auto-create approved income transaction
-  const [billingType] = await db
-    .select({ name: billingTypes.name })
-    .from(billingTypes)
-    .where(eq(billingTypes.id, billingTypeId));
-
-  await db.insert(transactions).values({
-    userId: doctorId,
-    type: 1,
-    billingId,
-    amount,
-    date: todayStr(now),
-    status: "approved",
-    description: `Bill ${billNumber}${billingType ? ` — ${billingType.name}` : ""}${notes ? ` (${notes})` : ""}`,
-    paymentMethod,
-    createdBy: "System",
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod });
-  void audit.transactionCreated(doctorId, { billingId, amount });
+  void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod: isCredit ? "credit" : paymentMethod });
+  if (!isCredit) void audit.transactionCreated(doctorId, { billingId, amount });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
@@ -139,10 +157,17 @@ export async function collectCreditPayment(billId: number): Promise<ActionResult
 
   const now = new Date();
   const amount = bill.totalAmount;
-  await db
+
+  // ATOMIC CLAIM: conditional update — only one concurrent request flips
+  // pending→paid; losers see affectedRows 0 and get a friendly error instead
+  // of double-recognizing income.
+  const claimed = await db
     .update(billings)
     .set({ status: "paid", receivedAmount: amount, pendingAmount: "0", updatedAt: now })
-    .where(eq(billings.id, billId));
+    .where(and(eq(billings.id, billId), eq(billings.status, "pending")));
+  if (claimed[0].affectedRows !== 1) {
+    return { error: "This bill was already collected." };
+  }
 
   // Recognize the income now that it's collected.
   await db.insert(transactions).values({
@@ -197,6 +222,11 @@ export async function updateBill(
   const receivedNum = Number(receivedAmount);
   if (!Number.isFinite(totalNum) || totalNum <= 0) return { error: "Invalid total amount." };
   if (!Number.isFinite(receivedNum) || receivedNum < 0) return { error: "Invalid received amount." };
+  // Overpay guard: received can never exceed total (audit found 9 negative-
+  // pending bills caused by exactly this missing check).
+  if (receivedNum > totalNum) {
+    return { error: "Received amount cannot exceed the total amount." };
+  }
 
   const pendingAmount = Math.max(0, totalNum - receivedNum);
   const status = pendingAmount <= 0 ? "paid" : receivedNum > 0 ? "partial" : "pending";
@@ -219,52 +249,56 @@ export async function updateBill(
     .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId)));
   if (!existing) return { error: "Bill not found." };
 
-  await db
-    .update(billings)
-    .set({
-      patientId,
-      billingTypeId,
-      totalAmount,
-      receivedAmount,
-      pendingAmount: String(pendingAmount),
-      paymentMethod: paymentMethod as never,
-      status: status as never,
-      notes,
-      updatedAt: now,
-    })
-    .where(eq(billings.id, billId));
-
-  // Sync income transaction (update or create)
-  const [tx] = await db
-    .select({ id: transactions.id })
-    .from(transactions)
-    .where(eq(transactions.billingId, billId));
-
-  if (tx) {
-    await db
-      .update(transactions)
+  // Bill + linked income transaction in ONE transaction — no drift between
+  // the bill and income records if either write fails.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(billings)
       .set({
-        amount: receivedAmount,
-        paymentMethod,
-        date: todayStr(now),
+        patientId,
+        billingTypeId,
+        totalAmount,
+        receivedAmount,
+        pendingAmount: String(pendingAmount),
+        paymentMethod: paymentMethod as never,
+        status: status as never,
+        notes,
         updatedAt: now,
       })
-      .where(eq(transactions.id, tx.id));
-  } else if (receivedNum > 0) {
-    await db.insert(transactions).values({
-      userId: doctorId,
-      type: 1,
-      billingId: billId,
-      amount: receivedAmount,
-      date: todayStr(now),
-      status: "approved",
-      description: `Bill update — #${billId}`,
-      paymentMethod,
-      createdBy: "System",
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
+      .where(eq(billings.id, billId));
+
+    // Sync income transaction (update or create)
+    const [linkedTx] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.billingId, billId));
+
+    if (linkedTx) {
+      await tx
+        .update(transactions)
+        .set({
+          amount: receivedAmount,
+          paymentMethod,
+          date: todayStr(now),
+          updatedAt: now,
+        })
+        .where(eq(transactions.id, linkedTx.id));
+    } else if (receivedNum > 0) {
+      await tx.insert(transactions).values({
+        userId: doctorId,
+        type: 1,
+        billingId: billId,
+        amount: receivedAmount,
+        date: todayStr(now),
+        status: "approved",
+        description: `Bill update — #${billId}`,
+        paymentMethod,
+        createdBy: "System",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  });
 
   void audit.billCreated(doctorId, {
     billId,
@@ -300,17 +334,18 @@ export async function deleteBill(billId: number): Promise<ActionResult> {
     .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId)));
   if (!existing) return { error: "Bill not found." };
 
-  // Soft-delete linked transaction(s)
-  await db
-    .update(transactions)
-    .set({ deletedAt: new Date() })
-    .where(eq(transactions.billingId, billId));
+  // Soft-delete linked transaction(s) + bill atomically.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(transactions)
+      .set({ deletedAt: new Date() })
+      .where(eq(transactions.billingId, billId));
 
-  // Soft-delete bill
-  await db
-    .update(billings)
-    .set({ deletedAt: new Date() })
-    .where(eq(billings.id, billId));
+    await tx
+      .update(billings)
+      .set({ deletedAt: new Date() })
+      .where(eq(billings.id, billId));
+  });
 
   void audit.billCreated(doctorId, { billId, action: "deleted" });
 
@@ -333,6 +368,13 @@ export async function createBillingType(
   if (!name) return { error: "Billing type name is required." };
   const amountNum = Number(defaultAmount);
   if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid default amount." };
+
+  // Duplicate active-name check (DB also enforces via unique index).
+  const [dup] = await db
+    .select({ id: billingTypes.id })
+    .from(billingTypes)
+    .where(and(eq(billingTypes.doctorId, doctorId), eq(billingTypes.name, name), eq(billingTypes.isActive, true)));
+  if (dup) return { error: "A billing type with this name already exists." };
 
   await db.insert(billingTypes).values({
     doctorId,

@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sosRequests, sosCases, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { expireStalePendingRequest } from "@/lib/dispatch/expiry";
+import { sweepPendingRequest } from "@/lib/dispatch/discovery";
 
 export const runtime = "nodejs";
 
@@ -37,6 +39,19 @@ export async function GET(
     .limit(1);
   if (!req || req.patientId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Business-TTL expiry on read: a stale pending request is expired inline
+  // so the patient sees "no doctor available" instead of waiting forever
+  // (the doctor accept path enforces the same TTL).
+  if (req.status === "pending") {
+    if (await expireStalePendingRequest(requestId)) {
+      req.status = "expired";
+    } else {
+      // Late-joiner sweep: still pending, periodically re-run nearby
+      // discovery so doctors who went on-duty after the broadcast get it.
+      void sweepPendingRequest(requestId);
+    }
   }
 
   let doctor = null;

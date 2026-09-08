@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Loader2, MapPin, Phone, X } from "lucide-react";
 import { triggerSos, cancelSos } from "@/lib/dispatch/actions";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
+import { useWakeLock } from "@/components/sos/use-wake-lock";
 
 type StatusPayload = {
   id: number;
@@ -38,6 +39,11 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
   const [useGps, setUseGps] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep the screen awake while the tracker is live so the patient keeps
+  // seeing doctor movement (Android + iOS 16.4+; safe no-op elsewhere).
+  const trackingLive = requestId != null && status?.status === "accepted";
+  useWakeLock(Boolean(trackingLive));
   // formRef reads CURRENT DOM input values at click time (no React state
   // batching races between the toggle/fill and the SOS tap).
   const formRef = useRef<HTMLFormElement>(null);

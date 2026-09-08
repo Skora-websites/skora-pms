@@ -1,10 +1,11 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { audit } from "@/lib/security/audit-log";
 
@@ -22,8 +23,25 @@ async function getUserRoles(userId: number): Promise<string[]> {
   return rows.map((r) => r.name);
 }
 
+/**
+ * Guard for the read-only permission actions below. Platform admins
+ * (super-admin permissions dialog) and practice users holding the
+ * roles-permissions module (route guard for /doctor/roles) may read the
+ * permission catalog / staff permission sets. Everyone else gets nothing.
+ */
+async function canViewPermissionData(): Promise<boolean> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role === "super_admin" || user.role === "admin") return true;
+  if (user.role !== "doctor" && user.role !== "receptionist") {
+    redirect(homePathForRole(user.role));
+  }
+  return hasPermission(user.id, "roles-permissions");
+}
+
 /** Permission names grouped by module (parent). Mirrors legacy `allPermissions`. */
 export async function getAllPermissions() {
+  if (!(await canViewPermissionData())) return [];
   const all = await db.select().from(permissions).orderBy(permissions.id);
   const modules = all.filter((p) => p.parentId === null);
   const children = all.filter((p) => p.parentId !== null);
@@ -80,21 +98,26 @@ export async function createRole(
 
   const permissionIds = await parsePermissionInput(permissionsRaw);
 
-  const [created] = await db
-    .insert(roles)
-    .values({
-      name,
-      guardName: "web",
-      doctorId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .$returningId();
-  const roleId = Number(created.id);
+  // Role + permission grants in one transaction — a crash between them
+  // would leave an empty role that behaves like "no access".
+  const roleId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(roles)
+      .values({
+        name,
+        guardName: "web",
+        doctorId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .$returningId();
+    const newRoleId = Number(created.id);
 
-  if (permissionIds.length > 0) {
-    await db.insert(roleHasPermissions).values(permissionIds.map((permissionId) => ({ roleId, permissionId })));
-  }
+    if (permissionIds.length > 0) {
+      await tx.insert(roleHasPermissions).values(permissionIds.map((permissionId) => ({ roleId: newRoleId, permissionId })));
+    }
+    return newRoleId;
+  });
 
   void audit.roleChanged(doctorId, { action: "role_created", roleId, name, permissions: permissionIds.length });
 
@@ -139,11 +162,15 @@ export async function updateRole(
 
   const permissionIds = await parsePermissionInput(permissionsRaw);
 
-  await db.update(roles).set({ name, updatedAt: new Date() }).where(eq(roles.id, roleId));
-  await db.delete(roleHasPermissions).where(eq(roleHasPermissions.roleId, roleId));
-  if (permissionIds.length > 0) {
-    await db.insert(roleHasPermissions).values(permissionIds.map((permissionId) => ({ roleId, permissionId })));
-  }
+  // Name update + permission re-sync in one transaction — a crash between
+  // delete and insert would strip every permission from a live role.
+  await db.transaction(async (tx) => {
+    await tx.update(roles).set({ name, updatedAt: new Date() }).where(eq(roles.id, roleId));
+    await tx.delete(roleHasPermissions).where(eq(roleHasPermissions.roleId, roleId));
+    if (permissionIds.length > 0) {
+      await tx.insert(roleHasPermissions).values(permissionIds.map((permissionId) => ({ roleId, permissionId })));
+    }
+  });
 
   void audit.roleChanged(doctorId, { action: "role_updated", roleId, name, permissions: permissionIds.length });
 
@@ -169,9 +196,13 @@ export async function deleteRole(roleId: number): Promise<RoleActionResult> {
     if (myRoles.includes(existing.name)) return { error: "You cannot delete a role assigned to your own account." };
   }
 
-  await db.delete(roleHasPermissions).where(eq(roleHasPermissions.roleId, roleId));
-  await db.delete(modelHasRoles).where(and(eq(modelHasRoles.roleId, roleId), eq(modelHasRoles.modelType, USER_MODEL)));
-  await db.delete(roles).where(eq(roles.id, roleId));
+  // Permission grants + assignments + role row in one transaction —
+  // a crash mid-sequence would leave staff holding a dangling role id.
+  await db.transaction(async (tx) => {
+    await tx.delete(roleHasPermissions).where(eq(roleHasPermissions.roleId, roleId));
+    await tx.delete(modelHasRoles).where(and(eq(modelHasRoles.modelType, USER_MODEL), eq(modelHasRoles.roleId, roleId)));
+    await tx.delete(roles).where(eq(roles.id, roleId));
+  });
 
   void audit.roleChanged(doctorId, { action: "role_deleted", roleId, name: existing.name });
 
@@ -181,8 +212,29 @@ export async function deleteRole(roleId: number): Promise<RoleActionResult> {
 
 // ── Staff permission manager (legacy `StaffPermissionController` parity) ───
 
-/** Permission names held directly by a user (via model_has_permissions). */
+/**
+ * Permission names held directly by a user (via model_has_permissions).
+ * Practice callers (doctor/receptionist) may only read their own staff —
+ * same ownership rule as `saveStaffPermissions`. Admins may read any user.
+ */
 export async function getUserPermissionNames(userId: number): Promise<string[]> {
+  if (!userId || !Number.isInteger(userId)) return [];
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  if (user.role !== "super_admin" && user.role !== "admin") {
+    if (user.role !== "doctor" && user.role !== "receptionist") {
+      redirect(homePathForRole(user.role));
+    }
+    if (!(await hasPermission(user.id, "roles-permissions"))) return [];
+    const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+    const [staff] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, userId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
+    if (!staff) return [];
+  }
+
   const rows = await db
     .select({ name: permissions.name })
     .from(permissions)
@@ -208,14 +260,18 @@ export async function saveStaffPermissions(
 
   const permissionIds = await parsePermissionInput(permissionNames);
 
-  await db
-    .delete(modelHasPermissions)
-    .where(and(eq(modelHasPermissions.modelId, staffId), eq(modelHasPermissions.modelType, USER_MODEL)));
-  if (permissionIds.length > 0) {
-    await db
-      .insert(modelHasPermissions)
-      .values(permissionIds.map((permissionId) => ({ permissionId, modelType: USER_MODEL, modelId: staffId })));
-  }
+  // Replace permissions atomically — a crash between delete and insert would
+  // leave the staff member with no direct permissions at all.
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(modelHasPermissions)
+      .where(and(eq(modelHasPermissions.modelId, staffId), eq(modelHasPermissions.modelType, USER_MODEL)));
+    if (permissionIds.length > 0) {
+      await tx
+        .insert(modelHasPermissions)
+        .values(permissionIds.map((permissionId) => ({ permissionId, modelType: USER_MODEL, modelId: staffId })));
+    }
+  });
 
   void audit.roleChanged(doctorId, {
     action: "staff_permissions_saved",

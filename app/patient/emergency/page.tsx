@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Phone, PhoneCall } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getCompanySettings } from "@/lib/queries/landing";
-import { PageHeader } from "@/components/ui/dashboard-ui";
-import { getMyActiveRequest } from "@/lib/dispatch/actions";
+import { PageHeader, StatusBadge } from "@/components/ui/dashboard-ui";
+import { getMyActiveRequest, getMySosHistory } from "@/lib/dispatch/actions";
 import { SosDispatchButton } from "./sos-dispatch";
 
 export const metadata: Metadata = { title: "Emergency · Patient" };
@@ -14,7 +14,7 @@ export default async function EmergencyPage() {
   const settings = await getCompanySettings();
   const supportPhone = settings?.companyMobile1 ?? "+91 108";
   // Resume an in-flight SOS if the patient reloads mid-dispatch.
-  const active = await getMyActiveRequest();
+  const [active, history] = await Promise.all([getMyActiveRequest(), getMySosHistory()]);
 
   return (
     <div className="mx-auto max-w-xl">
@@ -53,6 +53,35 @@ export default async function EmergencyPage() {
             Emergency numbers vary by country. In India: 108 (medical), 102 (ambulance), 112 (general).
           </p>
         </div>
+
+        {/* Past emergencies */}
+        {history.length > 0 && (
+          <div className="overflow-hidden rounded-3xl border-2 border-slate-200 bg-white shadow-lg">
+            <div className="p-5 pb-0">
+              <h2 className="font-display text-base font-bold text-slate-900">Past emergencies</h2>
+            </div>
+            <ul className="divide-y divide-slate-100 p-5 pt-3">
+              {history.map((h) => (
+                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800">
+                      {h.acceptedBy ? `Attended by Dr. ${h.acceptedBy}` : "No doctor accepted"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {h.createdAt
+                        ? new Date(h.createdAt).toLocaleString(undefined, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })
+                        : "—"}
+                    </p>
+                  </div>
+                  <StatusBadge status={h.status} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

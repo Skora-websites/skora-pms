@@ -62,7 +62,7 @@ export const users = mysqlTable(
     streetAddress: varchar("street_address", { length: 100 }),
     latitude: varchar("latitude", { length: 255 }),
     longitude: varchar("longitude", { length: 255 }),
-    status: varchar("status", { length: 255 }).default("active"),
+    status: varchar("status", { length: 255 }).notNull().default("active"),
     onDuty: boolean("on_duty").default(false),
     emailVerifiedAt: timestamp("email_verified_at"),
     rememberToken: varchar("remember_token", { length: 100 }),
@@ -371,6 +371,7 @@ export const appointments = mysqlTable(
     index("appointments_doctor_id_foreign").on(t.doctorId),
     index("appointments_patient_id_foreign").on(t.patientId),
     index("appointments_doctor_id_date_index").on(t.doctorId, t.date),
+    index("appointments_doctor_id_date_time_index").on(t.doctorId, t.date, t.time),
     foreignKey({
       columns: [t.doctorId],
       foreignColumns: [users.id],
@@ -378,6 +379,10 @@ export const appointments = mysqlTable(
     foreignKey({
       columns: [t.patientId],
       foreignColumns: [users.id],
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [t.clinicId],
+      foreignColumns: [doctorClinics.id],
     }).onDelete("set null"),
   ]
 );
@@ -537,13 +542,20 @@ export const doctorConsultPdfs = mysqlTable(
 // Blogs
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const categories = mysqlTable("categories", {
-  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  slug: varchar("slug", { length: 255 }).notNull(),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const categories = mysqlTable(
+  "categories",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("categories_name_unique").on(t.name),
+    uniqueIndex("categories_slug_unique").on(t.slug),
+  ]
+);
 
 export const blogs = mysqlTable(
   "blogs",
@@ -604,6 +616,9 @@ export const incomeTypes = mysqlTable(
   },
   (t) => [
     index("income_types_user_id_name_index").on(t.userId, t.name),
+    // DB enforces live-name uniqueness via generated column (user_id, active_name);
+    // schema.ts declares the raw column for parity.
+    // ponytail: generated columns unsupported in drizzle-kit 0.45 schema def — add when supported.
     foreignKey({
       columns: [t.userId],
       foreignColumns: [users.id],
@@ -623,6 +638,8 @@ export const expenseTypes = mysqlTable(
   },
   (t) => [
     index("expense_types_user_id_name_index").on(t.userId, t.name),
+    // DB enforces live-name uniqueness via generated column (user_id, active_name);
+    // ponytail: generated columns unsupported in drizzle-kit 0.45 schema def — add when supported.
     foreignKey({
       columns: [t.userId],
       foreignColumns: [users.id],
@@ -672,6 +689,18 @@ export const billings = mysqlTable(
       columns: [t.billingTypeId],
       foreignColumns: [billingTypes.id],
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.appointmentId],
+      foreignColumns: [appointments.id],
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [t.consultationId],
+      foreignColumns: [consultations.id],
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [t.testBookingId],
+      foreignColumns: [testBookings.id],
+    }).onDelete("set null"),
   ]
 );
 
@@ -757,6 +786,8 @@ export const tests = mysqlTable(
   },
   (t) => [
     index("tests_doctor_id_foreign").on(t.doctorId),
+    // One active + one inactive row per (doctor,name): blocks duplicate active names.
+    uniqueIndex("tests_doctor_name_status_unique").on(t.doctorId, t.name, t.status),
     foreignKey({
       columns: [t.doctorId],
       foreignColumns: [users.id],
@@ -848,6 +879,8 @@ export const billingTypes = mysqlTable(
   },
   (t) => [
     index("billing_types_doctor_id_foreign").on(t.doctorId),
+    // One active + one inactive row per (doctor,name): blocks duplicate active names.
+    uniqueIndex("billing_types_doctor_name_active_unique").on(t.doctorId, t.name, t.isActive),
     foreignKey({
       columns: [t.doctorId],
       foreignColumns: [users.id],
@@ -859,13 +892,17 @@ export const billingTypes = mysqlTable(
 // Chat
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const chatRooms = mysqlTable("chat_rooms", {
-  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  type: varchar("type", { length: 255 }).default("group"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const chatRooms = mysqlTable(
+  "chat_rooms",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    type: varchar("type", { length: 255 }).default("group"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [uniqueIndex("chat_rooms_name_unique").on(t.name)]
+);
 
 export const messages = mysqlTable(
   "messages",
@@ -914,6 +951,7 @@ export const userChatSettings = mysqlTable(
   (t) => [
     index("user_chat_settings_user_id_foreign").on(t.userId),
     index("user_chat_settings_chat_room_id_foreign").on(t.chatRoomId),
+    uniqueIndex("user_chat_settings_user_room_unique").on(t.userId, t.chatRoomId),
     foreignKey({
       columns: [t.userId],
       foreignColumns: [users.id],
@@ -937,6 +975,7 @@ export const favorites = mysqlTable(
   (t) => [
     index("favorites_user_id_foreign").on(t.userId),
     index("favorites_message_id_foreign").on(t.messageId),
+    uniqueIndex("favorites_user_message_unique").on(t.userId, t.messageId),
     foreignKey({
       columns: [t.userId],
       foreignColumns: [users.id],
@@ -1385,17 +1424,21 @@ export const staffAttendances = mysqlTable(
 // Landing page CMS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const landingSections = mysqlTable("landing_sections", {
-  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-  key: varchar("key", { length: 255 }).notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  title: varchar("title", { length: 255 }),
-  subtitle: text("subtitle"),
-  isActive: boolean("is_active").default(true),
-  metadata: json("metadata"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const landingSections = mysqlTable(
+  "landing_sections",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    key: varchar("key", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    title: varchar("title", { length: 255 }),
+    subtitle: text("subtitle"),
+    isActive: boolean("is_active").default(true),
+    metadata: json("metadata"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [uniqueIndex("landing_sections_key_unique").on(t.key)]
+);
 
 export const landingItems = mysqlTable(
   "landing_items",

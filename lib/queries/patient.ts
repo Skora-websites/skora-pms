@@ -210,7 +210,7 @@ export const getPatientStats = cache(async (patientId: number) => {
     db
       .select({ total: sql<string>`coalesce(sum(${billings.totalAmount}), 0)` })
       .from(billings)
-      .where(eq(billings.patientId, patientId)),
+      .where(and(eq(billings.patientId, patientId), isNull(billings.deletedAt))),
   ]);
 
   return {

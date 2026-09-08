@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { appointments, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { sendMail } from "@/lib/mail/send";
-import { notifyUser } from "@/lib/notifications";
+import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
 import { todayStr } from "@/lib/utils";
 
@@ -124,33 +124,46 @@ export async function createPatientAppointment(
     return { error: "The selected time is outside the doctor's available schedule." };
   }
 
-  // Time-slot conflict check (exclude cancelled).
   const time = toLegacyTime(timeRaw);
-  const [conflict] = await db
-    .select({ id: appointments.id })
-    .from(appointments)
-    .where(
-      and(
-        eq(appointments.doctorId, doctorId),
-        eq(appointments.date, date as never),
-        eq(appointments.time, time),
-        ne(appointments.status, "cancelled")
-      )
-    )
-    .limit(1);
-  if (conflict) return { error: `Time slot ${time} is already booked.` };
 
-  await db.insert(appointments).values({
-    doctorId,
-    patientId: user.id,
-    date: date as never,
-    time,
-    caseType: caseType as never,
-    status: "confirmed" as never,
-    consentType: "skipped",
-    createdAt: now,
-    updatedAt: now,
-  });
+  // Insert under a doctor-row lock (SELECT ... FOR UPDATE) serializing
+  // concurrent bookings for the same doctor — closes the check-then-insert
+  // double-booking race (mirrors the doctor-side create).
+  try {
+    await db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, doctorId)).for("update");
+      const [conflict] = await tx
+        .select({ id: appointments.id })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.doctorId, doctorId),
+            eq(appointments.date, date as never),
+            eq(appointments.time, time),
+            ne(appointments.status, "cancelled")
+          )
+        )
+        .limit(1);
+      if (conflict) throw new Error(`Time slot ${time} is already booked.`);
+
+      await tx.insert(appointments).values({
+        doctorId,
+        patientId: user.id,
+        date: date as never,
+        time,
+        caseType: caseType as never,
+        status: "confirmed" as never,
+        consentType: "skipped",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("already booked")) {
+      return { error: err.message };
+    }
+    throw err;
+  }
 
   void audit.appointmentCreated(user.id, {
     source: "patient_self_service",
@@ -168,7 +181,7 @@ export async function createPatientAppointment(
         .from(users)
         .where(eq(users.id, doctorId));
 
-      if (user.email) {
+      if (user.email && (await wantsNotification(user.id, "email", "appointment_booking"))) {
         await sendMail({
           to: user.email,
           subject: "Appointment confirmed — SkoraCares",
@@ -176,7 +189,10 @@ export async function createPatientAppointment(
         });
       }
 
-      if (doctor?.email) {
+      if (
+        doctor?.email &&
+        (await wantsNotification(doctorId, "email", "appointment_booking"))
+      ) {
         await sendMail({
           to: doctor.email,
           subject: "New appointment booked — SkoraCares",

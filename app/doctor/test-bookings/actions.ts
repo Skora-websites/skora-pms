@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
-import { and, eq, like, or } from "drizzle-orm";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   testBookings,
@@ -52,8 +54,9 @@ async function resolvePatient(doctorId: number, registrationId: string, phone: s
   if (registrationId) {
     conds.push(eq(users.registrationId, registrationId));
   } else if (phone) {
-    const phoneCond = or(eq(users.phone, phone), like(users.phone, `%${phone}%`));
-    if (phoneCond) conds.push(phoneCond);
+    // Exact match only — a LIKE '%phone%' can bind the wrong patient when
+    // one number is a suffix of another (e.g. 98111 vs 9811123456).
+    conds.push(eq(users.phone, phone));
   } else {
     return null;
   }
@@ -124,9 +127,14 @@ async function createBillingForBooking(args: {
   paymentMethod: string;
   paymentDetails: Record<string, string>;
   bookingId?: number;
+  /** Optional transaction handle — pass when the booking insert shares the same tx. */
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0];
 }) {
+  const dbx = args.tx ?? db;
   try {
-    const [existingType] = await db
+    // Get-or-create "Medical Test" billing type. Unique index (doctor_id,
+    // name, is_active) closes the two-requests-both-create race.
+    const [existingType] = await dbx
       .select({ id: billingTypes.id })
       .from(billingTypes)
       .where(and(eq(billingTypes.doctorId, args.doctorId), eq(billingTypes.name, "Medical Test")));
@@ -134,7 +142,7 @@ async function createBillingForBooking(args: {
     if (existingType) {
       billingTypeId = existingType.id;
     } else {
-      const [created] = await db
+      const [created] = await dbx
         .insert(billingTypes)
         .values({
           doctorId: args.doctorId,
@@ -151,7 +159,7 @@ async function createBillingForBooking(args: {
     const now = new Date();
     const billNumber = generateBillNumber();
     const pending = Math.max(0, args.totalAmount - args.receivedAmount);
-    const [bill] = await db
+    const [bill] = await dbx
       .insert(billings)
       .values({
         billNumber,
@@ -174,7 +182,7 @@ async function createBillingForBooking(args: {
     const billingId = Number(bill.id);
 
     if (args.receivedAmount > 0) {
-      await db.insert(transactions).values({
+      await dbx.insert(transactions).values({
         userId: args.doctorId,
         type: 1,
         billingId,
@@ -190,8 +198,12 @@ async function createBillingForBooking(args: {
     }
 
     void audit.billCreated(args.doctorId, { billingId, billNumber, source: "test_booking" });
-  } catch {
-    // Legacy parity: billing sync failure must not fail the booking itself.
+  } catch (err) {
+    // When inside the booking's own transaction, billing failure must ROLL
+    // THE WHOLE BOOKING BACK — a booking without its auto-bill is a silent
+    // accounting gap (legacy tolerated it; we do not).
+    if (args.tx) throw err;
+    console.error("[test-booking] auto-bill generation failed:", { bookingId: args.bookingId, err });
   }
 }
 
@@ -253,37 +265,44 @@ export async function createTestBooking(
   const testsJson = ownedTests.map((t) => ({ id: t.id, name: t.name, price: Number(t.price ?? 0) }));
 
   const now = new Date();
-  const [createdBooking] = await db
-    .insert(testBookings)
-    .values({
+  // Booking + auto-generated bill in ONE transaction — previously a failure
+  // between the two left either an unbilled booking or (worse) an orphan bill.
+  const bookingId = await db.transaction(async (tx) => {
+    const [createdBooking] = await tx
+      .insert(testBookings)
+      .values({
+        doctorId,
+        patientId: patient.id,
+        vendorId,
+        bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : now,
+        bookingTime,
+        tests: testsJson,
+        totalAmount: totalAmount.toFixed(2),
+        paymentMethod,
+        paymentAmount: amountNum.toFixed(2),
+        paymentDate: paymentDate as never,
+        paymentDetails,
+        status: "pending",
+        notes,
+        uploadLinkToken: randomToken(),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const bookingId = Number(createdBooking.id);
+
+    await createBillingForBooking({
       doctorId,
       patientId: patient.id,
-      vendorId,
-      bookingDate: bookingDate ? new Date(`${bookingDate}T00:00:00`) : now,
-      bookingTime,
-      tests: testsJson,
-      totalAmount: totalAmount.toFixed(2),
+      totalAmount,
+      receivedAmount: amountNum,
       paymentMethod,
-      paymentAmount: amountNum.toFixed(2),
-      paymentDate: paymentDate as never,
       paymentDetails,
-      status: "pending",
-      notes,
-      uploadLinkToken: randomToken(),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .$returningId();
-  const bookingId = Number(createdBooking.id);
+      bookingId,
+      tx,
+    });
 
-  await createBillingForBooking({
-    doctorId,
-    patientId: patient.id,
-    totalAmount,
-    receivedAmount: amountNum,
-    paymentMethod,
-    paymentDetails,
-    bookingId,
+    return bookingId;
   });
 
   void audit.transactionCreated(doctorId, { source: "test_booking", vendorId, patientId: patient.id, totalAmount });
@@ -315,10 +334,16 @@ export async function updateTestBooking(
 
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
   const [existing] = await db
-    .select({ id: testBookings.id })
+    .select({ id: testBookings.id, status: testBookings.status })
     .from(testBookings)
     .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
   if (!existing) return { error: "Test booking not found." };
+
+  // Terminal states are immutable (same rule as updateTestBookingStatus) —
+  // the booking may already have a bill, vendor report, or patient records.
+  if (existing.status === "completed" || existing.status === "cancelled") {
+    return { error: `A ${existing.status} booking can no longer be edited.` };
+  }
 
   const [vendor] = await db
     .select({ id: vendors.id })
@@ -339,6 +364,13 @@ export async function updateTestBooking(
   const amountNum = Number(amount);
   if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid payment amount." };
 
+  let paymentDetails: Record<string, string>;
+  try {
+    ({ details: paymentDetails } = buildPaymentDetails(paymentMethod, formData));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Invalid payment details." };
+  }
+
   const totalAmount = ownedTests.reduce((sum, t) => sum + Number(t.price ?? 0), 0);
   const testsJson = ownedTests.map((t) => ({ id: t.id, name: t.name, price: Number(t.price ?? 0) }));
 
@@ -357,9 +389,63 @@ export async function updateTestBooking(
     })
     .where(eq(testBookings.id, bookingId));
 
+  // Keep the auto-generated bill + income transaction in sync with the edit —
+  // otherwise totals in Billing/Income-Expense go stale vs the booking.
+  const [linkedBill] = await db
+    .select({
+      id: billings.id,
+      totalAmount: billings.totalAmount,
+      receivedAmount: billings.receivedAmount,
+      paymentMethod: billings.paymentMethod,
+      paymentDetails: billings.paymentDetails,
+    })
+    .from(billings)
+    .where(and(eq(billings.testBookingId, bookingId), isNull(billings.deletedAt)))
+    .limit(1);
+  if (linkedBill) {
+    const pending = Math.max(0, totalAmount - amountNum);
+    await db
+      .update(billings)
+      .set({
+        totalAmount: totalAmount.toFixed(2),
+        receivedAmount: amountNum.toFixed(2),
+        pendingAmount: pending.toFixed(2),
+        paymentMethod: paymentMethod as never,
+        paymentDetails,
+        status: pending <= 0 ? "paid" : amountNum > 0 ? "partial" : "pending",
+        updatedAt: new Date(),
+      })
+      .where(eq(billings.id, linkedBill.id));
+    const [tx] = await db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(and(eq(transactions.billingId, linkedBill.id), isNull(transactions.deletedAt)))
+      .limit(1);
+    if (tx) {
+      if (amountNum > 0) {
+        await db
+          .update(transactions)
+          .set({
+            amount: amountNum.toFixed(2),
+            paymentMethod,
+            updatedAt: new Date(),
+          })
+          .where(eq(transactions.id, tx.id));
+      } else {
+        // Payment fully removed — soft-delete the income row so totals match.
+        await db
+          .update(transactions)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(transactions.id, tx.id));
+      }
+    }
+  }
+
   void audit.transactionUpdated(doctorId, { source: "test_booking", bookingId });
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/doctor/billing");
+  revalidatePath("/doctor/income-expense");
   return { error: null };
 }
 
@@ -369,35 +455,52 @@ export async function deleteTestBooking(bookingId: number): Promise<TestBookingA
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
 
   const [existing] = await db
-    .select({ id: testBookings.id })
+    .select({ id: testBookings.id, uploadedFilePath: testBookings.uploadedFilePath })
     .from(testBookings)
     .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
   if (!existing) return { error: "Test booking not found." };
 
-  // Cascade soft-delete the auto-generated bill + its income transaction so
-  // no orphaned financial record remains after the booking is deleted.
-  const linkedBills = await db
-    .select({ id: billings.id })
-    .from(billings)
-    .where(eq(billings.testBookingId, bookingId));
-  for (const bill of linkedBills) {
-    await db
-      .update(transactions)
-      .set({ deletedAt: new Date() })
-      .where(eq(transactions.billingId, bill.id));
-    await db
-      .update(billings)
-      .set({ deletedAt: new Date() })
-      .where(eq(billings.id, bill.id));
-  }
+  // Atomic delete: soft-delete linked bills + income transactions in the
+  // same transaction as the booking delete. The FK (test_booking_id →
+  // test_bookings ON DELETE SET NULL) would otherwise keep hard-deleted
+  // bookings' bills alive as orphans (audit found 4).
+  const linkedBills = await db.transaction(async (tx) => {
+    const bills = await tx
+      .select({ id: billings.id })
+      .from(billings)
+      .where(eq(billings.testBookingId, bookingId));
+    for (const bill of bills) {
+      await tx
+        .update(transactions)
+        .set({ deletedAt: new Date() })
+        .where(eq(transactions.billingId, bill.id));
+      await tx
+        .update(billings)
+        .set({ deletedAt: new Date(), testBookingId: null })
+        .where(eq(billings.id, bill.id));
+    }
+    await tx.delete(testBookings).where(eq(testBookings.id, bookingId));
+    return bills;
+  });
 
-  await db.delete(testBookings).where(eq(testBookings.id, bookingId));
+  // Unlink the vendor-uploaded report file (PHI) — the row is gone, so the
+  // file must go with it. Path is server-generated (dir + uuid), still
+  // resolve-guarded against traversal.
+  if (existing.uploadedFilePath) {
+    const resolved = path.resolve(process.cwd(), "storage", "uploads", existing.uploadedFilePath);
+    if (resolved.startsWith(path.join(process.cwd(), "storage", "uploads"))) {
+      await fs.unlink(resolved).catch(() => undefined);
+    }
+  }
 
   void audit.transactionDeleted(doctorId, {
     source: "test_booking",
     bookingId,
     linkedBills: linkedBills.length,
   });
+
+  revalidatePath("/doctor/billing");
+  revalidatePath("/doctor/income-expense");
 
   revalidatePath("/doctor/test-bookings");
   return { error: null };
@@ -572,6 +675,13 @@ export async function createTest(
   if (!name) return { error: "Test name is required." };
   const priceNum = Number(price);
   if (!Number.isFinite(priceNum) || priceNum < 0) return { error: "Invalid price." };
+
+  // Duplicate active-name check (DB also enforces via unique index).
+  const [dup] = await db
+    .select({ id: tests.id })
+    .from(tests)
+    .where(and(eq(tests.doctorId, doctorId), eq(tests.name, name), eq(tests.status, true)));
+  if (dup) return { error: "A test with this name already exists." };
 
   await db.insert(tests).values({
     doctorId,

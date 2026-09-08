@@ -32,9 +32,12 @@ import {
   modelHasRoles,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { DEFAULT_DOCTOR_MODULE_PERMS } from "@/lib/auth/server-permissions";
+import { isDupKey, dupKeyConstraint } from "@/lib/db/dup";
 import { hashPassword } from "@/lib/auth/password";
 import { audit } from "@/lib/security/audit-log";
 import { encryptSecret } from "@/lib/security/crypto";
+import { revokeAllSessionsForUser } from "@/lib/auth/session";
 import { sendMail } from "@/lib/mail/send";
 import { slugify } from "@/lib/utils";
 
@@ -105,41 +108,67 @@ async function saveImage(file: File, subdir: string, maxBytes = 2 * 1024 * 1024)
   return `${subdir}/${filename}`;
 }
 
-const VIDEO_EXT = ["mp4", "webm", "mov", "m4v"];
+/** Sniff real video containers from magic bytes (extension can be spoofed). */
+function sniffVideo(bytes: Buffer): "mp4" | "webm" | "mov" | "m4v" | null {
+  if (bytes.length < 12) return null;
+  // MP4/MOV/M4V are ISO-BMFF: bytes 4-7 are "ftyp", 8-11 the brand.
+  if (bytes.subarray(4, 8).toString("latin1") === "ftyp") {
+    const brand = bytes.subarray(8, 12).toString("latin1");
+    if (/qt\s/.test(brand)) return "mov";
+    return "mp4"; // covers mp4 + m4v brands
+  }
+  // WebM/MKV are EBML: 1A 45 DF A3.
+  if (
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3
+  ) {
+    return "webm";
+  }
+  return null;
+}
 
 async function saveVideo(file: File): Promise<string> {
   if (!file || file.size === 0) throw new Error("Video file is missing.");
   if (file.size > 200 * 1024 * 1024) throw new Error("Video must be under 200 MB.");
-  const name = file.name.toLowerCase();
-  const ext = name.split(".").pop() ?? "";
-  if (!VIDEO_EXT.includes(ext)) throw new Error("Only MP4, WEBM, MOV or M4V videos are allowed.");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const kind = sniffVideo(bytes);
+  if (!kind) throw new Error("Only MP4, WEBM, MOV or M4V videos are allowed.");
   const dir = path.join(UPLOAD_ROOT, "support-videos");
-  const filename = `${crypto.randomUUID()}.${ext}`;
+  const filename = `${crypto.randomUUID()}.${kind}`;
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, filename), Buffer.from(await file.arrayBuffer()));
+  await fs.writeFile(path.join(dir, filename), bytes);
   return `support-videos/${filename}`;
 }
 
 async function deleteUpload(storedPath: string | null) {
-  if (!storedPath || !DATE_SAFE.test(storedPath)) return;
-  fs.unlink(path.join(UPLOAD_ROOT, storedPath)).catch(() => undefined);
+  // Legacy rows may store "uploads/clinic/x.jpg" — normalize before guarding.
+  const relative = storedPath?.replace(/^uploads\//, "") ?? null;
+  if (!relative || !DATE_SAFE.test(relative)) return;
+  fs.unlink(path.join(UPLOAD_ROOT, relative)).catch(() => undefined);
 }
 
 // ── User management (legacy `SuperAdminController` parity) ──────────────────
 
-async function nextRegistrationId(role: string): Promise<string> {
+function computeNextRegistrationId(role: string, rows: { registrationId: string | null }[]): string {
   const prefix = ROLE_PREFIX[role];
   if (!prefix) return "";
-  const rows = await db
-    .select({ registrationId: users.registrationId })
-    .from(users)
-    .where(sql`${users.registrationId} LIKE ${`${prefix}-%`}`);
   let max = 0;
   for (const r of rows) {
     const n = Number.parseInt((r.registrationId ?? "").slice(prefix.length + 1), 10);
     if (Number.isInteger(n) && n > max) max = n;
   }
   return `${prefix}-${String(max + 1).padStart(4, "0")}`;
+}
+
+/** Pick the next DOC-xxxx/PAT-xxxx/… id; the users unique key is the final arbiter under concurrency. */
+async function nextRegistrationId(role: string): Promise<string> {
+  const rows = await db
+    .select({ registrationId: users.registrationId })
+    .from(users)
+    .where(sql`${users.registrationId} LIKE ${`${ROLE_PREFIX[role]}-%`}`);
+  return computeNextRegistrationId(role, rows);
 }
 
 async function syncSystemRole(userId: number, role: string) {
@@ -159,6 +188,90 @@ async function syncSystemRole(userId: number, role: string) {
 async function getTrialDays(): Promise<number> {
   const [company] = await db.select().from(companySettings).limit(1);
   return company?.defaultTrialDays ?? 15;
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Attach the system role + default doctor permissions inside a transaction. */
+async function grantNewUserRole(tx: Tx, userId: number, role: string): Promise<void> {
+  const roleName = SYSTEM_ROLE_BY_ROLE[role];
+  if (roleName) {
+    const [systemRole] = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.name, roleName), isNull(roles.doctorId)));
+    if (systemRole) {
+      await tx.insert(modelHasRoles).values({ roleId: systemRole.id, modelId: userId, modelType: USER_MODEL });
+    }
+  }
+  if (role === "doctor") {
+    // Legacy parity gap: the Doctor system role has no permissions, so an
+    // admin-created doctor could sign in but never reach the dashboard.
+    const permRows = await tx
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(inArray(permissions.name, DEFAULT_DOCTOR_MODULE_PERMS));
+    if (permRows.length > 0) {
+      await tx.insert(modelHasPermissions).values(
+        permRows.map((p) => ({ permissionId: p.id, modelType: USER_MODEL, modelId: userId }))
+      );
+    }
+  }
+}
+
+/** Admin user creation: user row + role + perms atomically, with registration-id collision retry. */
+async function insertAdminUser(input: {
+  name: string;
+  email: string;
+  phone: string | null;
+  passwordHash: string;
+  role: string;
+  status: string;
+  qualification: string | null;
+  registrationNumber: string | null;
+  trialEndsAt?: Date;
+  retries: number;
+}): Promise<{ userId: number; registrationId: string }> {
+  let attempt = 0;
+  for (;;) {
+    const registrationId = await nextRegistrationId(input.role);
+    try {
+      const userId = await db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(users)
+          .values({
+            name: input.name,
+            email: input.email,
+            phone: input.phone,
+            password: input.passwordHash,
+            role: input.role as never,
+            status: input.status as never,
+            qualification: input.qualification,
+            registrationNumber: input.registrationNumber,
+            registrationId: registrationId || null,
+            trialEndsAt: input.trialEndsAt,
+            emailVerifiedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .$returningId();
+        const newUserId = Number(created.id);
+        await grantNewUserRole(tx, newUserId, input.role);
+        return newUserId;
+      });
+      return { userId, registrationId };
+    } catch (err) {
+      // Concurrent admin create grabbed the same next id — recompute and retry.
+      if (attempt++ < input.retries && isDupKey(err) && dupKeyConstraint(err) === "users_registration_id_unique") {
+        continue;
+      }
+      // Email collision (pre-checked but racy) — surface the friendly error.
+      if (isDupKey(err) && dupKeyConstraint(err) === "users_email_unique") {
+        throw new Error("A user with this email already exists.");
+      }
+      throw err;
+    }
+  }
 }
 
 export async function storeUser(
@@ -187,33 +300,26 @@ export async function storeUser(
   if (emailTaken) return { error: "A user with this email already exists." };
 
   const passwordHash = await hashPassword(password);
-  const registrationId = await nextRegistrationId(role);
   const trialEndsAt =
     role === "doctor"
       ? new Date(Date.now() + (await getTrialDays()) * 24 * 60 * 60 * 1000)
       : undefined;
 
-  const [created] = await db
-    .insert(users)
-    .values({
-      name,
-      email,
-      phone: phone || null,
-      password: passwordHash,
-      role: role as never,
-      status,
-      qualification: qualification || null,
-      registrationNumber: registrationNumber || null,
-      registrationId: registrationId || null,
-      trialEndsAt,
-      emailVerifiedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .$returningId();
-
-  const userId = Number(created.id);
-  await syncSystemRole(userId, role);
+  // Insert + role attach + permission grants in ONE transaction, retrying
+  // the whole thing with a fresh registration id when concurrent admin
+  // creates collide on the unique key.
+  const { userId, registrationId } = await insertAdminUser({
+    name,
+    email,
+    phone: phone || null,
+    passwordHash,
+    role,
+    status,
+    qualification: qualification || null,
+    registrationNumber: registrationNumber || null,
+    trialEndsAt,
+    retries: 3,
+  });
 
   void audit.roleChanged(admin.id, { action: "user_created", userId, role, registrationId });
 
@@ -266,6 +372,31 @@ export async function updateUser(
     return { error: "You cannot change the role of a super admin." };
   }
 
+  // Business rule: demoting/re-typing a doctor away from the doctor role would
+  // orphan their patients (referenceRoleId), staff and clinics. Require
+  // reassignment (deletion) first.
+  if (existing.role === "doctor" && role !== "doctor") {
+    const [dep] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.referenceRoleId, userId))
+      .limit(1);
+    if (dep) {
+      return {
+        error:
+          "This doctor still has patients or staff linked to their practice. Reassign or delete them before changing the role.",
+      };
+    }
+    const [clinic] = await db
+      .select({ id: doctorClinics.id })
+      .from(doctorClinics)
+      .where(eq(doctorClinics.doctorId, userId))
+      .limit(1);
+    if (clinic) {
+      return { error: "This doctor still has clinics. Delete the clinics before changing the role." };
+    }
+  }
+
   const [dup] = await db
     .select({ id: users.id })
     .from(users)
@@ -302,6 +433,14 @@ export async function updateUser(
 
   if (role !== existing.role) await syncSystemRole(userId, role);
 
+  // Identity/credential/security changes invalidate every existing session
+  // of that account (JWT itself stays cryptographically valid up to 7 days
+  // otherwise — the sessions table is the only server-side kill switch).
+  if (password || role !== existing.role || status !== existing.status) {
+    await revokeAllSessionsForUser(userId);
+    if (password) void audit.passwordChange(userId);
+  }
+
   void audit.roleChanged(admin.id, { action: "user_updated", userId, role, status });
 
   revalidatePath("/super-admin/users");
@@ -325,6 +464,9 @@ export async function toggleUserStatus(userId: number): Promise<AdminActionResul
     .update(users)
     .set({ status: nextStatus, updatedAt: new Date() })
     .where(eq(users.id, userId));
+
+  // Deactivated accounts must not keep riding existing JWTs.
+  if (nextStatus === "inactive") await revokeAllSessionsForUser(userId);
 
   void audit.roleChanged(admin.id, { action: "user_status_toggled", userId, status: nextStatus });
 
@@ -367,14 +509,18 @@ export async function saveDoctorPermissions(
     permissionIds = rows.map((r) => r.id);
   }
 
-  await db
-    .delete(modelHasPermissions)
-    .where(and(eq(modelHasPermissions.modelId, doctorId), eq(modelHasPermissions.modelType, USER_MODEL)));
-  if (permissionIds.length > 0) {
-    await db
-      .insert(modelHasPermissions)
-      .values(permissionIds.map((permissionId) => ({ permissionId, modelType: USER_MODEL, modelId: doctorId })));
-  }
+  // Replace permissions atomically — a crash between delete and insert would
+  // leave the doctor with no dashboard access at all.
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(modelHasPermissions)
+      .where(and(eq(modelHasPermissions.modelId, doctorId), eq(modelHasPermissions.modelType, USER_MODEL)));
+    if (permissionIds.length > 0) {
+      await tx
+        .insert(modelHasPermissions)
+        .values(permissionIds.map((permissionId) => ({ permissionId, modelType: USER_MODEL, modelId: doctorId })));
+    }
+  });
 
   void audit.roleChanged(admin.id, {
     action: "doctor_permissions_saved",
@@ -539,11 +685,16 @@ export async function deleteClinic(clinicId: number): Promise<AdminActionResult>
     .where(eq(doctorClinics.id, clinicId));
   if (!existing) return { error: "Clinic not found." };
 
-  await db
-    .update(doctorSchedules)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(doctorSchedules.doctorClinicId, clinicId));
-  await db.delete(doctorClinics).where(eq(doctorClinics.id, clinicId));
+  // Deactivate dependent schedules + delete clinic in one transaction;
+  // appointments.clinic_id is FK ON DELETE SET NULL (Phase 2 migration),
+  // so their rows survive with clinic_id nulled.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(doctorSchedules)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(doctorSchedules.doctorClinicId, clinicId));
+    await tx.delete(doctorClinics).where(eq(doctorClinics.id, clinicId));
+  });
   await deleteUpload(existing.clinicLogo);
 
   void audit.fileUploaded(admin.id, { action: "clinic_deleted", clinicId });
@@ -683,6 +834,13 @@ export async function importMasterItems(
   if (file.size > 5 * 1024 * 1024) return { error: "File must be under 5 MB." };
   const fileName = file.name.toLowerCase();
   const bytes = Buffer.from(await file.arrayBuffer());
+
+  // Magic-byte check — a renamed .txt/… must never reach the parsers.
+  const isZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
+  if (fileName.endsWith(".xlsx") && !isZip) return { error: "That file is not a real .xlsx spreadsheet." };
+  if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".csv")) {
+    return { error: "Only .xlsx or .csv files are supported." };
+  }
 
   const rows: { name: string; strength?: string; form?: string; unit?: string }[] = [];
   try {
@@ -1015,8 +1173,12 @@ export async function deleteBlog(blogId: number): Promise<AdminActionResult> {
   if (!existing) return { error: "Blog not found." };
 
   const images = await db.select({ image: blogImages.image }).from(blogImages).where(eq(blogImages.blogId, blogId));
-  await db.delete(blogImages).where(eq(blogImages.blogId, blogId));
-  await db.delete(blogs).where(eq(blogs.id, blogId));
+  // Child rows + blog in one transaction — a crash between deletes would
+  // leave orphaned blog_images pointing at a missing blog.
+  await db.transaction(async (tx) => {
+    await tx.delete(blogImages).where(eq(blogImages.blogId, blogId));
+    await tx.delete(blogs).where(eq(blogs.id, blogId));
+  });
   await deleteUpload(existing.image);
   for (const img of images) await deleteUpload(img.image);
 
@@ -1397,15 +1559,19 @@ export async function reorderLandingItem(
   const target = direction === "up" ? idx - 1 : idx + 1;
   if (idx < 0 || target < 0 || target >= siblings.length) return { error: null }; // at edge
 
+  // Both order swaps in one transaction — a crash between updates would
+  // leave two items sharing the same order value.
   const other = siblings[target];
-  await db
-    .update(landingItems)
-    .set({ order: other.order ?? 0, updatedAt: new Date() })
-    .where(eq(landingItems.id, itemId));
-  await db
-    .update(landingItems)
-    .set({ order: item.order ?? 0, updatedAt: new Date() })
-    .where(eq(landingItems.id, other.id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(landingItems)
+      .set({ order: other.order ?? 0, updatedAt: new Date() })
+      .where(eq(landingItems.id, itemId));
+    await tx
+      .update(landingItems)
+      .set({ order: item.order ?? 0, updatedAt: new Date() })
+      .where(eq(landingItems.id, other.id));
+  });
 
   void audit.categoryUpdated(admin.id, { action: "landing_item_reordered", itemId, direction });
 

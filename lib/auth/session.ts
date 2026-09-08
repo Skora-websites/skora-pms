@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
 
@@ -55,6 +55,28 @@ export async function revokeAllSessionsForUser(userId: number) {
     await db.delete(sessions).where(eq(sessions.userId, userId));
   } catch {
     // Non-fatal.
+  }
+}
+
+/** Revoke every session except the current one (e.g. after a password change). */
+export async function revokeOtherSessionsForUser(userId: number, keepJti: string) {
+  try {
+    await db.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, keepJti)));
+  } catch {
+    // Non-fatal.
+  }
+}
+
+/** Current session's jti (or null when unauthenticated / invalid cookie). */
+export async function getCurrentJti(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, getSecret());
+    return typeof payload.jti === "string" ? payload.jti : null;
+  } catch {
+    return null;
   }
 }
 

@@ -45,11 +45,15 @@ export async function GET(
   if (!clinic?.clinicLogo) return new Response("Not found", { status: 404 });
   if (clinic.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
 
-  const ext = path.extname(clinic.clinicLogo).toLowerCase();
+  // Legacy rows store "uploads/clinic/x.jpg" (old public/uploads layout);
+  // new rows store "clinic/x.jpg". Strip the stale prefix so both resolve
+  // against storage/uploads/.
+  const relative = clinic.clinicLogo.replace(/^uploads\//, "");
+  const ext = path.extname(relative).toLowerCase();
   const contentType = CONTENT_TYPES[ext];
   if (!contentType) return new Response("Unsupported file", { status: 415 });
 
-  const resolved = path.resolve(STORAGE_DIR, clinic.clinicLogo);
+  const resolved = path.resolve(STORAGE_DIR, relative);
   if (!resolved.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
 
   try {

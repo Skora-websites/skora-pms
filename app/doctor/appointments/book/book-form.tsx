@@ -12,7 +12,6 @@ const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const CONSENT_TYPES = [
   { value: "otp", label: "Send OTP (WhatsApp)" },
   { value: "consent", label: "Send Consent Link" },
-  { value: "upload", label: "Upload Image" },
   { value: "skipped", label: "Skip Consent" },
   { value: "email", label: "Send Email" },
 ];
@@ -187,17 +186,6 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
                 </label>
               ))}
             </div>
-            {consentType === "upload" && (
-              <div>
-                <label className="label">Upload consent file</label>
-                <input
-                  type="file"
-                  name="consent_file"
-                  accept="image/jpeg,image/png,application/pdf"
-                  className="input"
-                />
-              </div>
-            )}
           </div>
         )}
 

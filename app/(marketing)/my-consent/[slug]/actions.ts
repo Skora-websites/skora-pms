@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +12,7 @@ import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
 import { getClientIp } from "@/lib/security/ip";
 import { consentSchema } from "@/lib/validation";
+import { notifyUser } from "@/lib/notifications";
 
 export type ConsentState = { error: string | null };
 
@@ -199,44 +200,87 @@ export async function respondConsent(
     });
   }
 
-  // ── Persist consent decision + file ──
+  // ── Persist consent decision + file, and sync the appointment — ──
+  // one transaction + conditional update (only undecided rows match), so a
+  // concurrent duplicate submission can never overwrite the first decision
+  // and the consent/appointment pair never drifts apart.
   const consentFile = decision === "accept" ? (pdfPath ?? uploadedPath) : uploadedPath;
 
-  await db
-    .update(appointmentConsultConsents)
-    .set(
-      decision === "accept"
-        ? {
-            isAccepted: true,
-            isRejected: false,
-            acceptedAt: now,
-            rejectedAt: null,
-            consentFile,
-            status: "confirmed",
-            updatedAt: now,
-          }
-        : {
-            isRejected: true,
-            isAccepted: false,
-            rejectedAt: now,
-            acceptedAt: null,
-            consentFile,
-            status: "cancelled",
-            updatedAt: now,
-          }
-    )
-    .where(eq(appointmentConsultConsents.id, row.id));
+  const claimed = await db.transaction(async (tx) => {
+    const result = await tx
+      .update(appointmentConsultConsents)
+      .set(
+        decision === "accept"
+          ? {
+              isAccepted: true,
+              isRejected: false,
+              acceptedAt: now,
+              rejectedAt: null,
+              consentFile,
+              status: "confirmed",
+              updatedAt: now,
+            }
+          : {
+              isRejected: true,
+              isAccepted: false,
+              rejectedAt: now,
+              acceptedAt: null,
+              consentFile,
+              status: "cancelled",
+              updatedAt: now,
+            }
+      )
+      .where(
+        and(
+          eq(appointmentConsultConsents.id, row.id),
+          eq(appointmentConsultConsents.isAccepted, false),
+          eq(appointmentConsultConsents.isRejected, false)
+        )
+      );
 
-  // ── Sync appointment status (legacy parity) ──
-  if (row.appointmentId) {
-    await db
-      .update(appointments)
-      .set({
-        status: decision === "accept" ? "confirmed" : "cancelled",
-        updatedAt: now,
-      })
-      .where(eq(appointments.id, row.appointmentId));
+    if (result[0].affectedRows !== 1) return null;
+
+    // ── Sync appointment status (legacy parity) ──
+    if (row.appointmentId) {
+      await tx
+        .update(appointments)
+        .set({
+          status: decision === "accept" ? "confirmed" : "cancelled",
+          updatedAt: now,
+        })
+        .where(eq(appointments.id, row.appointmentId));
+    }
+    return row.id;
+  });
+
+  if (claimed === null) {
+    return { error: "Your response has already been recorded." };
   }
+
+  // ── Notify the doctor of the patient's decision (in-app, fire-and-forget) ──
+  void (async () => {
+    try {
+      if (decision === "accept") {
+        await notifyUser({
+          userId: row.doctorId,
+          title: "Patient consent received",
+          message: `Consent accepted for appointment #${row.appointmentId ?? "—"}. The appointment is now confirmed.`,
+          type: "success",
+          link: "/doctor/appointments",
+        });
+      } else {
+        await notifyUser({
+          userId: row.doctorId,
+          title: "Patient consent declined",
+          message: `Consent declined for appointment #${row.appointmentId ?? "—"}. The appointment has been cancelled.`,
+          type: "warning",
+          link: "/doctor/appointments",
+        });
+      }
+    } catch {
+      // Notification failure must never block the consent response.
+    }
+  })();
 
   // ── Audit ──
   const ip = await getClientIp();
@@ -260,6 +304,9 @@ export async function respondConsent(
     });
   }
 
+  // Sync doctor-facing cached pages with the externally-decided consent.
   revalidatePath(`/my-consent/${slug}`);
+  revalidatePath("/doctor/appointments");
+  revalidatePath("/doctor");
   return { error: null };
 }

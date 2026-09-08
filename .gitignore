@@ -45,3 +45,8 @@ next-env.d.ts
 
 # drizzle generated migrations are committed via /drizzle, but not the journal cache
 /drizzle/meta/_journal.json.tmp
+.aider*
+
+# runtime logs / screenshots
+*.log
+tmp-shot-*.png

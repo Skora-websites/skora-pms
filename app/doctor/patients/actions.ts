@@ -13,6 +13,7 @@ import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { patientSchema } from "@/lib/validation";
+import { isDupKey, dupKeyConstraint } from "@/lib/db/dup";
 
 export type PatientActionResult = { error: string | null };
 
@@ -45,17 +46,28 @@ async function deletePhoto(storedPath: string | null) {
   fs.unlink(absolute).catch(() => undefined);
 }
 
-/** Generate a unique PAT+7digit registration id (mirrors legacy `store`). */
-async function generateRegistrationId(): Promise<string> {
-  for (let attempt = 0; attempt < 10; attempt++) {
+/** Insert a patient, retrying with a fresh PAT id when the registration_id unique key collides (concurrent create race). */
+async function insertPatient(
+  values: typeof users.$inferInsert
+): Promise<{ ok: true; userId: number; registrationId: string } | { ok: false; error: string }> {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const regid = `PAT${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.registrationId, regid));
-    if (!existing) return regid;
+    try {
+      const [result] = await db
+        .insert(users)
+        .values({ ...values, registrationId: regid })
+        .$returningId();
+      return { ok: true, userId: Number(result.id), registrationId: regid };
+    } catch (err) {
+      if (attempt < 4 && isDupKey(err) && dupKeyConstraint(err) === "users_registration_id_unique") continue;
+      // patients_registration_id_unique → registration-id collision; other dup keys (email) must not retry.
+      if (isDupKey(err) && dupKeyConstraint(err) !== "users_registration_id_unique") {
+        return { ok: false, error: "A patient with this email already exists." };
+      }
+      throw err;
+    }
   }
-  throw new Error("Could not generate a unique registration ID.");
+  return { ok: false, error: "Could not generate a unique registration ID." };
 }
 
 export async function createPatient(
@@ -102,13 +114,11 @@ export async function createPatient(
     }
   }
 
-  const regid = await generateRegistrationId();
   const password = crypto.randomBytes(8).toString("base64url"); // 10-char random (legacy: Str::random(10))
   const hashed = await hashPassword(password);
 
-  const [result] = await db.insert(users).values({
+  const inserted = await insertPatient({
     role: "patient",
-    registrationId: regid,
     referenceRoleId: doctorId,
     referredBy: data.referredBy || null,
     name: data.name,
@@ -129,18 +139,17 @@ export async function createPatient(
     createdAt: now,
     updatedAt: now,
   });
-
-  const userId = Number(result.insertId);
+  if (!inserted.ok) return { error: inserted.error };
 
   void audit.patientCreated(doctorId, {
-    patientId: userId,
-    registrationId: regid,
+    patientId: inserted.userId,
+    registrationId: inserted.registrationId,
     name: data.name,
     gender: data.gender,
   });
 
   revalidatePath("/doctor/patients");
-  redirect(`/doctor/patients/${userId}`);
+  redirect(`/doctor/patients/${inserted.userId}`);
 }
 
 export async function updatePatient(
@@ -201,26 +210,33 @@ export async function updatePatient(
     }
   }
 
-  await db
-    .update(users)
-    .set({
-      referredBy: data.referredBy || null,
-      name: data.name,
-      email,
-      gender: data.gender,
-      phone: data.phone,
-      dob: data.dob || null,
-      address: data.address || null,
-      pincode: data.pincode ? Number(data.pincode) : null,
-      city: data.city || null,
-      state: data.state || null,
-      streetAddress: data.streetAddress || null,
-      salutation: data.salutation || null,
-      aadhaarNo: data.aadhaarNo || null,
-      profilePhotoPath: photoPath,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
+  try {
+    await db
+      .update(users)
+      .set({
+        referredBy: data.referredBy || null,
+        name: data.name,
+        email,
+        gender: data.gender,
+        phone: data.phone,
+        dob: data.dob || null,
+        address: data.address || null,
+        pincode: data.pincode ? Number(data.pincode) : null,
+        city: data.city || null,
+        state: data.state || null,
+        streetAddress: data.streetAddress || null,
+        salutation: data.salutation || null,
+        aadhaarNo: data.aadhaarNo || null,
+        profilePhotoPath: photoPath,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
+  } catch (err) {
+    if (isDupKey(err) && dupKeyConstraint(err) === "users_email_unique") {
+      return { error: "A patient with this email already exists." };
+    }
+    throw err;
+  }
 
   void audit.patientUpdated(doctorId, {
     patientId,
@@ -245,35 +261,42 @@ export async function deletePatient(patientId: number): Promise<PatientActionRes
   // records must not be hard-deleted — deleting the user row cascades to
   // their consultations, bills and test bookings (FK cascade), destroying
   // medicolegal and financial history. Deactivate instead (status toggle).
-  const [clinical] = await db
-    .select({ id: consultations.id })
-    .from(consultations)
-    .where(and(eq(consultations.patientId, patientId), eq(consultations.doctorId, doctorId)))
-    .limit(1);
-  if (clinical) {
-    return {
-      error: "This patient has consultation records. Deactivate the patient instead of deleting.",
-    };
-  }
-  const [financial] = await db
-    .select({ id: billings.id })
-    .from(billings)
-    .where(and(eq(billings.patientId, patientId), eq(billings.doctorId, doctorId), isNull(billings.deletedAt)))
-    .limit(1);
-  if (financial) {
-    return {
-      error: "This patient has billing records. Deactivate the patient instead of deleting.",
-    };
-  }
+  let photoPath: string | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const [clinical] = await tx
+        .select({ id: consultations.id })
+        .from(consultations)
+        .where(and(eq(consultations.patientId, patientId), eq(consultations.doctorId, doctorId)))
+        .limit(1);
+      if (clinical) {
+        throw new Error("This patient has consultation records. Deactivate the patient instead of deleting.");
+      }
+      const [financial] = await tx
+        .select({ id: billings.id })
+        .from(billings)
+        .where(and(eq(billings.patientId, patientId), eq(billings.doctorId, doctorId), isNull(billings.deletedAt)))
+        .limit(1);
+      if (financial) {
+        throw new Error("This patient has billing records. Deactivate the patient instead of deleting.");
+      }
 
-  const [patient] = await db
-    .select({ profilePhotoPath: users.profilePhotoPath })
-    .from(users)
-    .where(eq(users.id, patientId));
+      const [patient] = await tx
+        .select({ profilePhotoPath: users.profilePhotoPath })
+        .from(users)
+        .where(eq(users.id, patientId));
+      photoPath = patient?.profilePhotoPath ?? null;
 
-  // Hard delete only for patients with no clinical/financial history.
-  await db.delete(users).where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
-  await deletePhoto(patient?.profilePhotoPath ?? null);
+      // Hard delete only for patients with no clinical/financial history.
+      await tx.delete(users).where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.message.includes("consultation records") || err.message.includes("billing records"))) {
+      return { error: err.message };
+    }
+    throw err;
+  }
+  await deletePhoto(photoPath);
 
   void audit.patientDeleted(doctorId, { patientId });
   revalidatePath("/doctor/patients");

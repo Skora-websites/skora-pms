@@ -7,8 +7,10 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser, hasPermission } from "@/lib/auth/user";
+import { getCurrentUser } from "@/lib/auth/user";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
+import { revokeOtherSessionsForUser, getCurrentJti } from "@/lib/auth/session";
+import { audit } from "@/lib/security/audit-log";
 
 export type ProfileState = { error: string | null };
 
@@ -136,6 +138,7 @@ export async function updateProfileAction(formData: FormData): Promise<ProfileSt
     phone,
     updatedAt: new Date(),
   };
+  let passwordChanged = false;
 
   // Password change (only when a new password is provided)
   if (newPassword) {
@@ -149,9 +152,19 @@ export async function updateProfileAction(formData: FormData): Promise<ProfileSt
     }
     if (newPassword.length < 8) return { error: "New password must be at least 8 characters." };
     updates.password = await hashPassword(newPassword);
+    passwordChanged = true;
   }
 
   await db.update(users).set(updates).where(eq(users.id, user.id));
+
+  // A password change must kill every other session; keep this one so the
+  // user stays signed in on the device they used to change it.
+  if (passwordChanged) {
+    const jti = await getCurrentJti();
+    if (jti) await revokeOtherSessionsForUser(user.id, jti);
+    void audit.passwordChange(user.id);
+  }
+
   revalidatePath("/doctor/profile");
   return { error: null };
 }

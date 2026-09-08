@@ -16,7 +16,6 @@ const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"
 const SESSION_TYPES = ["morning", "afternoon", "evening", "night", "full_day"] as const;
 const ADDRESS_TYPES = ["manual", "map"] as const;
 
-const DATE_SAFE = /^[a-zA-Z0-9._-]+$/;
 const LOGO_DIR = path.join(process.cwd(), "storage", "uploads", "clinic");
 
 function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | "gif" | null {
@@ -58,8 +57,13 @@ async function saveLogo(file: File): Promise<string | null> {
 
 async function deleteLogo(storedPath: string | null) {
   if (!storedPath) return;
-  if (!DATE_SAFE.test(storedPath)) return;
-  fs.unlink(path.join(process.cwd(), "storage", "uploads", storedPath)).catch(() => undefined);
+  // Legacy rows store "uploads/clinic/x.jpg" — strip so both layouts match
+  // the guard and the unlink target.
+  const relative = storedPath.replace(/^uploads\//, "");
+  // storedPath is "clinic/<uuid>.<ext>" — the old DATE_SAFE guard (no "/")
+  // rejected every real path and orphaned the file on disk.
+  if (!/^clinic\/[a-zA-Z0-9._-]+$/.test(relative)) return;
+  fs.unlink(path.join(process.cwd(), "storage", "uploads", relative)).catch(() => undefined);
 }
 
 // ── Clinic CRUD ────────────────────────────────────────────────────────────

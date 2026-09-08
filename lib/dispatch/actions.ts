@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { sosRequests, sosOffers, sosCases, users } from "@/lib/db/schema";
@@ -11,8 +11,9 @@ import { authRateLimit } from "@/lib/security/rate-limit";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
 import { sendPushToUser } from "@/lib/push/client";
-import { findNearbyOnDutyDoctors, maskPatient, SOS_TTL_MIN } from "./geo";
-import { broadcastToMany } from "./hub";
+import { findNearbyOnDutyDoctors, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";
+import { broadcastToMany, announceSosToDoctors } from "./hub";
+import { expireStalePendingRequest } from "./expiry";
 
 const sosSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
@@ -103,40 +104,20 @@ export async function triggerSos(
       .catch(() => undefined); // UNIQUE(sos_request_id, doctor_id) — idempotent
   }
 
-  const event = {
-    type: "sos:new",
-    requestId,
-    distanceKm: nearby[0].distanceKm,
-    complaint: parsed.data.complaint || null,
-    patient: maskPatient(user.name),
-  } as const;
-  broadcastToMany(nearby.map((d) => d.doctorId), event);
-
-  for (const doc of nearby) {
-    void notifyUser({
-      userId: doc.doctorId,
-      title: "🚨 Emergency request nearby",
-      message: `${maskPatient(user.name)} needs urgent help — ${doc.distanceKm} km away${parsed.data.complaint ? ` (${parsed.data.complaint})` : ""}.`,
-      type: "error",
-      link: "/doctor/emergency",
-    });
-  }
-
-  // Web Push to on-duty doctors even when the app tab is closed (PWA).
-  const payload = {
-    title: "🚨 Emergency request nearby",
-    body: `${maskPatient(user.name)} needs urgent help — ${nearby[0].distanceKm} km away${parsed.data.complaint ? ` (${parsed.data.complaint})` : ""}.`,
-    url: "/doctor/emergency",
-    tag: "sos-new",
-  } as const;
-  for (const doc of nearby) {
-    void sendPushToUser(doc.doctorId, payload);
-  }
+  await announceSosToDoctors(
+    nearby.map((d) => d.doctorId),
+    {
+      requestId,
+      distanceKm: nearby[0].distanceKm,
+      complaint: parsed.data.complaint || null,
+      patient: maskPatient(user.name),
+    }
+  );
 
   void auditLog({
     userId: user.id,
-    action: "appointment_created",
-    metadata: { sos: true, requestId, action: "sos_triggered", nearbyDoctors: nearby.length },
+    action: "sos_triggered",
+    metadata: { requestId, nearbyDoctors: nearby.length },
   });
 
   revalidatePath("/patient/emergency");
@@ -150,7 +131,7 @@ export async function triggerSos(
  */
 export async function acceptSos(requestId: number): Promise<SosActionResult> {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
 
   // Doctor must have been offered this request (ownership + offer check).
   const [offer] = await db
@@ -170,18 +151,10 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
     .limit(1);
   if (!req) return { error: "Emergency request not found." };
 
-  // Business TTL: stale pending requests are treated as expired.
-  if (Date.now() - req.createdAt.getTime() > SOS_TTL_MIN * 60_000) {
-    await db
-      .update(sosRequests)
-      .set({ status: "expired", updatedAt: new Date() })
-      .where(eq(sosRequests.id, requestId));
-    await db
-      .update(sosOffers)
-      .set({ status: "expired", respondedAt: new Date() })
-      .where(eq(sosOffers.sosRequestId, requestId));
-    return { error: "This emergency request has expired." };
-  }
+  // Business TTL: stale pending requests are expired inline (guarded on
+  // status='pending' so a concurrent cancel/accept always wins).
+  const expired = await expireStalePendingRequest(requestId);
+  if (expired) return { error: "This emergency request has expired." };
 
   // ATOMIC CLAIM: conditional update — affectedRows === 1 means this doctor won.
   const claimed = await db
@@ -217,7 +190,7 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
   const otherOffers = await db
     .select({ doctorId: sosOffers.doctorId })
     .from(sosOffers)
-    .where(and(eq(sosOffers.sosRequestId, requestId), eq(sosOffers.status, "declined")));
+    .where(and(eq(sosOffers.sosRequestId, requestId), ne(sosOffers.doctorId, doctorId)));
   broadcastToMany(otherOffers.map((o) => o.doctorId), { type: "sos:taken", requestId });
   for (const o of otherOffers) {
     void notifyUser({
@@ -245,8 +218,8 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
 
   void auditLog({
     userId: doctorId,
-    action: "appointment_updated",
-    metadata: { sos: true, requestId, action: "sos_accepted", patientId: req.patientId, patientPhone: patient?.phone ?? null },
+    action: "sos_accepted",
+    metadata: { requestId, patientId: req.patientId, patientPhone: patient?.phone ?? null },
   });
 
   revalidatePath("/doctor/emergency");
@@ -256,11 +229,12 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
 /** Doctor declines their own offer (idempotent). */
 export async function declineSos(requestId: number): Promise<SosActionResult> {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
   await db
     .update(sosOffers)
     .set({ status: "declined", respondedAt: new Date() })
     .where(and(eq(sosOffers.sosRequestId, requestId), eq(sosOffers.doctorId, doctorId), eq(sosOffers.status, "broadcast")));
+  void auditLog({ userId: doctorId, action: "sos_declined", metadata: { requestId } });
   revalidatePath("/doctor/emergency");
   return { error: null };
 }
@@ -277,6 +251,7 @@ export async function cancelSos(requestId: number): Promise<SosActionResult> {
     .from(sosOffers)
     .where(eq(sosOffers.sosRequestId, requestId));
   broadcastToMany(offers.map((o) => o.doctorId), { type: "sos:cancelled", requestId });
+  void auditLog({ userId: user.id, action: "sos_cancelled", metadata: { requestId } });
   revalidatePath("/patient/emergency");
   return { error: null };
 }
@@ -284,7 +259,7 @@ export async function cancelSos(requestId: number): Promise<SosActionResult> {
 /** Accepting doctor marks the case completed. */
 export async function completeSos(requestId: number): Promise<SosActionResult> {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
   await db
     .update(sosCases)
     .set({ status: "completed", updatedAt: new Date() })
@@ -308,6 +283,7 @@ export async function completeSos(requestId: number): Promise<SosActionResult> {
       link: "/patient/emergency",
     });
   }
+  void auditLog({ userId: doctorId, action: "sos_completed", metadata: { requestId } });
   revalidatePath("/doctor/emergency");
   return { error: null };
 }
@@ -331,7 +307,7 @@ export async function updateDoctorLocation(
   longitude: number
 ): Promise<SosActionResult> {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
   if (!Number.isInteger(requestId) || requestId <= 0) return { error: "Invalid request." };
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: "Invalid location." };
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return { error: "Invalid coordinates." };
@@ -352,7 +328,8 @@ export async function updateDoctorLocation(
 /** Doctor's own broadcast offers (initial load / polling fallback). */
 export async function getMySosOffers() {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
+  const ttlCutoff = new Date(Date.now() - SOS_TTL_MIN * 60_000);
   const rows = await db
     .select({
       id: sosOffers.id,
@@ -366,7 +343,14 @@ export async function getMySosOffers() {
     .from(sosOffers)
     .innerJoin(sosRequests, eq(sosRequests.id, sosOffers.sosRequestId))
     .innerJoin(users, eq(users.id, sosRequests.patientId))
-    .where(and(eq(sosOffers.doctorId, doctorId), eq(sosOffers.status, "broadcast"), eq(sosRequests.status, "pending")))
+    .where(
+      and(
+        eq(sosOffers.doctorId, doctorId),
+        eq(sosOffers.status, "broadcast"),
+        eq(sosRequests.status, "pending"),
+        gt(sosRequests.createdAt, ttlCutoff)
+      )
+    )
     .orderBy(desc(sosRequests.createdAt));
   return rows.map((r) => ({
     id: r.id,
@@ -390,15 +374,64 @@ export async function getMyActiveRequest() {
   return req ?? null;
 }
 
-/** Doctor's current open case request id (for the en-route banner resume). */
+/** Doctor's current open case (for the en-route banner + live map resume). */
 export async function getMyActiveCase() {
   const doctor = await requireDoctor();
-  const doctorId = doctor.role === "receptionist" ? (doctor.doctorId ?? doctor.id) : doctor.id;
+  const doctorId = resolveDoctorId(doctor);
   const [caseRow] = await db
-    .select({ sosRequestId: sosCases.sosRequestId })
+    .select({
+      sosRequestId: sosCases.sosRequestId,
+      patientLatitude: sosRequests.latitude,
+      patientLongitude: sosRequests.longitude,
+    })
     .from(sosCases)
+    .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))
     .where(and(eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")))
     .orderBy(desc(sosCases.createdAt))
     .limit(1);
-  return caseRow?.sosRequestId ?? null;
+  return caseRow ?? null;
+}
+
+/** Patient's past SOS requests (resolved/cancelled/expired) — history view. */
+export async function getMySosHistory() {
+  const user = await requirePatient();
+  const rows = await db
+    .select({
+      id: sosRequests.id,
+      status: sosRequests.status,
+      complaint: sosRequests.complaint,
+      createdAt: sosRequests.createdAt,
+      acceptedAt: sosRequests.acceptedAt,
+      cancelledAt: sosRequests.cancelledAt,
+      acceptedBy: users.name,
+    })
+    .from(sosRequests)
+    .leftJoin(users, eq(users.id, sosRequests.acceptedBy))
+    .where(and(eq(sosRequests.patientId, user.id), sql`${sosRequests.status} IN ('completed','cancelled','expired')`))
+    .orderBy(desc(sosRequests.createdAt))
+    .limit(20);
+  return rows;
+}
+
+/** Doctor's past SOS cases — history view. */
+export async function getMySosCaseHistory() {
+  const doctor = await requireDoctor();
+  const doctorId = resolveDoctorId(doctor);
+  const rows = await db
+    .select({
+      id: sosCases.id,
+      requestId: sosCases.sosRequestId,
+      status: sosCases.status,
+      acceptedAt: sosCases.acceptedAt,
+      updatedAt: sosCases.updatedAt,
+      patientName: users.name,
+      complaint: sosRequests.complaint,
+    })
+    .from(sosCases)
+    .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))
+    .innerJoin(users, eq(users.id, sosCases.patientId))
+    .where(and(eq(sosCases.doctorId, doctorId), ne(sosCases.status, "open")))
+    .orderBy(desc(sosCases.acceptedAt))
+    .limit(20);
+  return rows;
 }

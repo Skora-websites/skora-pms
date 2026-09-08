@@ -7,14 +7,24 @@ import { db } from "@/lib/db";
 import { chatRooms, messages, favorites, userChatSettings, users } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
+import { isDupKey } from "@/lib/db/dup";
 
 async function getChatRoomId(): Promise<number> {
   const [room] = await db.select().from(chatRooms).where(eq(chatRooms.name, "Doctors Group"));
   if (room) return Number(room.id);
-  const [created] = await db
-    .insert(chatRooms)
-    .values({ name: "Doctors Group", type: "group", createdAt: new Date(), updatedAt: new Date() });
-  return Number(created.insertId);
+  try {
+    const [created] = await db
+      .insert(chatRooms)
+      .values({ name: "Doctors Group", type: "group", createdAt: new Date(), updatedAt: new Date() });
+    return Number(created.insertId);
+  } catch (err) {
+    // Concurrent creation lost the race — the winner's row exists now.
+    if (isDupKey(err)) {
+      const [room] = await db.select().from(chatRooms).where(eq(chatRooms.name, "Doctors Group"));
+      if (room) return Number(room.id);
+    }
+    throw err;
+  }
 }
 
 async function authedUser() {
@@ -45,6 +55,7 @@ export async function sendChatMessage(
   if (!(await requireChatSend(user))) return { error: "You don't have permission to send messages." };
   const content = String(formData.get("content") ?? "").trim();
   if (!content) return { error: "Message cannot be empty." };
+  if (content.length > 5000) return { error: "Message must be at most 5000 characters." };
   const roomId = await getChatRoomId();
 
   await db.insert(messages).values({
@@ -85,14 +96,29 @@ export async function pollChatMessages(sinceId: number) {
     .orderBy(desc(messages.id))
     .limit(50);
 
+  // Include the caller's own favorites so the star state survives polling
+  // (mirrors getChatData — without this, polled messages lose isMine/isFavorite
+  // and the Delete/Edit buttons never render for them).
+  const favRows = await db
+    .select({ messageId: favorites.messageId })
+    .from(favorites)
+    .where(eq(favorites.userId, user.id));
+  const favSet = new Set(favRows.map((f) => f.messageId));
+
   return rows
     .reverse()
-    .map((m) => ({ ...m, senderName: m.senderName ?? "Unknown" }));
+    .map((m) => ({
+      ...m,
+      senderName: m.senderName ?? "Unknown",
+      isMine: m.senderId === user.id,
+      isFavorite: favSet.has(m.id),
+    }));
 }
 
 export async function toggleChatFavorite(messageId: number): Promise<boolean> {
   const user = await authedUser();
   if (!(await requireChatView(user))) return false;
+  const now = new Date();
   const [existing] = await db
     .select({ id: favorites.id })
     .from(favorites)
@@ -103,13 +129,19 @@ export async function toggleChatFavorite(messageId: number): Promise<boolean> {
     await db.delete(favorites).where(eq(favorites.id, existing.id));
     nowFavorite = false;
   } else {
-    await db.insert(favorites).values({
-      userId: user.id,
-      messageId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    nowFavorite = true;
+    try {
+      await db.insert(favorites).values({
+        userId: user.id,
+        messageId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      nowFavorite = true;
+    } catch (err) {
+      // Lost a concurrent toggle race on the unique key — treat as favorited.
+      if (isDupKey(err)) return true;
+      throw err;
+    }
   }
   revalidatePath("/doctor/chat");
   return nowFavorite;
@@ -141,13 +173,26 @@ export async function toggleChatMute() {
       .set({ muted: !existing.muted, updatedAt: now })
       .where(eq(userChatSettings.id, existing.id));
   } else {
-    await db.insert(userChatSettings).values({
-      userId: user.id,
-      chatRoomId: roomId,
-      muted: true,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      await db.insert(userChatSettings).values({
+        userId: user.id,
+        chatRoomId: roomId,
+        muted: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (err) {
+      // Concurrent first-toggle race on the unique key — flip the winner's row.
+      if (isDupKey(err)) {
+        await db
+          .update(userChatSettings)
+          .set({ muted: true, updatedAt: now })
+          .where(and(eq(userChatSettings.userId, user.id), eq(userChatSettings.chatRoomId, roomId)));
+        revalidatePath("/doctor/chat");
+        return;
+      }
+      throw err;
+    }
   }
   revalidatePath("/doctor/chat");
 }
@@ -168,13 +213,26 @@ export async function clearChat() {
       .set({ lastClearedAt: now, updatedAt: now })
       .where(eq(userChatSettings.id, existing.id));
   } else {
-    await db.insert(userChatSettings).values({
-      userId: user.id,
-      chatRoomId: roomId,
-      lastClearedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      await db.insert(userChatSettings).values({
+        userId: user.id,
+        chatRoomId: roomId,
+        lastClearedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (err) {
+      // Concurrent first-clear race on the unique key — stamp the winner's row.
+      if (isDupKey(err)) {
+        await db
+          .update(userChatSettings)
+          .set({ lastClearedAt: now, updatedAt: now })
+          .where(and(eq(userChatSettings.userId, user.id), eq(userChatSettings.chatRoomId, roomId)));
+        revalidatePath("/doctor/chat");
+        return;
+      }
+      throw err;
+    }
   }
   revalidatePath("/doctor/chat");
 }
@@ -185,6 +243,7 @@ export async function updateChatMessage(messageId: number, content: string) {
   if (!(await requireChatSend(user))) return { error: "You don't have permission to edit messages." };
   const text = String(content ?? "").trim();
   if (!text) return { error: "Message cannot be empty." };
+  if (text.length > 5000) return { error: "Message must be at most 5000 characters." };
   const [existing] = await db
     .select({ id: messages.id })
     .from(messages)

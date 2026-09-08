@@ -26,24 +26,6 @@ function prune() {
   }
 }
 
-export function getClientIp(): string {
-  // Next.js server actions run on the server; when running behind a proxy,
-  // this will fall back to "unknown". Real deployments should set
-  // TRUST_PROXY_IP to a header name (e.g. "x-forwarded-for").
-  const override = process.env.TRUSTED_PROXY_HEADER;
-  if (override) {
-    const headers = (globalThis as Record<string, unknown>).__server_headers;
-    // Placeholder — replaced by a real header read in middleware when available.
-    void headers;
-  }
-  return "unknown";
-}
-
-/**
- * Check whether `key` is allowed to run `limit` times per `windowMs`.
- * Returns `true` if allowed; when blocked returns `false` and leaves the
- * remaining-wait computation to the caller via `retryAfterMs`.
- */
 export function rateLimit(
   key: string,
   limit: number,
@@ -70,9 +52,16 @@ export function rateLimit(
   return { allowed: true, retryAfterMs: 0 };
 }
 
+/** Forget past attempts for a key — e.g. after a successful login. */
+export function resetRateLimit(key: string) {
+  prune();
+  buckets.delete(key);
+}
+
 /** Dedicated helpers for common auth actions. */
 export const authRateLimit = {
   login: (email: string) => rateLimit(`login:${email}`, 5, 15 * 60_000),
+  loginReset: (email: string) => resetRateLimit(`login:${email}`),
   signup: (email: string) => rateLimit(`signup:${email}`, 3, 60 * 60_000),
   consent: (slug: string) => rateLimit(`consent:${slug}`, 10, 60 * 60_000),
   demo: (email: string) => rateLimit(`demo:${email}`, 5, 60 * 60_000),

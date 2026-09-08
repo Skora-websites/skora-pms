@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings, users } from "@/lib/db/schema";
 import { sendMail } from "@/lib/mail/send";
@@ -83,14 +83,26 @@ export async function uploadTestReport(
   await fs.mkdir(REPORT_DIR, { recursive: true });
   await fs.writeFile(path.join(REPORT_DIR, filename), bytes);
 
-  await db
+  // Conditional update: only a pending/in-progress booking with no report
+  // matches — two concurrent uploads can't both "win" and the second gets
+  // a clean error instead of silently replacing the first file.
+  const updated = await db
     .update(testBookings)
     .set({
       uploadedFilePath: relativePath,
       status: "completed",
       updatedAt: new Date(),
     })
-    .where(eq(testBookings.id, booking.id));
+    .where(
+      and(
+        eq(testBookings.id, booking.id),
+        isNull(testBookings.uploadedFilePath),
+        inArray(testBookings.status, ["pending", "in-progress"])
+      )
+    );
+  if (updated[0].affectedRows !== 1) {
+    return { error: "A report has already been uploaded for this booking. Contact the clinic if you need to upload again." };
+  }
 
   void audit.fileUploaded(booking.doctorId, {
     bookingId: booking.id,

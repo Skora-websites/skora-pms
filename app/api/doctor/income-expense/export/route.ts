@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
  *
  * Modes:
  *   GET /api/doctor/income-expense/export              → export all
- *       ?type=income|expense&start_date=...&end_date=...
+ *       ?type=income|expense&period=all|month|last_month&start_date=...&end_date=...
  *   POST /api/doctor/income-expense/export (ids: [..]) → export selected rows
  *
  * Ownership-scoped via getCurrentUser + getTransactions.
@@ -38,8 +38,10 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get("type");
   const startDate = searchParams.get("start_date");
   const endDate = searchParams.get("end_date");
+  const periodRaw = searchParams.get("period");
+  const period = periodRaw === "month" || periodRaw === "last_month" ? periodRaw : "all";
 
-  const { rows, incomeTypes: incomeCats, expenseTypes: expenseCats } = await getTransactions(doctorId);
+  const { rows, incomeTypes: incomeCats, expenseTypes: expenseCats } = await getTransactions(doctorId, period);
 
   let filtered = rows;
   if (type === "income") filtered = filtered.filter((r) => r.type === 1);

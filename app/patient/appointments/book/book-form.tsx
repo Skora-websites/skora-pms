@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarPlus, Clock, Loader2, MapPin, IndianRupee, BadgeCheck, Stethoscope, Home } from "lucide-react";
 import { createPatientAppointment } from "../actions";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,12 @@ function formatINR(n: string | null): string {
 
 export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
   const [state, formAction, pending] = useActionState(createPatientAppointment, initialState);
-  const [doctorId, setDoctorId] = useState("");
+  const searchParams = useSearchParams();
+  // Pre-select the doctor from ?doctor=<id> (Find a Doctor "Book" links).
+  const preselected = searchParams.get("doctor");
+  const validPreselect =
+    preselected && doctors.some((d) => String(d.id) === preselected) ? preselected : "";
+  const [doctorId, setDoctorId] = useState(validPreselect);
   const [date, setDate] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
   const [fetchedKey, setFetchedKey] = useState("");

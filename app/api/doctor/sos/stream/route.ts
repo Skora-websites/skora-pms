@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/user";
+import { resolveDoctorId } from "@/lib/dispatch/geo";
 import { subscribe } from "@/lib/dispatch/hub";
 
 export const runtime = "nodejs";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   if (!user || !["doctor", "receptionist", "admin"].includes(user.role)) {
     return new Response("Unauthorized", { status: 401 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolveDoctorId(user);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Bell, BellOff, CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
 import { acceptSos, completeSos, declineSos, setDoctorOnDuty, updateDoctorLocation } from "@/lib/dispatch/actions";
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
+import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
+import { SosLiveMap } from "@/components/sos/sos-live-map";
+import { useWakeLock } from "@/components/sos/use-wake-lock";
+import { primeAlarmAudio, startSosAlarm, stopSosAlarm } from "@/components/sos/sos-alarm";
 
 type Offer = {
   id: number;
@@ -19,27 +23,37 @@ export function EmergencyPanel({
   initialOffers,
   initialOnDuty,
   initialActiveCase,
+  initialCasePatient,
 }: {
   initialOffers: Offer[];
   initialOnDuty: boolean;
   initialActiveCase?: number | null;
+  initialCasePatient?: { lat: string; lng: string } | null;
 }) {
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [onDuty, setOnDuty] = useState(initialOnDuty);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeCase, setActiveCase] = useState<number | null>(initialActiveCase ?? null);
+  const [casePatient, setCasePatient] = useState<{ lat: string; lng: string } | null>(
+    initialCasePatient ?? null
+  );
+  const [ownPosition, setOwnPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const shareTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Keep the screen awake while an emergency case is active so the 5s GPS
+  // sharing loop isn't killed by the phone sleeping (Android + iOS 16.4+).
+  useWakeLock(activeCase != null);
+
   // Resolve push subscription state (permission + subscription) on mount.
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setPushEnabled(false);
-      return;
-    }
     const check = async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setPushEnabled(false);
+        return;
+      }
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = reg ? await reg.pushManager.getSubscription() : null;
       setPushEnabled(Notification.permission === "granted" && !!sub);
@@ -95,6 +109,7 @@ export function EmergencyPanel({
       try {
         const ev = JSON.parse(e.data);
         if (ev.type === "sos:new") {
+          startSosAlarm();
           setOffers((prev) =>
             prev.some((o) => o.requestId === ev.requestId)
               ? prev
@@ -120,13 +135,20 @@ export function EmergencyPanel({
     return () => es.close();
   }, [onDuty]);
 
-  // When an active case exists, share live GPS every 5s (Uber-style tracking).
+  // Stop the alarm when no offers remain (e.g. TTL expiry on the status poll).
+  useEffect(() => {
+    if (offers.length === 0) stopSosAlarm();
+  }, [offers.length]);
+
+  // When an active case exists, share live GPS every 5s (Uber-style tracking)
+  // and track own position for the doctor-side map.
   useEffect(() => {
     if (activeCase == null) return;
     if (!navigator.geolocation) return;
     const send = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          setOwnPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           void updateDoctorLocation(activeCase, pos.coords.latitude, pos.coords.longitude);
         },
         () => {
@@ -143,6 +165,7 @@ export function EmergencyPanel({
   }, [activeCase]);
 
   const toggleDuty = () => {
+    if (!onDuty) primeAlarmAudio(); // user gesture — unlocks iOS audio
     setBusy(true);
     startTransition(async () => {
       await setDoctorOnDuty(!onDuty);
@@ -154,6 +177,7 @@ export function EmergencyPanel({
 
   const accept = (requestId: number) => {
     setBusy(true);
+    stopSosAlarm();
     startTransition(async () => {
       const res = await acceptSos(requestId);
       if (res.error) alert(res.error);
@@ -181,6 +205,8 @@ export function EmergencyPanel({
     startTransition(async () => {
       await completeSos(requestId);
       setActiveCase(null);
+      setCasePatient(null);
+      setOwnPosition(null);
       setBusy(false);
       router.refresh();
     });
@@ -190,26 +216,37 @@ export function EmergencyPanel({
     <div className="space-y-4">
       {/* Active case banner — sharing live location */}
       {activeCase != null && (
-        <div className="card flex items-center justify-between border-emerald-200 p-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg">🚑</span>
-            <div>
-              <p className="font-bold text-emerald-700">En route — sharing live location</p>
-              <p className="text-xs text-slate-500">Your GPS position is visible to the patient (updated every 5s).</p>
+        <div className="overflow-hidden rounded-3xl border-2 border-emerald-200 bg-white shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg">🚑</span>
+              <div>
+                <p className="font-bold text-emerald-700">En route — sharing live location</p>
+                <p className="text-xs text-slate-500">Your GPS position is visible to the patient (updated every 5s).</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> LIVE
+              </span>
+              <button
+                onClick={() => complete(activeCase)}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-600" /> LIVE
-            </span>
-            <button
-              onClick={() => complete(activeCase)}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
-            </button>
-          </div>
+          {casePatient && (
+            <SosLiveMap
+              patientLat={Number(casePatient.lat)}
+              patientLng={Number(casePatient.lng)}
+              doctorLat={ownPosition?.lat ?? null}
+              doctorLng={ownPosition?.lng ?? null}
+              height={260}
+            />
+          )}
         </div>
       )}
       {/* On-duty toggle */}
@@ -301,14 +338,4 @@ export function EmergencyPanel({
       )}
     </div>
   );
-}
-
-/** Convert a base64url-encoded VAPID public key into a Uint8Array for pushManager.subscribe(). */
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const base64Norm = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64Norm);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
 }

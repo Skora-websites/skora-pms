@@ -3,8 +3,6 @@ import { Search, Pill, SlidersHorizontal } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getMedicineInventory } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
-import { AddMedicineForm } from "./add-medicine-form";
-import { MedicineCardActions } from "./medicine-card-actions";
 
 export const metadata: Metadata = { title: "Shop · Medicine Inventory · Doctor" };
 
@@ -24,8 +22,7 @@ export default async function ShopPage({
     <div>
       <PageHeader
         title="Medicine Inventory"
-        subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue`}
-        action={<AddMedicineForm />}
+        subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue · managed by SkoraCares`}
       />
 
       {/* Search + filter bar */}
@@ -73,8 +70,8 @@ export default async function ShopPage({
           </h3>
           <p className="mt-1 max-w-sm text-sm text-slate-500">
             {q
-              ? "Try a different keyword, or add a new medicine to the catalogue below."
-              : "Add your first medicine to build your inventory catalogue."}
+              ? "Try a different keyword to find a medicine."
+              : "The shared SkoraCares catalogue has no medicines yet."}
           </p>
         </div>
       ) : (
@@ -93,7 +90,6 @@ export default async function ShopPage({
                     </p>
                   </div>
                 </div>
-                <MedicineCardActions medicine={m} />
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-slate-50 pt-3">
                 <span className="rounded-full bg-accent-50 px-2.5 py-1 text-[11px] font-semibold text-accent-700">

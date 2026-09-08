@@ -48,7 +48,7 @@ export async function subscribeToPush(
 
 /** Remove a subscription (e.g. when the user revokes permission). */
 export async function unsubscribeFromPush(endpoint: string): Promise<PushActionResult> {
-  const user = await requireUser();
+  await requireUser();
   await db
     .delete(pushSubscriptions)
     .where(eq(pushSubscriptions.endpoint, endpoint));
