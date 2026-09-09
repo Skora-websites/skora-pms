@@ -70,7 +70,7 @@ function SectionForm({
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">Edit section: {section.name}</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit section: {section.name}</h2>
             <p className="mt-1 font-mono text-xs text-slate-400">key: {section.key}</p>
           </div>
           <button type="button" onClick={onDone} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -144,7 +144,7 @@ function ItemForm({
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {item ? `Edit item: ${item.title}` : `Add item to "${section.name}"`}
             </h2>
             <p className="mt-1 font-mono text-xs text-slate-400">section: {section.key}</p>
@@ -281,7 +281,7 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
           <div key={s.id} className="card overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="font-display text-base font-bold text-slate-900">{s.name}</h3>
+                <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{s.name}</h3>
                 <p className="mt-0.5 font-mono text-xs text-slate-400">
                   key: {s.key} · {s.title ?? "no heading"}
                 </p>
@@ -312,7 +312,7 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
                 {s.items.map((item, i) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900">
+                      <p className="text-sm font-semibold text-ink">
                         {item.title ?? "Untitled"}
                         {item.badge && <span className="ml-2 badge bg-amber-100 text-amber-800">{item.badge}</span>}
                       </p>

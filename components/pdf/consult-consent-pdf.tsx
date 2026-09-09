@@ -11,12 +11,12 @@ const styles = StyleSheet.create({
   },
   header: {
     textAlign: "center",
-    borderBottom: "2px solid #0e606e",
+    borderBottom: "2px solid #0e382b",
     paddingBottom: 16,
     marginBottom: 24,
   },
   headerTitle: {
-    color: "#0e606e",
+    color: "#0e382b",
     fontSize: 20,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
@@ -29,9 +29,9 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20 },
   sectionTitle: {
     fontFamily: "Helvetica-Bold",
-    color: "#0e606e",
+    color: "#0e382b",
     fontSize: 13,
-    borderLeft: "3px solid #46bccc",
+    borderLeft: "3px solid #1fd186",
     paddingLeft: 8,
     marginBottom: 10,
     backgroundColor: "#f8fafc",

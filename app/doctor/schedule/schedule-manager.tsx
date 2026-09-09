@@ -70,7 +70,7 @@ export function ScheduleManager({
         <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
                 <th className="px-4 py-2.5">Day</th>
                 <th className="px-4 py-2.5">Session</th>
                 <th className="px-4 py-2.5">Hours</th>

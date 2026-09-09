@@ -45,7 +45,7 @@ function MasterForm({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
-          <h2 className="font-display text-lg font-bold text-slate-900">
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
             {item ? `Edit ${kind.replace("-", " ").replace(/s$/, "")}` : `Add ${kind.replace("-", " ").replace(/s$/, "")}`}
           </h2>
           <button type="button" onClick={onDone} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -170,7 +170,7 @@ export function MasterPanel({
               }}
               className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                 active === t.kind
-                  ? "bg-navy-950 text-white"
+                  ? "bg-brand-700 text-white shadow-pop"
                   : "border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-800"
               }`}
             >
@@ -258,7 +258,7 @@ export function MasterPanel({
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                <td className="font-medium text-slate-900">{r.name}</td>
+                <td className="font-medium text-ink">{r.name}</td>
                 {active === "medicines" && (
                   <>
                     <td>{r.strength ?? "—"}</td>

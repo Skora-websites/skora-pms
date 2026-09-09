@@ -43,7 +43,7 @@ export function EditBillForm({
       <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">Edit bill</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit bill</h2>
             <p className="text-xs text-slate-400">Update amounts, payment details, or notes.</p>
           </div>
           <button

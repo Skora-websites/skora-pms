@@ -56,12 +56,12 @@ function NotificationRow({ item }: { item: Item }) {
     <Link
       href={item.link}
       onClick={() => { if (!item.read) startTransition(async () => { await markAsRead(item.id); }); }}
-      className={cn("text-sm font-semibold hover:underline", item.read ? "text-slate-600" : "text-slate-900")}
+      className={cn("text-sm font-semibold hover:underline", item.read ? "text-slate-600" : "text-ink")}
     >
       {item.title}
     </Link>
   ) : (
-    <p className={cn("text-sm font-semibold", item.read ? "text-slate-600" : "text-slate-900")}>
+    <p className={cn("text-sm font-semibold", item.read ? "text-slate-600" : "text-ink")}>
       {item.title}
     </p>
   );

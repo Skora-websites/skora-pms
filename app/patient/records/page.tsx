@@ -29,11 +29,11 @@ export default async function PatientRecordsPage() {
           {consultations.map((c) => (
             <div key={c.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-6 py-4">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 text-white">
                   <FileHeart className="h-5 w-5" />
                 </span>
                 <div>
-                  <h2 className="font-display text-sm font-bold text-slate-900">
+                  <h2 className="text-sm font-semibold text-ink">
                     Consultation · {formatDate(c.consultationDate)}
                   </h2>
                   <p className="text-xs text-slate-400">with {c.doctorName}</p>
@@ -53,21 +53,21 @@ export default async function PatientRecordsPage() {
               </div>
               <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Diagnosis</p>
+                  <p className="text-xs font-medium text-slate-500">Diagnosis</p>
                   <p className="mt-1.5 text-sm text-slate-700">{c.diagnosisNote ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Symptoms</p>
+                  <p className="text-xs font-medium text-slate-500">Symptoms</p>
                   <p className="mt-1.5 text-sm text-slate-700">{c.symptomsNote ?? "—"}</p>
                 </div>
               </div>
               {c.medications.length > 0 && (
                 <div className="border-t border-slate-100 px-6 py-5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Prescribed medicines</p>
+                  <p className="text-xs font-medium text-slate-500">Prescribed medicines</p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {c.medications.map((m) => (
                       <div key={m.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                        <span className="text-sm font-semibold text-slate-900">{m.medicineName}</span>
+                        <span className="text-sm font-semibold text-ink">{m.medicineName}</span>
                         <span className="text-xs text-slate-500">
                           {[m.dose, m.frequency, m.duration].filter(Boolean).join(" · ") || "—"}
                         </span>

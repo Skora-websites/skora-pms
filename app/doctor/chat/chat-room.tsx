@@ -141,11 +141,11 @@ export function ChatRoom({
     <div className="card overflow-hidden">
       {/* Chat header */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-700 to-accent-600 font-display text-sm font-bold text-white">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-700 font-display text-sm font-bold text-white">
           DG
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-display text-sm font-bold text-slate-900">Doctors Group</p>
+          <p className="text-sm font-semibold text-ink">Doctors Group</p>
           <p className="text-xs text-slate-400">
             <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-accent-500 align-middle" />
             {memberCount} member{memberCount === 1 ? "" : "s"} · {messages.length} messages
@@ -198,7 +198,7 @@ export function ChatRoom({
             <div key={m.id}>
               {day && (
                 <div className="my-4 flex items-center justify-center">
-                  <span className="rounded-full bg-white px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 shadow-sm">
+                  <span className="rounded-full bg-white px-3.5 py-1 text-xs text-slate-500 shadow-sm">
                     {day}
                   </span>
                 </div>
@@ -217,7 +217,7 @@ export function ChatRoom({
                     className={cn(
                       "inline-block rounded-2xl px-4 py-2.5 text-left text-sm shadow-sm",
                       m.isMine
-                        ? "rounded-br-sm bg-gradient-to-r from-brand-700 to-accent-700 text-white"
+                        ? "rounded-br-sm bg-brand-700 text-white"
                         : "rounded-bl-sm bg-white text-slate-800 ring-1 ring-slate-100"
                     )}
                   >
@@ -243,7 +243,7 @@ export function ChatRoom({
                         <input
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-brand-500 focus:outline-none"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink focus:border-brand-500 focus:outline-none"
                           autoFocus
                         />
                         <button

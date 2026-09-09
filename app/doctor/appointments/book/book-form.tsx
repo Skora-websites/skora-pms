@@ -159,7 +159,7 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
           <button
             type="button"
             onClick={() => setShowConsent(!showConsent)}
-            className="text-sm text-teal-700 underline hover:text-teal-800"
+            className="text-sm font-semibold text-brand-700 underline hover:text-brand-600"
           >
             {showConsent ? "Hide" : "Show"} consent form
           </button>
@@ -172,7 +172,7 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
               {CONSENT_TYPES.map((ct) => (
                 <label
                   key={ct.value}
-                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm cursor-pointer hover:border-teal-300 has-[:checked]:border-teal-500 has-[:checked]:bg-teal-50"
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm cursor-pointer hover:border-brand-300 has-[:checked]:border-brand-500 has-[:checked]:bg-accent-50"
                 >
                   <input
                     type="radio"
@@ -180,7 +180,7 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
                     value={ct.value}
                     checked={consentType === ct.value}
                     onChange={(e) => setConsentType(e.target.value)}
-                    className="accent-teal-600"
+                    className="accent-brand-700"
                   />
                   {ct.label}
                 </label>

@@ -48,7 +48,7 @@ export function MailSettingsForm({
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-800">
           <Save className="h-5 w-5" />
         </span>
-        <h2 className="font-display text-base font-bold text-slate-900">SMTP settings</h2>
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">SMTP settings</h2>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">

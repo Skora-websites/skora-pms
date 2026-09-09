@@ -42,7 +42,7 @@ export default async function PatientDetailPage({
 
       {/* Profile card */}
       <div className="card overflow-hidden">
-        <div className="h-24 bg-gradient-to-r from-brand-800 to-accent-700" />
+        <div className="h-24 bg-brand-800" />
         <div className="px-6 pb-6">
           <div className="-mt-10 flex flex-wrap items-end gap-4">
             {photoPath ? (
@@ -53,12 +53,12 @@ export default async function PatientDetailPage({
                 className="h-20 w-20 rounded-2xl border-4 border-white object-cover shadow-lg"
               />
             ) : (
-              <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 font-display text-xl font-bold text-white shadow-lg">
+              <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-brand-700 font-display text-xl font-bold text-white shadow-lg">
                 {initials(patient.name)}
               </span>
             )}
             <div className="pb-1">
-              <h1 className="font-display text-2xl font-extrabold text-slate-900">{patient.name}</h1>
+              <h1 className="font-display text-[26px] font-bold tracking-[-0.02em] text-ink">{patient.name}</h1>
               <p className="text-sm text-slate-400">
                 Patient · {patient.gender ? <span className="capitalize">{patient.gender}</span> : "—"}
                 {patient.dob ? ` · ${patient.dob}` : ""}
@@ -89,21 +89,21 @@ export default async function PatientDetailPage({
               <Phone className="h-4 w-4 text-brand-700" />
               <div>
                 <p className="text-xs text-slate-400">Phone</p>
-                <p className="text-sm font-semibold text-slate-900">{patient.phone ?? "—"}</p>
+                <p className="text-sm font-semibold text-ink">{patient.phone ?? "—"}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3.5">
               <Mail className="h-4 w-4 text-brand-700" />
               <div>
                 <p className="text-xs text-slate-400">Email</p>
-                <p className="truncate text-sm font-semibold text-slate-900">{patient.email ?? "—"}</p>
+                <p className="truncate text-sm font-semibold text-ink">{patient.email ?? "—"}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3.5">
               <MapPin className="h-4 w-4 text-brand-700" />
               <div>
                 <p className="text-xs text-slate-400">Location</p>
-                <p className="text-sm font-semibold text-slate-900">
+                <p className="text-sm font-semibold text-ink">
                   {[patient.city, patient.state].filter(Boolean).join(", ") || "—"}
                 </p>
               </div>
@@ -113,7 +113,7 @@ export default async function PatientDetailPage({
       </div>
 
       {/* Appointments */}
-      <h2 className="mb-3 mt-8 font-display text-lg font-bold text-slate-900">Appointment history</h2>
+      <h2 className="mb-3 mt-8 text-[17px] font-semibold tracking-[-0.01em] text-ink">Appointment history</h2>
       <div className="table-shell">
         <table className="data-table">
           <thead>
@@ -141,7 +141,7 @@ export default async function PatientDetailPage({
       </div>
 
       {/* Consultations */}
-      <h2 className="mb-3 mt-8 font-display text-lg font-bold text-slate-900">Consultation history</h2>
+      <h2 className="mb-3 mt-8 text-[17px] font-semibold tracking-[-0.01em] text-ink">Consultation history</h2>
       <div className="space-y-3">
         {consultations.length === 0 && (
           <p className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
@@ -154,7 +154,7 @@ export default async function PatientDetailPage({
               <Stethoscope className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-semibold text-slate-900">
+              <p className="font-semibold text-ink">
                 {formatDate(c.consultationDate)}
                 {c.followUpDate ? ` · Follow-up ${c.followUpDate}` : ""}
               </p>

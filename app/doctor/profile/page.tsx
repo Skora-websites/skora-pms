@@ -17,7 +17,7 @@ export default async function ProfilePage() {
       <PageHeader title="Profile settings" subtitle="Your account details" />
 
       <div className="card overflow-hidden">
-        <div className="h-24 bg-gradient-to-r from-brand-800 to-accent-700" />
+        <div className="h-24 bg-brand-800" />
         <div className="px-7 pb-7">
           <div className="-mt-10 flex items-end gap-4">
             <PhotoUpload
@@ -25,7 +25,7 @@ export default async function ProfilePage() {
               photoUrl={user.profilePhotoPath ? "/api/doctor/profile/photo" : null}
             />
             <div className="pb-1">
-              <h1 className="font-display text-xl font-extrabold text-slate-900">{user.name}</h1>
+              <h1 className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink sm:text-[26px]">{user.name}</h1>
               <p className="text-sm capitalize text-slate-400">{user.role.replace("_", " ")}</p>
             </div>
           </div>
@@ -67,7 +67,7 @@ function InfoTile({
       </span>
       <div className="min-w-0">
         <p className="text-xs text-slate-400">{label}</p>
-        <p className="truncate text-sm font-semibold text-slate-900">{value}</p>
+        <p className="truncate text-sm font-semibold text-ink">{value}</p>
       </div>
     </div>
   );

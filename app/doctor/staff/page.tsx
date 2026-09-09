@@ -68,11 +68,11 @@ export default async function StaffPage() {
           {staff.map((s) => (
             <div key={s.id} className="card p-5">
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-navy-800 to-brand-700 text-sm font-bold text-white">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-100 text-brand-700 text-sm font-bold text-white">
                   {initials(s.name)}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-slate-900">{s.name}</p>
+                  <p className="truncate font-semibold text-ink">{s.name}</p>
                   <p className="truncate text-xs capitalize text-slate-400">
                     {roleOfStaff.get(s.id) ?? s.role}
                   </p>

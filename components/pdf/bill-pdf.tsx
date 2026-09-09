@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     textAlign: "center",
-    color: "#0e606e",
+    color: "#0e382b",
     fontSize: 16,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1,
@@ -62,10 +62,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   sectionTitle: {
-    color: "#0e606e",
+    color: "#0e382b",
     fontSize: 10,
     fontFamily: "Helvetica-Bold",
-    borderLeft: "3px solid #46bccc",
+    borderLeft: "3px solid #1fd186",
     paddingLeft: 8,
     backgroundColor: "#f1f5f9",
     paddingVertical: 4,
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "#fafafa",
     fontSize: 8.5,
-    borderLeft: "3px solid #46bccc",
+    borderLeft: "3px solid #1fd186",
   },
   footer: {
     position: "absolute",

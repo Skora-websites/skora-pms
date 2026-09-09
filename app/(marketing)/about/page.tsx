@@ -70,7 +70,7 @@ export default function AboutPage() {
           </div>
 
           <div className="relative">
-            <div className="rounded-3xl bg-gradient-to-br from-brand-800 to-accent-700 p-10 shadow-float">
+            <div className="rounded-3xl bg-brand-800 p-10 shadow-float">
               <p className="font-display text-5xl font-extrabold text-white">2,000+</p>
               <p className="mt-2 text-white/80">Healthcare providers trust SkoraCares</p>
               <div className="mt-8 grid grid-cols-3 gap-4">

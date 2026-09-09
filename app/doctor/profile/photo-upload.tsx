@@ -35,7 +35,7 @@ export function PhotoUpload({
           onClick={() => inputRef.current?.click()}
           disabled={pending}
           title="Change photo"
-          className="group relative block h-20 w-20 overflow-hidden rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 shadow-lg"
+          className="group relative block h-20 w-20 overflow-hidden rounded-2xl border-4 border-white bg-brand-700 shadow-lg"
         >
           {photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element

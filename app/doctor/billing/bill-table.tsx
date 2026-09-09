@@ -53,7 +53,7 @@ export function BillTable({
             {bills.map((b) => (
               <tr key={b.id}>
                 <td className="font-mono text-xs font-semibold text-brand-800">{b.billNumber}</td>
-                <td className="font-semibold text-slate-900">{b.patientName ?? "—"}</td>
+                <td className="font-semibold text-ink">{b.patientName ?? "—"}</td>
                 <td>{formatDate(b.billDate)}</td>
                 <td className="font-semibold">{formatINR(b.totalAmount)}</td>
                 <td className="text-accent-700">{formatINR(b.receivedAmount)}</td>

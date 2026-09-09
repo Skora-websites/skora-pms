@@ -37,11 +37,11 @@ export default async function DoctorsPage({
           {doctors.map((d) => (
             <div key={d.id} className="card card-hover p-5">
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-sm font-bold text-white">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-700 text-sm font-bold text-white">
                   {initials(d.name)}
                 </span>
                 <div className="min-w-0">
-                  <Link href={`/super-admin/doctors/${d.id}`} className="truncate font-semibold text-slate-900 hover:text-brand-800 hover:underline">
+                  <Link href={`/super-admin/doctors/${d.id}`} className="truncate font-semibold text-ink hover:text-brand-800 hover:underline">
                     {d.name}
                   </Link>
                   <p className="truncate text-xs text-slate-400">{d.email}</p>

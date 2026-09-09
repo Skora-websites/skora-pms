@@ -30,7 +30,7 @@ export default async function HomePage() {
           <div className="relative hidden lg:block">
             <div className="animate-float rounded-3xl border border-brand-900/5 bg-white p-7 shadow-float">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-700 to-accent-600 font-display text-base font-bold text-white">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-base font-bold text-white">
                   AS
                 </div>
                 <div>
@@ -58,7 +58,7 @@ export default async function HomePage() {
                   <span>72%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-brand-100">
-                  <div className="h-full w-[72%] rounded-full bg-gradient-to-r from-brand-700 to-accent-500" />
+                  <div className="h-full w-[72%] rounded-full bg-accent-500" />
                 </div>
               </div>
             </div>
@@ -106,7 +106,7 @@ export default async function HomePage() {
                   key={f.id}
                   className="group rounded-2xl border border-brand-900/10 bg-gradient-to-br from-brand-50/70 to-accent-50/50 p-7 transition-all duration-300 hover:-translate-y-1.5 hover:border-brand-700/30 hover:shadow-soft"
                 >
-                  <div className="mb-5 flex h-13 w-13 items-center justify-center rounded-xl bg-white text-2xl shadow-sm ring-1 ring-brand-900/5 transition-all duration-300 group-hover:bg-gradient-to-br group-hover:from-brand-700 group-hover:to-accent-600">
+                  <div className="mb-5 flex h-13 w-13 items-center justify-center rounded-xl bg-white text-2xl shadow-sm ring-1 ring-brand-900/5 transition-all duration-300 group-hover:bg-brand-700 group-hover:text-white">
                     {f.icon}
                   </div>
                   <h3 className="font-display text-lg font-bold text-ink">{f.title}</h3>
@@ -119,7 +119,7 @@ export default async function HomePage() {
       )}
 
       {/* ── STATS BAND ───────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-r from-brand-800 to-accent-700 py-16">
+      <section className="relative overflow-hidden bg-navy-950 py-16">
         <div className="pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full bg-white/5" />
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-8 px-5 text-center lg:grid-cols-4 lg:px-8">
           {[
@@ -249,7 +249,7 @@ export default async function HomePage() {
                     “{t.description}”
                   </p>
                   <div className="mt-6 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-brand-700 to-accent-600 font-display text-sm font-bold text-white">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-sm font-bold text-white">
                       {t.title}
                     </div>
                     <div>
@@ -296,7 +296,7 @@ export default async function HomePage() {
       {/* ── CTA ──────────────────────────────────────────────────────── */}
       {cta && (
         <section className="px-5 py-24 lg:px-8">
-          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-r from-brand-800 to-accent-700 px-8 py-16 text-center">
+          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-brand-800 px-8 py-16 text-center">
             <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-white/5" />
             <div className="pointer-events-none absolute -bottom-20 -right-10 h-72 w-72 rounded-full bg-white/5" />
             <h2 className="relative font-display text-3xl font-extrabold text-white lg:text-4xl">

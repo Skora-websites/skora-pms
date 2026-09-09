@@ -90,12 +90,12 @@ export default async function SchedulePage() {
                     unoptimized
                   />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 text-white">
                     <MapPin className="h-5 w-5" />
                   </span>
                 )}
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-display text-base font-bold text-slate-900">{clinic.clinicName}</h2>
+                  <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{clinic.clinicName}</h2>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <Phone className="h-3 w-3" />
@@ -124,7 +124,7 @@ export default async function SchedulePage() {
                             daySchedules.length ? "border-brand-100 bg-brand-50/40" : "border-dashed border-slate-200"
                           }`}
                         >
-                          <p className="font-display text-sm font-bold capitalize text-slate-900">{day}</p>
+                          <p className="font-display text-sm font-bold capitalize text-ink">{day}</p>
                           <div className="mt-3 space-y-2">
                             {daySchedules.length === 0 && (
                               <p className="text-xs text-slate-400">—</p>

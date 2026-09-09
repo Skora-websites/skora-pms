@@ -22,7 +22,7 @@ export default async function ConsentPage({
       <div className="w-full max-w-lg">
         <div className="rounded-3xl border border-brand-900/10 bg-white p-8 shadow-float">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-700 text-white">
               <ShieldCheck className="h-6 w-6" />
             </div>
             <div>

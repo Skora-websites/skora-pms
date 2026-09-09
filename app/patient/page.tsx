@@ -33,18 +33,18 @@ export default async function PatientDashboardPage() {
         subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} · ${consultations.length} consultation${consultations.length === 1 ? "" : "s"}`}
       />
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={CalendarDays} tone="brand" label="Upcoming visits" value={stats.upcoming} hint="Scheduled with your doctor" />
         <StatCard icon={CalendarCheck2} tone="accent" label="Completed visits" value={stats.completed} hint="Of all appointments" />
         <StatCard icon={FileHeart} tone="amber" label="Consultations" value={stats.consultations} hint="Records on file" />
         <StatCard icon={Wallet} tone="rose" label="Total billed" value={formatINR(stats.billed)} hint="All time" />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         {/* Upcoming appointments */}
         <div>
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-base font-bold text-slate-900">Your appointments</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Your appointments</h2>
             <Link href="/patient/appointments" className="group inline-flex items-center gap-1 text-xs font-semibold text-brand-800 hover:text-brand-600">
               View all <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
@@ -60,11 +60,11 @@ export default async function PatientDashboardPage() {
               {appointments.slice(0, 5).map((a) => (
                 <div key={a.id} className="card card-hover p-4">
                   <div className="flex items-center gap-4">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-navy-950 text-accent-400">
                       <Stethoscope className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-slate-900">
+                      <p className="truncate font-semibold text-ink">
                         {a.doctorName}
                         {a.doctorQualification ? <span className="ml-1 text-xs font-normal text-slate-400">{a.doctorQualification}</span> : null}
                       </p>
@@ -82,7 +82,7 @@ export default async function PatientDashboardPage() {
 
         {/* Recent consultations */}
         <div>
-          <h2 className="mb-4 font-display text-base font-bold text-slate-900">Recent consultations</h2>
+          <h2 className="mb-4 text-[17px] font-semibold tracking-[-0.01em] text-ink">Recent consultations</h2>
           {consultations.length === 0 ? (
             <EmptyState
               icon={FileHeart}
@@ -94,7 +94,7 @@ export default async function PatientDashboardPage() {
               {consultations.slice(0, 4).map((c) => (
                 <div key={c.id} className="card p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-900">{formatDate(c.consultationDate)}</p>
+                    <p className="text-sm font-semibold text-ink">{formatDate(c.consultationDate)}</p>
                     <span className="badge bg-brand-100 text-brand-800">{c.doctorName}</span>
                   </div>
                   <p className="mt-2 text-sm text-slate-500">{c.diagnosisNote ?? c.symptomsNote ?? "Consultation notes"}</p>
@@ -120,7 +120,7 @@ export default async function PatientDashboardPage() {
 
       {/* Quick actions */}
       <div className="mt-6">
-        <h2 className="mb-3 font-display text-base font-bold text-slate-900">Quick actions</h2>
+        <h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">Quick actions</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { icon: Stethoscope, label: "Find a doctor", href: "/patient/find-doctor" },
@@ -133,12 +133,12 @@ export default async function PatientDashboardPage() {
             <Link
               key={q.href}
               href={q.href}
-              className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-soft"
+              className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-soft"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-800">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-100 text-accent-700">
                 <q.icon className="h-5 w-5" />
               </span>
-              <span className="text-sm font-semibold text-slate-900">{q.label}</span>
+              <span className="text-sm font-semibold text-ink">{q.label}</span>
               <ArrowUpRight className="ml-auto h-4 w-4 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-brand-700" />
             </Link>
           ))}

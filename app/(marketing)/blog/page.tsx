@@ -34,7 +34,7 @@ export default async function BlogPage() {
                   href={`/blog/${post.slug}`}
                   className="group flex flex-col overflow-hidden rounded-2xl border border-brand-900/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-soft"
                 >
-                  <div className="flex h-44 items-center justify-center bg-gradient-to-br from-brand-800 to-accent-700">
+                  <div className="flex h-44 items-center justify-center bg-brand-800">
                     <span className="text-5xl opacity-90 transition-transform duration-300 group-hover:scale-110">
                       🩺
                     </span>

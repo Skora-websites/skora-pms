@@ -37,11 +37,11 @@ export function UsersList({
         <div key={u.id} className="card p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-navy-800 to-brand-700 text-xs font-bold text-white">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-accent-100 text-brand-700 text-xs font-bold text-white">
                 {initials(u.name)}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">
+                <p className="truncate text-sm font-semibold text-ink">
                   {u.name}
                   {u.id === currentUserId && <span className="ml-1.5 text-xs font-medium text-brand-700">(you)</span>}
                 </p>

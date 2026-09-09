@@ -88,7 +88,7 @@ export function MobileAppShell({
             <button
               onClick={() => setProfileOpen((v) => !v)}
               aria-label="Profile"
-              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-xs font-bold text-white"
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-brand-700 text-xs font-bold text-white"
             >
               {user.profilePhotoPath ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -106,7 +106,7 @@ export function MobileAppShell({
         <div ref={sheetRef} className="fixed inset-x-0 top-0 z-50">
           <div className="mx-auto max-w-md rounded-b-3xl bg-white p-4 shadow-2xl">
             <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-sm font-bold text-white">
+              <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-brand-700 text-sm font-bold text-white">
                 {user.profilePhotoPath ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src="/api/doctor/profile/photo" alt={user.name} className="h-full w-full object-cover" />

@@ -53,7 +53,7 @@ function BlogForm({
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {blog ? `Edit post: ${blog.title}` : "New blog post"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">The slug is generated automatically from the title.</p>
@@ -149,7 +149,7 @@ function CategoryForm({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onDone}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
-          <h2 className="font-display text-lg font-bold text-slate-900">
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
             {category ? `Edit category: ${category.name}` : "New category"}
           </h2>
           <button type="button" onClick={onDone} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -255,7 +255,7 @@ export function BlogManager({
             {blogs.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <p className="font-semibold text-slate-900">{p.title}</p>
+                  <p className="font-semibold text-ink">{p.title}</p>
                   <p className="text-xs text-slate-400">{p.slug}</p>
                 </td>
                 <td><span className="badge bg-brand-100 text-brand-800">{p.categoryName ?? "Uncategorized"}</span></td>
@@ -308,7 +308,7 @@ export function BlogManager({
             <FolderPlus className="h-4.5 w-4.5" />
           </span>
           <div className="flex-1">
-            <h2 className="font-display text-base font-bold text-slate-900">Categories</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Categories</h2>
             <p className="text-xs text-slate-500">Used to group blog posts on the public site.</p>
           </div>
           <button

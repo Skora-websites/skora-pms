@@ -48,7 +48,7 @@ export default async function ShopPage({
                   value={f}
                   className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
                     activeForm === f
-                      ? "bg-brand-800 text-white"
+                      ? "bg-brand-700 text-white shadow-pop"
                       : "bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-brand-800"
                   }`}
                 >
@@ -65,7 +65,7 @@ export default async function ShopPage({
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
             <Pill className="h-7 w-7" />
           </div>
-          <h3 className="mt-4 font-display text-base font-bold text-slate-900">
+          <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-ink">
             {q ? "No medicines match your search" : "The catalogue is empty"}
           </h3>
           <p className="mt-1 max-w-sm text-sm text-slate-500">
@@ -80,11 +80,11 @@ export default async function ShopPage({
             <div key={m.id} className="card card-hover group p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-white shadow-md transition-transform group-hover:scale-105">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-md transition-transform group-hover:scale-105">
                     <Pill className="h-6 w-6" />
                   </span>
                   <div className="min-w-0">
-                    <h3 className="font-display text-base font-bold text-slate-900">{m.name}</h3>
+                    <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h3>
                     <p className="mt-0.5 text-xs text-slate-400">
                       {[m.strength, m.unit].filter(Boolean).join(" ")} · {m.form}
                     </p>

@@ -51,7 +51,7 @@ export function NotificationSettings() {
       {Object.entries(prefs).map(([event, channels]) => (
         <div key={event} className="rounded-xl border border-slate-200 p-5">
           <div>
-            <h3 className="font-semibold text-slate-900">
+            <h3 className="font-semibold text-ink">
               {EVENT_LABELS[event as keyof NotificationPrefs] || event}
             </h3>
             <p className="text-xs text-slate-400">

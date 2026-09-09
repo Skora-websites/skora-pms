@@ -130,7 +130,7 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-100 text-brand-800">
             <CalendarCheck className="h-4.5 w-4.5" />
           </span>
-          <h2 className="font-display text-base font-bold text-slate-900">Attendance</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Attendance</h2>
         </div>
         <div className="flex rounded-xl border border-slate-200 p-1">
           <button
@@ -187,7 +187,7 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
               <div className="overflow-hidden rounded-xl border border-slate-200">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
                       <th className="px-4 py-2.5">Staff</th>
                       <th className="px-4 py-2.5">Status</th>
                       <th className="px-4 py-2.5">Check in</th>
@@ -300,7 +300,7 @@ export function AttendancePanel({ staff }: { staff: StaffLite[] }) {
               <div className="slim-scroll overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
                       <th className="px-3 py-2.5">Staff</th>
                       <th className="px-3 py-2.5 text-center">P</th>
                       <th className="px-3 py-2.5 text-center">A</th>

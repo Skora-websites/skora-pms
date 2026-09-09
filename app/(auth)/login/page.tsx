@@ -8,7 +8,7 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Brand panel */}
-      <div className="relative hidden overflow-hidden bg-gradient-to-br from-brand-900 via-brand-800 to-accent-800 lg:block">
+      <div className="relative hidden overflow-hidden bg-navy-950 lg:block">
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-white/5" />
         <div className="relative flex h-full flex-col justify-between p-12">
@@ -36,7 +36,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Mobile app-style brand header */}
           <div className="mb-8 text-center lg:mb-10">
-            <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-brand-700 to-accent-600 font-display text-2xl font-extrabold text-white shadow-lg shadow-brand-700/20">
+            <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-brand-700 font-display text-2xl font-extrabold text-white shadow-lg shadow-brand-700/20">
               S
             </span>
             <h2 className="mt-4 font-display text-2xl font-extrabold text-ink lg:text-3xl">SkoraCares</h2>

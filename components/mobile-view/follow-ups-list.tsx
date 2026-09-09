@@ -29,7 +29,7 @@ export function FollowUpList({
     <div className={cn("card p-4", !isPending && "opacity-60")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-900">{f.patientName}</p>
+          <p className="truncate text-sm font-semibold text-ink">{f.patientName}</p>
           <p className="truncate text-xs text-slate-400">{f.patientPhone}</p>
         </div>
         <StatusBadge status={f.followUpStatus ?? "pending"} />

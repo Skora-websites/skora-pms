@@ -45,7 +45,7 @@ export function BillCards({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-mono text-xs font-semibold text-brand-800">{b.billNumber}</p>
-                <p className="truncate text-sm font-semibold text-slate-900">{b.patientName ?? "—"}</p>
+                <p className="truncate text-sm font-semibold text-ink">{b.patientName ?? "—"}</p>
                 <p className="text-xs text-slate-400">{formatDate(b.billDate)}</p>
               </div>
               <StatusBadge status={b.status} />
@@ -53,7 +53,7 @@ export function BillCards({
             <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
               <div>
                 <p className="text-slate-400">Total</p>
-                <p className="font-semibold text-slate-900">{formatINR(b.totalAmount)}</p>
+                <p className="font-semibold text-ink">{formatINR(b.totalAmount)}</p>
               </div>
               <div>
                 <p className="text-slate-400">Received</p>

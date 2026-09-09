@@ -78,11 +78,11 @@ export default async function PatientsPage({
               className="card card-hover group p-5"
             >
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-sm font-bold text-white">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-700 text-sm font-bold text-white">
                   {initials(p.name)}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-900">{p.name}</p>
+                  <p className="truncate font-semibold text-ink">{p.name}</p>
                   <p className="truncate text-xs text-slate-400">
                     {p.registrationId ?? `#${p.id}`}
                     {p.phone ? ` · ${p.phone}` : p.email ? ` · ${p.email}` : ""}

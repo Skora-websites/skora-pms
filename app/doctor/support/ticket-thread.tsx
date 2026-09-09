@@ -42,7 +42,7 @@ export function TicketThread({
             className={cn(
               "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
               m.isAdminReply
-                ? "rounded-tl-sm bg-gradient-to-r from-brand-700 to-accent-700 text-white"
+                ? "rounded-tl-sm bg-brand-700 text-white"
                 : "rounded-tr-sm bg-slate-100 text-slate-800"
             )}
           >

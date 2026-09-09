@@ -20,7 +20,7 @@ export function BillForm({
 
   return (
     <div className="card p-7">
-      <h2 className="font-display text-base font-bold text-slate-900">Generate new bill</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Generate new bill</h2>
       <form action={formAction} className="mt-5 space-y-5">
         <div>
           <label htmlFor="patient_id" className="label">Patient</label>

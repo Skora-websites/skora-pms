@@ -49,7 +49,7 @@ function UserForm({
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {user ? `Edit user: ${user.name}` : "Create user"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">Accounts created here can sign in immediately.</p>
@@ -214,11 +214,11 @@ export function UsersTable({
               <tr key={u.id}>
                 <td>
                   <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-navy-800 to-brand-700 text-xs font-bold text-white">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-100 text-brand-700 text-xs font-bold text-white">
                       {initials(u.name)}
                     </span>
                     <div>
-                      <p className="font-semibold text-slate-900">
+                      <p className="font-semibold text-ink">
                         {u.name}
                         {u.id === currentUserId && <span className="ml-2 text-xs font-medium text-brand-700">(you)</span>}
                       </p>

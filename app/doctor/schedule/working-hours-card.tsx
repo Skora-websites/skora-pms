@@ -17,8 +17,8 @@ export function WorkingHoursCard({
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wide capitalize text-slate-400">{day}</p>
-        <p className="truncate font-display text-sm font-bold text-slate-900">{title}</p>
+        <p className="text-xs font-medium capitalize text-slate-500">{day}</p>
+        <p className="truncate text-sm font-semibold text-ink">{title}</p>
         <p className="truncate text-xs text-slate-500">{subtitle}</p>
       </div>
     </div>

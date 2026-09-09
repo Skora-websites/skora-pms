@@ -11,6 +11,8 @@ export function DashboardShell({
   unreadCount,
   footerHref,
   footerLabel,
+  searchHref,
+  promo = false,
   children,
 }: {
   navItems: NavItem[];
@@ -18,6 +20,10 @@ export function DashboardShell({
   unreadCount?: number;
   footerHref: string;
   footerLabel: string;
+  /** Where the top-bar global search routes its query (e.g. /doctor/patients). */
+  searchHref?: string;
+  /** Show the sidebar "Download Doctor App" promo card (doctor shell only). */
+  promo?: boolean;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -41,6 +47,7 @@ export function DashboardShell({
         onCloseMobile={() => setMobileOpen(false)}
         footerHref={footerHref}
         footerLabel={footerLabel}
+        promo={promo}
       />
 
       {/* Content column: header + main share the sidebar offset so the
@@ -51,7 +58,7 @@ export function DashboardShell({
           collapsed ? "lg:pl-[76px]" : "lg:pl-64"
         }`}
       >
-        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} />
+        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} searchHref={searchHref} />
         {/* Single page content — never duplicated. Mobile: gutters + bottom
             tab bar clearance. Desktop: top padding below the in-flow header. */}
         <main className="overflow-x-hidden px-4 pb-24 pt-14 lg:px-8 lg:pb-8 lg:pt-6">

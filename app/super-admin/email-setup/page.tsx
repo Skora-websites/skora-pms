@@ -45,7 +45,7 @@ export default async function EmailSetupPage() {
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100 text-brand-800">
               <Mail className="h-5 w-5" />
             </span>
-            <h2 className="font-display text-base font-bold text-slate-900">Sender identity</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Sender identity</h2>
           </div>
           <p className="mt-2 text-sm text-slate-500">
             Emails are sent from the company sender identity configured in Settings.
@@ -59,7 +59,7 @@ export default async function EmailSetupPage() {
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
                 <span className="text-slate-400">{label}</span>
-                <span className="font-semibold text-slate-900">{value}</span>
+                <span className="font-semibold text-ink">{value}</span>
               </div>
             ))}
           </div>

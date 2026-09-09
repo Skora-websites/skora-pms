@@ -26,7 +26,7 @@ export function Pricing({ items }: { items: LandingItem[] }) {
           onClick={() => setYearly((v) => !v)}
           className={cn(
             "relative h-7 w-14 rounded-full transition-colors duration-300",
-            yearly ? "bg-gradient-to-r from-brand-700 to-accent-600" : "bg-slate-300"
+            yearly ? "bg-brand-700" : "bg-slate-300"
           )}
           aria-label="Toggle billing period"
         >
@@ -60,7 +60,7 @@ export function Pricing({ items }: { items: LandingItem[] }) {
               )}
             >
               {featured && (
-                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-1.5 text-xs font-bold text-white shadow-md">
+                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-brand-700 px-5 py-1.5 text-xs font-bold text-white shadow-md">
                   {plan.badge}
                 </span>
               )}
@@ -104,7 +104,7 @@ export function Pricing({ items }: { items: LandingItem[] }) {
                 className={cn(
                   "mt-8 block rounded-full py-3 text-center text-sm font-semibold transition-all",
                   featured
-                    ? "bg-gradient-to-r from-brand-700 to-accent-600 text-white shadow-lg shadow-brand-700/25 hover:-translate-y-0.5"
+                    ? "bg-brand-700 text-white hover:bg-brand-600 shadow-lg shadow-brand-700/25 hover:-translate-y-0.5"
                     : "border-2 border-brand-200 text-brand-800 hover:border-brand-700 hover:bg-brand-50"
                 )}
               >

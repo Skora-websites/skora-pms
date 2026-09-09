@@ -52,7 +52,7 @@ function ClinicForm({
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
               {clinic ? `Edit clinic: ${clinic.clinicName}` : "Create clinic"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">Add or update a clinic location for any doctor.</p>
@@ -192,7 +192,7 @@ export function ClinicsPanel({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {clinics.map((c) => (
             <div key={c.id} className="card card-hover overflow-hidden">
-              <div className="h-20 bg-gradient-to-r from-brand-800 to-accent-700 p-4">
+              <div className="h-20 bg-brand-800 p-4">
                 <div className="flex items-start justify-between">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white">
                     <Building2 className="h-5 w-5" />
@@ -201,7 +201,7 @@ export function ClinicsPanel({
                 </div>
               </div>
               <div className="p-5">
-                <h3 className="font-display text-base font-bold text-slate-900">{c.clinicName}</h3>
+                <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{c.clinicName}</h3>
                 <p className="mt-1 text-sm text-slate-500">Owned by {c.doctorName}</p>
                 <div className="mt-4 space-y-2 text-sm text-slate-500">
                   <p className="flex items-start gap-2">

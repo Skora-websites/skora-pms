@@ -37,27 +37,29 @@ export default async function DoctorLayout({
 
   // Shared route→permission map (lib/auth/permissions.ts) — the same map the
   // server actions and the page gate enforce. Keeps nav + guards in sync.
-  const NAV_BY_PERM: { perm: string; label: string; href: string; icon: NavItem["icon"]; exact?: boolean }[] = [
+  // `section` only affects sidebar grouping (DESIGN.md §5.1); access control
+  // is unchanged.
+  const NAV_BY_PERM: { perm: string; label: string; href: string; icon: NavItem["icon"]; exact?: boolean; section?: string }[] = [
     { perm: "dashboard", label: "Dashboard", href: "/doctor", icon: "layout-dashboard", exact: true },
-    { perm: "schedule", label: "Schedule Time", href: "/doctor/schedule", icon: "calendar-clock" },
-    { perm: "registrations", label: "Registrations", href: "/doctor/patients", icon: "user-plus" },
-    { perm: "appointments", label: "Appointments", href: "/doctor/appointments", icon: "calendar-days" },
-    { perm: "follow-up", label: "Follow Ups", href: "/doctor/follow-ups", icon: "phone-call" },
-    { perm: "income-expense", label: "Income & Expense", href: "/doctor/income-expense", icon: "wallet" },
-    { perm: "test-booking", label: "Test Booking", href: "/doctor/test-bookings", icon: "test-tube" },
-    { perm: "billing", label: "Billing", href: "/doctor/billing", icon: "calculator" },
-    { perm: "home-visit", label: "Home Visit", href: "/doctor/home-visits", icon: "home" },
-    { perm: "chat", label: "Chat", href: "/doctor/chat", icon: "messages-square" },
-    { perm: "shop", label: "Shop", href: "/doctor/shop", icon: "shopping-cart" },
-    { perm: "support", label: "Support", href: "/doctor/support", icon: "headset" },
-    { perm: "dashboard", label: "Notifications", href: "/doctor/notifications", icon: "bell" },
-    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren" },
-    { perm: "dashboard", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope" },
-    { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video" },
-    { perm: "dashboard", label: "FAQ", href: "/doctor/faq", icon: "help-circle" },
-    { perm: "dashboard", label: "Consult PDF", href: "/doctor/consult-pdf", icon: "file-text" },
-    { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users" },
-    { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog" },
+    { perm: "schedule", label: "Schedule Time", href: "/doctor/schedule", icon: "calendar-clock", section: "Clinical modules" },
+    { perm: "registrations", label: "Registrations", href: "/doctor/patients", icon: "user-plus", section: "Clinical modules" },
+    { perm: "appointments", label: "Appointments", href: "/doctor/appointments", icon: "calendar-days", section: "Clinical modules" },
+    { perm: "follow-up", label: "Follow Ups", href: "/doctor/follow-ups", icon: "phone-call", section: "Clinical modules" },
+    { perm: "income-expense", label: "Income & Expense", href: "/doctor/income-expense", icon: "wallet", section: "Clinical modules" },
+    { perm: "test-booking", label: "Test Booking", href: "/doctor/test-bookings", icon: "test-tube", section: "Clinical modules" },
+    { perm: "billing", label: "Billing", href: "/doctor/billing", icon: "calculator", section: "Clinical modules" },
+    { perm: "home-visit", label: "Home Visit", href: "/doctor/home-visits", icon: "home", section: "Clinical modules" },
+    { perm: "chat", label: "Chat", href: "/doctor/chat", icon: "messages-square", section: "Clinical modules" },
+    { perm: "shop", label: "Shop", href: "/doctor/shop", icon: "shopping-cart", section: "Clinical modules" },
+    { perm: "consultations", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
+    { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules" },
+    { perm: "dashboard", label: "Consult PDF", href: "/doctor/consult-pdf", icon: "file-text", section: "Clinical modules" },
+    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules" },
+    { perm: "dashboard", label: "Notifications", href: "/doctor/notifications", icon: "bell", section: "General" },
+    { perm: "dashboard", label: "FAQ", href: "/doctor/faq", icon: "help-circle", section: "General" },
+    { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
+    { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users", section: "Administration" },
+    { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
   ];
 
   const navItems: NavItem[] = NAV_BY_PERM.filter((n) => perms.has(n.perm)).map((n) => ({
@@ -65,6 +67,7 @@ export default async function DoctorLayout({
     href: n.href,
     icon: n.icon,
     ...(n.exact ? { exact: true } : {}),
+    ...(n.section ? { section: n.section } : {}),
   }));
   const unreadCount = await getUnreadCount();
 
@@ -80,6 +83,8 @@ export default async function DoctorLayout({
       unreadCount={unreadCount}
       footerHref="/"
       footerLabel="View public site"
+      searchHref="/doctor/patients"
+      promo
     >
       <DoctorPermissionGate perms={[...perms]} />
       {children}

@@ -49,7 +49,7 @@ export default async function ContactPage() {
                 key={c.label}
                 className="flex items-start gap-4 rounded-2xl border border-brand-900/10 bg-white p-5 shadow-sm transition-all hover:border-brand-700/30 hover:shadow-soft"
               >
-                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-700 text-white">
                   <c.icon className="h-5 w-5" />
                 </div>
                 <div>

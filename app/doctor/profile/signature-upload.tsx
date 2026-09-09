@@ -12,7 +12,7 @@ export function SignatureUpload({ signatureUrl }: { signatureUrl: string | null 
 
   return (
     <div className="card p-7">
-      <h2 className="font-display text-base font-bold text-slate-900">Signature</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Signature</h2>
       <p className="mt-1 text-xs text-slate-400">
         Used on prescriptions and PDFs. Upload a JPG or PNG of your signature.
       </p>

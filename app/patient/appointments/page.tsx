@@ -49,7 +49,7 @@ export default async function PatientAppointmentsPage() {
               {appointments.map((a) => (
                 <tr key={a.id}>
                   <td>
-                    <p className="font-semibold text-slate-900">{a.doctorName}</p>
+                    <p className="font-semibold text-ink">{a.doctorName}</p>
                     {a.doctorQualification && (
                       <p className="text-xs text-slate-400">{a.doctorQualification}</p>
                     )}

@@ -46,7 +46,7 @@ export function CategoryManager({
       <div className="card p-7">
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">Edit {tab} category</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit {tab} category</h2>
             <p className="text-xs text-slate-400">Update the category name.</p>
           </div>
           <button type="button" onClick={() => setEditing(null)} className="btn-secondary !py-2 !px-3 text-xs">
@@ -78,7 +78,7 @@ export function CategoryManager({
           <Tag className="h-4 w-4" />
         </span>
         <div>
-          <h2 className="font-display text-base font-bold text-slate-900">Categories</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Categories</h2>
           <p className="text-xs text-slate-400">Income & expense categories used in the ledger.</p>
         </div>
       </div>
@@ -126,7 +126,7 @@ export function CategoryManager({
         )}
         {categories.map((c) => (
           <li key={c.id} className="flex items-center justify-between gap-3 py-3">
-            <p className="text-sm font-semibold text-slate-900">{c.name}</p>
+            <p className="text-sm font-semibold text-ink">{c.name}</p>
             <div className="flex items-center gap-1">
               <button
                 type="button"

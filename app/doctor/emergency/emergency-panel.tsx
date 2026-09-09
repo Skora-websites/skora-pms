@@ -252,7 +252,7 @@ export function EmergencyPanel({
       {/* On-duty toggle */}
       <div className="card flex items-center justify-between p-6">
         <div>
-          <h2 className="font-display text-base font-bold text-slate-900">On-duty status</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">On-duty status</h2>
           <p className="text-xs text-slate-500">Only on-duty doctors receive emergency alerts.</p>
         </div>
         <button
@@ -270,7 +270,7 @@ export function EmergencyPanel({
       {pushEnabled !== null && (
         <div className="card flex items-center justify-between p-6">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">Push alerts</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Push alerts</h2>
             <p className="text-xs text-slate-500">
               Get emergency alerts as browser notifications, even when this tab is closed.
             </p>

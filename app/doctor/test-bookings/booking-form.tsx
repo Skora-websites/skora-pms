@@ -110,7 +110,7 @@ export function BookingForm({
           >
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
                   {booking ? "Edit test booking" : "New test booking"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">

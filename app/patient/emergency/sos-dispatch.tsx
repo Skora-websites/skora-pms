@@ -168,7 +168,7 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl">🚑</span>
               <div className="min-w-0 flex-1">
-                <p className="font-display text-lg font-bold text-slate-900">Dr. {status.doctor.name} is on the way</p>
+                <p className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Dr. {status.doctor.name} is on the way</p>
                 <p className="text-xs text-slate-500">
                   {dLat != null ? "En route — live tracking" : "Help has been dispatched"}
                 </p>
@@ -204,7 +204,7 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
   // Idle state — the big Uber-style SOS button.
   return (
     <div className="overflow-hidden rounded-3xl border-2 border-red-200 bg-white shadow-lg">
-      <div className="bg-gradient-to-br from-red-600 via-rose-600 to-red-700 px-6 py-8 text-center">
+      <div className="bg-red-600 px-6 py-8 text-center">
         <p className="text-sm font-semibold uppercase tracking-widest text-red-100">Emergency SOS</p>
         <button
           onClick={fireSos}
@@ -215,7 +215,7 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
           {/* Pulsing rings */}
           <span className="absolute inset-0 animate-ping rounded-full bg-red-400/40" />
           <span className="absolute inset-3 animate-pulse rounded-full bg-red-500/40" />
-          <span className="relative flex h-32 w-32 items-center justify-center rounded-full border-4 border-red-300 bg-gradient-to-b from-red-500 to-red-700 text-white shadow-2xl transition group-active:scale-95">
+          <span className="relative flex h-32 w-32 items-center justify-center rounded-full border-4 border-red-300 bg-red-500 text-white shadow-2xl transition group-active:scale-95">
             {pending || locating ? (
               <Loader2 className="h-10 w-10 animate-spin" />
             ) : (
@@ -227,7 +227,7 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
           </span>
         </button>
         <p className="mt-4 text-xs text-red-100">
-          {locating ? "Getting your location…" : pending ? "Sending your request…" : "Tap the button — we&apos;ll find nearby doctors instantly."}
+          {locating ? "Getting your location…" : pending ? "Sending your request…" : "Tap the button — we’ll find nearby doctors instantly."}
         </p>
       </div>
 

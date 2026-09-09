@@ -37,14 +37,14 @@ export default async function DoctorDetailPage({
       />
 
       <div className="card overflow-hidden">
-        <div className="h-24 bg-gradient-to-r from-brand-800 to-accent-700" />
+        <div className="h-24 bg-brand-800" />
         <div className="px-7 pb-7">
           <div className="-mt-10 flex items-end gap-4">
-            <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-brand-700 to-accent-600 font-display text-2xl font-bold text-white shadow-lg">
+            <span className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-white bg-brand-700 font-display text-2xl font-bold text-white shadow-lg">
               {initials(doctor.name)}
             </span>
             <div className="pb-1">
-              <h1 className="font-display text-xl font-extrabold text-slate-900">{doctor.name}</h1>
+              <h1 className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink sm:text-[26px]">{doctor.name}</h1>
               <div className="mt-1"><StatusBadge status={doctor.status ?? "active"} /></div>
             </div>
             {doctor.trialEndsAt && (
@@ -66,7 +66,7 @@ export default async function DoctorDetailPage({
 
       {/* Clinics */}
       <div className="mt-6">
-        <h2 className="mb-3 font-display text-base font-bold text-slate-900">
+        <h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">
           Clinics ({clinics.length})
         </h2>
         {clinics.length === 0 ? (
@@ -78,7 +78,7 @@ export default async function DoctorDetailPage({
             {clinics.map((c) => (
               <div key={c.id} className="card p-5">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-slate-900">{c.clinicName}</h3>
+                  <h3 className="font-semibold text-ink">{c.clinicName}</h3>
                   <StatusBadge status={c.isActive ? "active" : "inactive"} />
                 </div>
                 <div className="mt-3 space-y-1.5 text-xs text-slate-500">
@@ -102,8 +102,8 @@ function InfoRow({ icon: Icon, label, value }: { icon: typeof Mail; label: strin
         <Icon className="h-4 w-4" />
       </span>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-        <p className="text-sm font-medium text-slate-900">{value}</p>
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className="text-sm font-medium text-ink">{value}</p>
       </div>
     </div>
   );

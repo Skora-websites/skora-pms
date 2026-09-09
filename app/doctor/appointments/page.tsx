@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CalendarPlus, CalendarDays } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getAppointments } from "@/lib/queries/doctor";
-import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
+import { PageHeader, StatusBadge, EmptyState, TabPills } from "@/components/ui/dashboard-ui";
 import { AppointmentRowActions } from "@/components/doctor/appointment-actions";
 import { AppointmentList } from "@/components/mobile-view/appointments-list";
 import { ExportAppointmentsButton } from "./export-button";
@@ -40,10 +40,7 @@ export default async function AppointmentsPage({
         action={
           <div className="flex items-center gap-2">
             <ExportAppointmentsButton status={params.status} />
-            <Link
-              href="/doctor/appointments/book"
-              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/20 transition-all hover:-translate-y-0.5"
-            >
+            <Link href="/doctor/appointments/book" className="btn-primary">
               <CalendarPlus className="h-4 w-4" />
               Book appointment
             </Link>
@@ -51,21 +48,11 @@ export default async function AppointmentsPage({
         }
       />
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {tabs.map((t) => (
-          <Link
-            key={t.key}
-            href={`/doctor/appointments?status=${t.key}`}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              (filter.status ?? "all") === t.key
-                ? "bg-navy-950 text-white"
-                : "border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-800"
-            }`}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </div>
+      <TabPills
+        tabs={tabs}
+        active={filter.status ?? "all"}
+        hrefFor={(key) => `/doctor/appointments?status=${key}`}
+      />
 
       {appointments.length === 0 ? (
         <EmptyState
@@ -96,7 +83,7 @@ export default async function AppointmentsPage({
                   {appointments.map((a) => (
                     <tr key={a.id}>
                       <td>
-                        <p className="font-semibold text-slate-900">{a.patientName}</p>
+                        <p className="font-semibold text-ink">{a.patientName}</p>
                         <p className="text-xs text-slate-400">{a.mobileNumber ?? a.patientPhone ?? ""}</p>
                       </td>
                       <td>{formatDate(a.date)}</td>

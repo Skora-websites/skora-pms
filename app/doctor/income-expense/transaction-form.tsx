@@ -23,7 +23,7 @@ export function TransactionForm({
 
   return (
     <div className="card h-fit p-7">
-      <h2 className="font-display text-base font-bold text-slate-900">Add entry</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Add entry</h2>
       <form action={formAction} className="mt-5 space-y-5">
         <div>
           <label className="label">Type</label>

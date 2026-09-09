@@ -37,7 +37,7 @@ export function AddClinicForm() {
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="font-display text-lg font-bold text-slate-900">Add clinic</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Add clinic</h2>
             <p className="mt-1 text-sm text-slate-500">Set up a clinic to define weekly working hours and fees.</p>
 
             <form action={formAction} className="mt-5 space-y-4">

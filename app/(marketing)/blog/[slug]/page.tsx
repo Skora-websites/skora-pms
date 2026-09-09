@@ -60,7 +60,7 @@ export default async function BlogDetailPage({
             </p>
           ))}
         </div>
-        <div className="mx-auto mt-12 max-w-3xl rounded-2xl bg-gradient-to-r from-brand-800 to-accent-700 p-8 text-center px-5">
+        <div className="mx-auto mt-12 max-w-3xl rounded-2xl bg-brand-800 p-8 text-center px-5">
           <h2 className="font-display text-xl font-bold text-white">
             Ready to try SkoraCares for your clinic?
           </h2>

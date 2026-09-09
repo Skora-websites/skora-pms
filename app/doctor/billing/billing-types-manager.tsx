@@ -23,7 +23,7 @@ export function BillingTypesManager({
       <div className="card p-7">
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">Edit billing type</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit billing type</h2>
             <p className="text-xs text-slate-400">Update the name or default amount.</p>
           </div>
           <button
@@ -79,7 +79,7 @@ export function BillingTypesManager({
           <Tag className="h-4 w-4" />
         </span>
         <div>
-          <h2 className="font-display text-base font-bold text-slate-900">Billing types</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Billing types</h2>
           <p className="text-xs text-slate-400">Predefined services used when generating bills.</p>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function BillingTypesManager({
         {billingTypes.map((t) => (
           <li key={t.id} className="flex items-center justify-between gap-3 py-3">
             <div>
-              <p className="text-sm font-semibold text-slate-900">{t.name}</p>
+              <p className="text-sm font-semibold text-ink">{t.name}</p>
               <p className="text-xs text-slate-400">{formatINR(t.defaultAmount)}</p>
             </div>
             <div className="flex items-center gap-1">

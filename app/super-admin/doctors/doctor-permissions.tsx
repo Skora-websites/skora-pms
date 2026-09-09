@@ -90,7 +90,7 @@ export function DoctorPermissionsDialog({
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">Permissions · {doctorName}</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Permissions · {doctorName}</h2>
             <p className="mt-1 text-sm text-slate-500">
               Module-level grants that apply across this doctor&apos;s practice.
             </p>
@@ -129,7 +129,7 @@ export function DoctorPermissionsDialog({
                     {m.name.replace(/-/g, " ")}
                   </label>
                   {m.permissions.length > 0 && (
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <span className="text-xs text-slate-500">
                       {m.permissions.filter((p) => checked.has(p.name)).length}/{m.permissions.length}
                     </span>
                   )}

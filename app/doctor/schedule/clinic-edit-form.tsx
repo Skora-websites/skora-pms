@@ -42,7 +42,7 @@ export function ClinicEditForm({ clinic, onClose }: { clinic: Clinic; onClose: (
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">Edit clinic</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit clinic</h2>
             <p className="mt-1 text-sm text-slate-500">Update clinic details and consultation fee.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">

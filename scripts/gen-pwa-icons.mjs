@@ -8,7 +8,7 @@ async function gen(size, name, maskable) {
   if (maskable) {
     const pad = Math.round(size * 0.1);
     const bg = Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="#0a6e8a"/></svg>`
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="#0e382b"/></svg>`
     );
     const inner = await sharp(svg).resize(size - pad * 2, size - pad * 2).png().toBuffer();
     img = sharp(bg).composite([{ input: inner, top: pad, left: pad }]);

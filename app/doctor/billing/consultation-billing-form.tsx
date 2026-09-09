@@ -26,7 +26,7 @@ export function ConsultationBillingForm({
           <ReceiptText className="h-4 w-4" />
         </span>
         <div>
-          <h3 className="text-sm font-bold text-slate-900">Generate bill</h3>
+          <h3 className="text-sm font-semibold text-ink">Generate bill</h3>
           <p className="text-xs text-slate-400">Create a bill for this consultation.</p>
         </div>
       </div>

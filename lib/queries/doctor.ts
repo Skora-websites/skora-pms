@@ -799,7 +799,15 @@ export const getDoctorStats = cache(async (doctorId: number) => {
       db
         .select({ date: appointments.date, count: sql<number>`count(*)` })
         .from(appointments)
-        .where(and(eq(appointments.doctorId, doctorId), gte(appointments.date, todayStr(new Date(Date.now() - 6 * 86400000)))))
+        .where(
+          and(
+            eq(appointments.doctorId, doctorId),
+            gte(appointments.date, todayStr(new Date(Date.now() - 6 * 86400000))),
+            // Upper bound = today so the dashboard's 7-day "traffic" chart
+            // doesn't silently ingest future-dated bookings.
+            lte(appointments.date, today)
+          )
+        )
         .groupBy(appointments.date),
     ]);
 

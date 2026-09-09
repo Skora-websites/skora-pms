@@ -30,15 +30,15 @@ export default async function BillingPage() {
       />
 
       {/* Summary cards — horizontal on mobile, grid on desktop */}
-      <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-5">
+      <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
         {[
-          { label: "Total billed", value: formatINR(collected + pending), tone: "text-brand-800" },
-          { label: "Collected", value: formatINR(collected), tone: "text-accent-700" },
-          { label: "Pending", value: formatINR(pending), tone: "text-amber-600" },
+          { label: "Total billed", value: formatINR(collected + pending) },
+          { label: "Collected", value: formatINR(collected) },
+          { label: "Pending", value: formatINR(pending) },
         ].map((s) => (
-          <div key={s.label} className="card p-3 sm:p-5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">{s.label}</p>
-            <p className={`mt-1 font-display text-lg font-extrabold sm:text-2xl ${s.tone}`}>{s.value}</p>
+          <div key={s.label} className="card card-hover p-3 sm:p-5">
+            <p className="text-[10px] text-slate-500 sm:text-xs">{s.label}</p>
+            <p className="mt-2 font-display text-lg font-bold tracking-[-0.02em] tabular-nums text-ink sm:text-[26px] sm:leading-8">{s.value}</p>
           </div>
         ))}
       </div>

@@ -49,7 +49,7 @@ export default async function UsersPage({
               href={`/super-admin/users?role=${r}`}
               className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                 role === r
-                  ? "bg-navy-950 text-white"
+                  ? "bg-brand-700 text-white shadow-pop"
                   : "border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-800"
               }`}
             >

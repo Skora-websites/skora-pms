@@ -44,7 +44,7 @@ export default async function HomeVisitsPage() {
           <div className="slim-scroll overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
                   <th className="px-5 py-3.5">Patient</th>
                   <th className="px-5 py-3.5">Visit Date</th>
                   <th className="px-5 py-3.5">Location</th>

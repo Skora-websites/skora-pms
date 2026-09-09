@@ -51,7 +51,7 @@ export function StaffForm({ practiceRoles, staff }: { practiceRoles: Role[]; sta
           >
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
                   {staff ? `Edit ${staff.name}` : "Add staff member"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">

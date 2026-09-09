@@ -43,7 +43,7 @@ export function TestManager({ tests }: { tests: Test[] }) {
           >
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">Lab tests</h2>
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Lab tests</h2>
                 <p className="mt-1 text-sm text-slate-500">Test catalogue for bookings — prices auto-fill the total.</p>
               </div>
               <button type="button" onClick={close} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">

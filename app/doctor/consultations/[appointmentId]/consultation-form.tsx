@@ -50,7 +50,7 @@ export function ConsultationForm({
 
       {/* ── Vitals ── */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-500">Vitals</h3>
+        <h3 className="mb-4 text-[17px] font-semibold tracking-[-0.01em] text-ink">Vitals</h3>
         <div className="grid gap-4 sm:grid-cols-4">
           <div>
             <label className="label">Blood group</label>

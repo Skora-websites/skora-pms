@@ -41,7 +41,7 @@ export default async function SuperAdminSupportPage() {
             <div key={t.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
                 <div>
-                  <h3 className="font-display text-sm font-bold text-slate-900">{t.subject}</h3>
+                  <h3 className="text-sm font-semibold text-ink">{t.subject}</h3>
                   <p className="mt-0.5 text-xs text-slate-400">
                     #{t.id} · {t.userName} ({t.userRole}) · {timeAgo(t.createdAt)}
                   </p>

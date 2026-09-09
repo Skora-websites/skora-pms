@@ -11,7 +11,7 @@ export function NewTicketForm() {
 
   return (
     <div className="card h-fit p-7">
-      <h2 className="font-display text-base font-bold text-slate-900">Open a new ticket</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Open a new ticket</h2>
       <form action={formAction} className="mt-5 space-y-4">
         <div>
           <label htmlFor="subject" className="label">Subject</label>

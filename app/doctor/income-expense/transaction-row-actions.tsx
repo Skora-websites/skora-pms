@@ -184,7 +184,7 @@ function EditTransactionModal({
       <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">Edit entry</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Edit entry</h2>
             <p className="text-xs text-slate-400">Update details of this transaction.</p>
           </div>
           <button

@@ -51,7 +51,7 @@ export default async function FollowUpsPage() {
                   {pending.map((f) => (
                     <tr key={f.id}>
                       <td>
-                        <p className="font-semibold text-slate-900">{f.patientName}</p>
+                        <p className="font-semibold text-ink">{f.patientName}</p>
                         <p className="text-xs text-slate-400">{f.patientPhone}</p>
                       </td>
                       <td className="font-semibold text-brand-800">{f.followUpDate}</td>
@@ -65,7 +65,7 @@ export default async function FollowUpsPage() {
                   {done.map((f) => (
                     <tr key={f.id} className="opacity-60">
                       <td>
-                        <p className="font-semibold text-slate-900">{f.patientName}</p>
+                        <p className="font-semibold text-ink">{f.patientName}</p>
                         <p className="text-xs text-slate-400">{f.patientPhone}</p>
                       </td>
                       <td>{f.followUpDate}</td>

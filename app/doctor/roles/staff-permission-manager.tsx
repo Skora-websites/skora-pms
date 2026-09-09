@@ -80,7 +80,7 @@ export function StaffPermissionManager({
           <KeyRound className="h-4.5 w-4.5" />
         </span>
         <div>
-          <h2 className="font-display text-base font-bold text-slate-900">Staff permissions</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Staff permissions</h2>
           <p className="text-xs text-slate-500">
             Grant or revoke individual permissions for a staff member (overrides role defaults).
           </p>
@@ -144,7 +144,7 @@ export function StaffPermissionManager({
                       {m.name.replace(/-/g, " ")}
                     </label>
                     {m.permissions.length > 0 && (
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      <span className="text-xs text-slate-500">
                         {m.permissions.filter((p) => checked.has(p.name)).length}/{m.permissions.length}
                       </span>
                     )}

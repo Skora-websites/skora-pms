@@ -31,7 +31,7 @@ export default async function TrialExpiredPage() {
     <div className="flex min-h-screen items-center justify-center bg-navy-950 px-5 py-10">
       <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl shadow-2xl lg:grid-cols-2">
         {/* Left — gradient panel */}
-        <div className="relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-accent-800 p-10 text-white">
+        <div className="relative flex flex-col justify-between overflow-hidden bg-brand-800 p-10 text-white">
           <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/5" />
           <div>
             <p className="font-display text-2xl font-extrabold">
@@ -44,8 +44,8 @@ export default async function TrialExpiredPage() {
               Your trial period has ended. Upgrade your plan to continue using the doctor dashboard.
             </p>
           </div>
-          <div className="mt-10 rounded-2xl border-2 border-dashed border-white/25 bg-accent-400 p-5 text-slate-900">
-            <h3 className="font-display text-base font-bold">Need more time?</h3>
+          <div className="mt-10 rounded-2xl border-2 border-dashed border-white/25 bg-accent-400 p-5 text-ink">
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Need more time?</h3>
             <p className="mt-1 text-sm opacity-90">
               Need more time to evaluate? Request a temporary trial extension from our support
               team on WhatsApp.
@@ -65,7 +65,7 @@ export default async function TrialExpiredPage() {
         {/* Right — features + contact */}
         <div className="flex flex-col justify-between bg-white p-10">
           <div>
-            <h2 className="font-display text-2xl font-extrabold text-slate-900">
+            <h2 className="font-display text-2xl font-extrabold text-ink">
               Upgrade your plan
             </h2>
             <p className="mt-1 text-sm text-slate-500">

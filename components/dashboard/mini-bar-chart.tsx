@@ -15,16 +15,19 @@ export function MiniBarChart({
   height?: number;
 }) {
   const max = Math.max(...points.map((p) => p.count), 1);
-  const barColor = tone === "brand" ? "bg-brand-600" : "bg-accent-500";
+  const barColor = tone === "brand" ? "bg-brand-700" : "bg-accent-500";
 
   return (
-    <div className="flex items-end gap-2" style={{ height }}>
+    <div className="flex gap-2" style={{ height }}>
       {points.map((p) => (
         <div key={p.label} className="flex flex-1 flex-col items-center gap-1.5">
           <div className="flex w-full flex-1 items-end">
             <div
-              className={cn("w-full rounded-t-md transition-all", barColor, p.count === 0 && "opacity-25")}
-              style={{ height: `${Math.max((p.count / max) * 100, 4)}%` }}
+              className={cn(
+                "mt-auto w-full rounded-t-lg transition-all",
+                p.count === 0 ? "hatch opacity-70" : barColor
+              )}
+              style={{ height: `${Math.max((p.count / max) * 100, 6)}%` }}
               title={`${p.label}: ${p.count}`}
             />
           </div>

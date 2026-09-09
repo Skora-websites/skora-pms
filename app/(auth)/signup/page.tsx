@@ -8,7 +8,7 @@ export default function SignupPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Brand panel */}
-      <div className="relative hidden overflow-hidden bg-gradient-to-br from-brand-900 via-brand-800 to-accent-800 lg:block">
+      <div className="relative hidden overflow-hidden bg-navy-950 lg:block">
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-white/5" />
         <div className="relative flex h-full flex-col justify-between p-12">

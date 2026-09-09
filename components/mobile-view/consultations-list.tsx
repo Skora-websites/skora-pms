@@ -29,7 +29,7 @@ export function ConsultationList({ consultations }: { consultations: C[] }) {
         <div key={c.id} className="card p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{c.patientName}</p>
+              <p className="truncate text-sm font-semibold text-ink">{c.patientName}</p>
               <p className="truncate text-xs text-slate-400">
                 {c.patientPhone ?? c.patientRegistrationId ?? `#${c.patientId}`}
               </p>

@@ -21,7 +21,7 @@ export function ProfileForm() {
 
   return (
     <div className="card p-7">
-      <h2 className="font-display text-base font-bold text-slate-900">Update details & password</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Update details & password</h2>
       <form action={onSubmit} className="mt-5 space-y-5">
         <div className="grid gap-5 sm:grid-cols-2">
           <div>

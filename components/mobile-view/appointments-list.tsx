@@ -26,7 +26,7 @@ export function AppointmentList({ appointments }: { appointments: Appt[] }) {
         <div key={a.id} className="card p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{a.patientName}</p>
+              <p className="truncate text-sm font-semibold text-ink">{a.patientName}</p>
               <p className="truncate text-xs text-slate-400">
                 {a.mobileNumber ?? a.patientPhone ?? ""}
               </p>

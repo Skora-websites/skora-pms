@@ -85,7 +85,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
         <>
           {/* Doctor cards */}
           <div>
-            <h2 className="mb-3 font-display text-base font-bold text-slate-900">
+            <h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">
               Choose your doctor
             </h2>
             <div className="grid gap-4 md:grid-cols-2">
@@ -112,7 +112,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                       </span>
                     )}
                     {/* Avatar / photo */}
-                    <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 font-display text-lg font-bold text-white shadow">
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-brand-700 font-display text-lg font-bold text-white shadow">
                       {d.profilePhotoPath ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -126,7 +126,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                     </span>
 
                     <div className="min-w-0 flex-1">
-                      <p className="font-display text-base font-bold text-slate-900">
+                      <p className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
                         {d.salutation ? `${d.salutation} ` : ""}{d.name}
                       </p>
                       {d.qualification && (

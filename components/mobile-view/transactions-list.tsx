@@ -43,7 +43,7 @@ export function TransactionList({
         <div key={r.id} className="card p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900">{r.description ?? "—"}</p>
+              <p className="truncate text-sm font-medium text-ink">{r.description ?? "—"}</p>
               <p className="mt-0.5 text-xs text-slate-400">
                 {r.incomeType ?? r.expenseType ?? "—"} · {formatDate(r.date)}
               </p>

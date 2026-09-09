@@ -21,11 +21,11 @@ export default async function ConsultPdfPage() {
 
       <div className="card p-7">
         <div className="flex items-start gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 text-white shadow-md">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-md">
             <FileText className="h-6 w-6" />
           </span>
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">Your consultation PDF</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Your consultation PDF</h2>
             <p className="mt-1 text-sm text-slate-500">
               Upload a PDF with your clinic&apos;s consultation terms, disclaimers and fee structure.
               It will be attached automatically when patients are asked for consent.

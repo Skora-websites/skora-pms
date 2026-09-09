@@ -41,7 +41,7 @@ export function ConsentForm({ slug }: { slug: string }) {
           name="decision"
           value="accept"
           disabled={pending}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-700 to-accent-600 py-3.5 text-sm font-semibold text-white shadow-md shadow-brand-700/25 transition-all hover:-translate-y-0.5 disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 py-3.5 text-sm font-semibold text-white shadow-md shadow-brand-700/25 transition-all hover:-translate-y-0.5 disabled:opacity-60"
         >
           <Check className="h-4 w-4" /> I Consent
         </button>

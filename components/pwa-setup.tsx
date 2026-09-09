@@ -126,7 +126,7 @@ export function PwaSetup() {
         <img src="/icons/icon-192.png" alt="SkoraCare" className="h-full w-full object-cover" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-slate-900">Install SkoraCare</p>
+        <p className="text-sm font-bold text-ink">Install SkoraCare</p>
         <p className="text-xs text-slate-500">Use it like a native app — no store needed.</p>
       </div>
       <button

@@ -116,7 +116,7 @@ export function TestBookingsTable({
                 </div>
                 <div>
                   <p className="text-slate-400">Total</p>
-                  <p className="font-semibold text-slate-900">{formatINR(b.totalAmount)}</p>
+                  <p className="font-semibold text-ink">{formatINR(b.totalAmount)}</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Paid</p>
@@ -180,7 +180,7 @@ export function TestBookingsTable({
       <div className="slim-scroll overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
               <th className="px-5 py-3.5">Patient</th>
               <th className="px-5 py-3.5">Vendor</th>
               <th className="px-5 py-3.5">Booking</th>
@@ -215,7 +215,7 @@ export function TestBookingsTable({
                     </p>
                   </td>
                   <td className="px-5 py-4">
-                    <p className="font-semibold text-slate-900">{formatINR(b.totalAmount)}</p>
+                    <p className="font-semibold text-ink">{formatINR(b.totalAmount)}</p>
                     <p className="mt-0.5 text-xs capitalize text-slate-400">
                       {b.paymentMethod ?? "—"} · paid {formatINR(b.paymentAmount)}
                     </p>

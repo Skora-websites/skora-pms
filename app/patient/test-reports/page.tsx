@@ -36,11 +36,11 @@ export default async function PatientTestReportsPage() {
             return (
               <div key={b.id} className="card overflow-hidden">
                 <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-6 py-4">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-accent-600 text-white">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 text-white">
                     <FlaskConical className="h-5 w-5" />
                   </span>
                   <div>
-                    <h2 className="font-display text-sm font-bold text-slate-900">
+                    <h2 className="text-sm font-semibold text-ink">
                       {testNames || `Booking #${b.id}`}
                     </h2>
                     <p className="text-xs text-slate-400">

@@ -51,7 +51,7 @@ export default async function IncomeExpensePage({
                 href={p.key === "all" ? "/doctor/income-expense" : `/doctor/income-expense?period=${p.key}`}
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                  period === p.key ? "bg-navy-950 text-white" : "text-slate-500 hover:text-brand-800"
+                  period === p.key ? "bg-brand-700 text-white" : "text-slate-500 hover:text-brand-800"
                 )}
               >
                 {p.label}
@@ -61,33 +61,39 @@ export default async function IncomeExpensePage({
         }
       />
 
-      <div className="mb-6 grid gap-5 sm:grid-cols-3">
-        <div className="card p-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <div className="card card-hover p-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total income</p>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-100 text-accent-700">
-              <TrendingUp className="h-4 w-4" />
+            <p className="text-xs text-slate-500">Total income</p>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-100 text-brand-700">
+              <TrendingUp className="h-[15px] w-[15px]" />
             </span>
           </div>
-          <p className="mt-2 font-display text-2xl font-extrabold text-accent-700">{formatINR(incomeTotal)}</p>
-          <p className="mt-1 text-xs text-slate-400">{income.length} transactions</p>
+          <p className="mt-3 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">{formatINR(incomeTotal)}</p>
+          <p className="mt-3">
+            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{income.length} transactions</span>
+          </p>
         </div>
-        <div className="card p-5">
+        <div className="card card-hover p-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total expenses</p>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
-              <TrendingDown className="h-4 w-4" />
+            <p className="text-xs text-slate-500">Total expenses</p>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-100 text-brand-700">
+              <TrendingDown className="h-[15px] w-[15px]" />
             </span>
           </div>
-          <p className="mt-2 font-display text-2xl font-extrabold text-rose-600">{formatINR(expenseTotal)}</p>
-          <p className="mt-1 text-xs text-slate-400">{expense.length} transactions</p>
+          <p className="mt-3 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">{formatINR(expenseTotal)}</p>
+          <p className="mt-3">
+            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{expense.length} transactions</span>
+          </p>
         </div>
-        <div className="card p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Net position</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">
+        <div className="card card-hover p-5">
+          <p className="text-xs text-slate-500">Net position</p>
+          <p className="mt-3 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">
             {formatINR(incomeTotal - expenseTotal)}
           </p>
-          <p className="mt-1 text-xs text-slate-400">Income − expenses</p>
+          <p className="mt-3">
+            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">Income − expenses</span>
+          </p>
         </div>
       </div>
 
@@ -138,7 +144,7 @@ function TransactionTable({
   if (rows.length === 0) {
     return (
       <div>
-        <h2 className="mb-3 font-display text-base font-bold text-slate-900">{title}</h2>
+        <h2 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
         <EmptyState
           icon={tone === "income" ? TrendingUp : TrendingDown}
           title="Nothing here yet"
@@ -150,7 +156,7 @@ function TransactionTable({
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="min-w-0 truncate font-display text-base font-bold text-slate-900">{title}</h2>
+        <h2 className="min-w-0 truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
         <a
           href={`/api/doctor/income-expense/export?type=${tone}&period=${period}`}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
@@ -182,7 +188,7 @@ function TransactionTable({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td className="font-medium text-slate-900">{r.description ?? "—"}</td>
+                  <td className="font-medium text-ink">{r.description ?? "—"}</td>
                   <td className="text-slate-500">{r.incomeType ?? r.expenseType ?? "—"}</td>
                   <td>{formatDate(r.date)}</td>
                   <td

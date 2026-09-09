@@ -57,7 +57,7 @@ export function Header() {
           </Link>
           <Link
             href="/signup"
-            className="group inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/25 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-700/30"
+            className="group inline-flex items-center gap-1.5 rounded-full bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/25 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-700/30"
           >
             Get Started
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -97,7 +97,7 @@ export function Header() {
               <Link
                 href="/signup"
                 onClick={() => setOpen(false)}
-                className="rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-center text-sm font-semibold text-white"
+                className="rounded-full bg-brand-700 px-5 py-2.5 text-center text-sm font-semibold text-white"
               >
                 Get Started
               </Link>

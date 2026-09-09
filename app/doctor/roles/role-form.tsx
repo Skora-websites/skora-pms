@@ -80,7 +80,7 @@ export function RoleForm({
           >
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold text-slate-900">
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
                   {role ? `Edit role: ${role.name}` : "Create role"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">Pick the modules and actions this role can access.</p>
@@ -127,7 +127,7 @@ export function RoleForm({
                           {m.name.replace(/-/g, " ")}
                         </label>
                         {m.permissions.length > 0 && (
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          <span className="text-xs text-slate-500">
                             {m.permissions.filter((p) => selected.has(p.name)).length}/{m.permissions.length}
                           </span>
                         )}

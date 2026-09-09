@@ -33,7 +33,7 @@ type PatientDetail = {
 };
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{children}</span>;
+  return <span className="text-xs text-slate-500">{children}</span>;
 }
 
 export function PatientDetailsDrawer({ patientId, patientName }: { patientId: number; patientName: string }) {
@@ -78,8 +78,8 @@ export function PatientDetailsDrawer({ patientId, patientName }: { patientId: nu
           >
             <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white/95 px-6 py-5 backdrop-blur">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Patient details</p>
-                <h2 className="mt-1 font-display text-lg font-bold text-slate-900">{patientName}</h2>
+                <p className="text-xs font-semibold text-brand-700">Patient details</p>
+                <h2 className="mt-1 text-[17px] font-semibold tracking-[-0.01em] text-ink">{patientName}</h2>
               </div>
               <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
                 <X className="h-5 w-5" />

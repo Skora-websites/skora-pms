@@ -14,7 +14,7 @@ export function SecuritySettings() {
 
   return (
     <div>
-      <h2 className="font-display text-base font-bold text-slate-900">Security</h2>
+      <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Security</h2>
       <p className="mt-1 text-xs text-slate-400">Change your password or update your security settings.</p>
 
       <form action={formAction} className="mt-5 space-y-5">
@@ -71,7 +71,7 @@ export function SecuritySettings() {
         <div className="flex items-start gap-3">
           <Shield className="h-5 w-5 text-brand-700" />
           <div>
-            <h4 className="font-semibold text-slate-900">Two-factor authentication</h4>
+            <h4 className="font-semibold text-ink">Two-factor authentication</h4>
             <p className="text-sm text-slate-500">
               Two-factor authentication adds an extra layer of security to your account.
             </p>

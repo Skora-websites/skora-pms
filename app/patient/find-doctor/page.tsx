@@ -31,7 +31,7 @@ export default async function FindDoctorPage() {
           {doctors.map((d) => (
             <div key={d.id} className="card p-6">
               <div className="flex items-start gap-4">
-                <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 to-accent-600 font-display text-lg font-bold text-white shadow">
+                <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-brand-700 font-display text-lg font-bold text-white shadow">
                   {d.profilePhotoPath ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={`/api/doctors/${d.id}/photo`} alt={d.name} className="h-full w-full object-cover" />
@@ -40,7 +40,7 @@ export default async function FindDoctorPage() {
                   )}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-base font-bold text-slate-900">
+                  <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
                     {d.salutation ? `${d.salutation} ` : ""}{d.name}
                   </h2>
                   {d.qualification && <p className="text-xs font-medium text-brand-800">{d.qualification}</p>}

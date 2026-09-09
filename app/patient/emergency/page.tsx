@@ -58,7 +58,7 @@ export default async function EmergencyPage() {
         {history.length > 0 && (
           <div className="overflow-hidden rounded-3xl border-2 border-slate-200 bg-white shadow-lg">
             <div className="p-5 pb-0">
-              <h2 className="font-display text-base font-bold text-slate-900">Past emergencies</h2>
+              <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Past emergencies</h2>
             </div>
             <ul className="divide-y divide-slate-100 p-5 pt-3">
               {history.map((h) => (

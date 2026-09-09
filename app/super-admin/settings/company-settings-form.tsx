@@ -50,7 +50,7 @@ export function CompanySettingsForm({ company }: { company: CompanyRow | null })
   return (
     <form action={formAction} className="space-y-6">
       <div className="card p-7">
-        <h2 className="font-display text-base font-bold text-slate-900">Company profile</h2>
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Company profile</h2>
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="cs_name" className="label">Company name</label>
@@ -104,7 +104,7 @@ export function CompanySettingsForm({ company }: { company: CompanyRow | null })
       </div>
 
       <div className="card p-7">
-        <h2 className="font-display text-base font-bold text-slate-900">Branding</h2>
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Branding</h2>
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label htmlFor="cs_light" className="label">Light logo</label>
@@ -139,7 +139,7 @@ export function CompanySettingsForm({ company }: { company: CompanyRow | null })
       </div>
 
       <div className="card p-7">
-        <h2 className="font-display text-base font-bold text-slate-900">Social &amp; maps</h2>
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Social &amp; maps</h2>
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {(
             [

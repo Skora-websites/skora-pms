@@ -69,8 +69,8 @@ export default async function ConsultationPage({
           { label: "Visit type", value: appointment.caseType.replace(/_/g, " ") },
         ].map((s) => (
           <div key={s.label} className="card p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{s.label}</p>
-            <p className="mt-1 truncate font-semibold capitalize text-slate-900">{s.value}</p>
+            <p className="text-xs font-medium text-slate-500">{s.label}</p>
+            <p className="mt-1 truncate font-semibold capitalize text-ink">{s.value}</p>
           </div>
         ))}
       </div>
@@ -81,7 +81,7 @@ export default async function ConsultationPage({
             <Stethoscope className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">Consultation notes</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Consultation notes</h2>
             <p className="text-xs text-slate-400">Record the visit — it will be saved to the patient&apos;s history.</p>
           </div>
         </div>
@@ -103,7 +103,7 @@ export default async function ConsultationPage({
               <ReceiptText className="h-5 w-5" />
             </span>
             <div>
-              <h2 className="font-display text-base font-bold text-slate-900">Billing</h2>
+              <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Billing</h2>
               <p className="text-xs text-slate-400">
                 Generate a bill for this consultation. It will also sync to your income ledger.
               </p>

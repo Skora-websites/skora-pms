@@ -31,7 +31,7 @@ export function Faq({ items }: { items: LandingItem[] }) {
                 className={cn(
                   "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border transition-all duration-300",
                   isOpen
-                    ? "rotate-45 border-transparent bg-gradient-to-br from-brand-700 to-accent-600 text-white"
+                    ? "rotate-45 border-transparent bg-brand-700 text-white"
                     : "border-brand-200 text-brand-700"
                 )}
               >

@@ -2,53 +2,81 @@
 
 /* ─────────────────────────────────────────────────────────────────────────
    SkoraCares design tokens (Tailwind v4)
+   SkoraCares Clinic OS — Mint, Deep Emerald & Clinical Slate (per DESIGN.md).
+   The brand/accent/navy scale names are kept from the previous theme so
+   every consuming file re-themes without edits:
+     brand-*  → deep emerald / forest   (#114232 · #0E382B anchors)
+     accent-* → mint (#1FD186) & sage   (chips, charts, completed tags)
+     navy-*   → deepest forest surfaces (sidebar #0D261E, tracker #0C2B21)
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  /* Brand — clinical teal */
-  --color-brand-50: #f0fbfe;
-  --color-brand-100: #d8f3fb;
-  --color-brand-200: #b5e8f7;
-  --color-brand-300: #80d7f0;
-  --color-brand-400: #44bde4;
-  --color-brand-500: #1d9fd0;
-  --color-brand-600: #0f81b1;
-  --color-brand-700: #0a6e8a;
-  --color-brand-800: #074f65;
-  --color-brand-900: #0b3d50;
-  --color-brand-950: #072838;
+  /* Brand — deep emerald / forest */
+  --color-brand-50: #f1f5f3;
+  --color-brand-100: #dcebe4;
+  --color-brand-200: #c2d8cf;
+  --color-brand-300: #a2c5b5;
+  --color-brand-400: #6ba48c;
+  --color-brand-500: #3f7d5f;
+  --color-brand-600: #2a5f45;
+  --color-brand-700: #114232;
+  --color-brand-800: #0e382b;
+  --color-brand-900: #0b2d23;
+  --color-brand-950: #071e17;
 
-  /* Accent — mint green */
-  --color-accent-50: #effdf9;
-  --color-accent-100: #c9f8ec;
-  --color-accent-200: #96efdb;
-  --color-accent-300: #5ce0c6;
-  --color-accent-400: #2ecdb0;
-  --color-accent-500: #00c9a7;
-  --color-accent-600: #00a78c;
-  --color-accent-700: #009e83;
-  --color-accent-800: #067a67;
-  --color-accent-900: #0a6355;
-  --color-accent-950: #043c33;
+  /* Accent — mint & sage */
+  --color-accent-50: #ebfbf4;
+  --color-accent-100: #d2f4e6;
+  --color-accent-200: #a9eccd;
+  --color-accent-300: #7ce1b3;
+  --color-accent-400: #4dd69c;
+  --color-accent-500: #1fd186;
+  --color-accent-600: #14b571;
+  --color-accent-700: #109a60;
+  --color-accent-800: #0d7a4d;
+  --color-accent-900: #0b5f3d;
+  --color-accent-950: #073f28;
 
-  /* Dashboard nav — deep clinical green */
-  --color-navy-700: #0c4843;
-  --color-navy-800: #093a36;
-  --color-navy-900: #062c29;
-  --color-navy-950: #041f1d;
+  /* Dashboard chrome — deepest forest surfaces */
+  --color-navy-700: #1b4d3c;
+  --color-navy-800: #163d30;
+  --color-navy-900: #123227;
+  --color-navy-950: #0d261e;
+
+  /* Chart & badge helpers (DESIGN.md §2.1 sage / §5.3 hero chip) */
+  --color-forest-mid: #1f5441;
+  --color-mint-soft: #34d399;
+  --color-sage: #45b387;
+  --color-forest-deep: #0c2b21;
+
+  /* Clinical slate neutrals (override Tailwind's blue-grey slate) */
+  --color-slate-50: #f8faf9;
+  --color-slate-100: #eef1ef;
+  --color-slate-200: #e2e7e4;
+  --color-slate-300: #cbd5d0;
+  --color-slate-400: #9da4a0;
+  --color-slate-500: #6c7470;
+  --color-slate-600: #525a56;
+  --color-slate-700: #3a423e;
+  --color-slate-800: #29302d;
+  --color-slate-900: #141716;
+  --color-slate-950: #0b0e0d;
 
   /* Surfaces */
-  --color-surface: #f8fdff;
-  --color-ink: #0d1f2d;
-  --color-ink-muted: #5a7384;
+  --color-surface: #eceeeb;
+  --color-surface-subtle: #f8faf9;
+  --color-ink: #141716;
+  --color-ink-muted: #6c7470;
 
   --radius-4xl: 2rem;
 
-  --shadow-soft: 0 8px 40px rgba(10, 110, 138, 0.12);
-  --shadow-float: 0 20px 60px rgba(10, 110, 138, 0.18);
+  --shadow-soft: 0 1px 3px rgba(20, 23, 22, 0.02), 0 6px 16px rgba(17, 66, 50, 0.06);
+  --shadow-float: 0 20px 60px rgba(17, 66, 50, 0.16);
+  --shadow-lift: 0 10px 24px -4px rgba(17, 66, 50, 0.08);
+  --shadow-pop: 0 4px 14px rgba(17, 66, 50, 0.15);
 
   --animate-float: float 5s ease-in-out infinite;
   --animate-float-slow: float 7s ease-in-out infinite;
@@ -81,13 +109,13 @@
    ───────────────────────────────────────────────────────────────────────── */
 :root {
   --background: #ffffff;
-  --foreground: #0d1f2d;
+  --foreground: #141716;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   /* Native-app feel: no page drag/overscroll bounce, no pull-to-refresh.
      Scrolling happens inside the content container with momentum instead. */
@@ -107,11 +135,11 @@ h3,
 h4,
 h5,
 .font-display {
-  font-family: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 }
 
 ::selection {
-  background: #0a6e8a;
+  background: #114232;
   color: #fff;
 }
 
@@ -121,7 +149,7 @@ h5,
   height: 6px;
 }
 .slim-scroll::-webkit-scrollbar-thumb {
-  background: rgb(10 110 138 / 0.25);
+  background: rgb(17 66 50 / 0.25);
   border-radius: 999px;
 }
 .slim-scroll::-webkit-scrollbar-track {
@@ -136,8 +164,9 @@ h5,
 }
 
 @layer components {
+  /* Primary medical CTA — solid forest (#114232), pill radius */
   .btn-primary {
-    @apply btn bg-gradient-to-r from-brand-700 to-accent-600 px-5 py-2.5 text-sm text-white shadow-md shadow-brand-700/20 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-700/30;
+    @apply btn bg-brand-700 px-5 py-2.5 text-sm text-white shadow-md shadow-brand-700/20 hover:bg-brand-600 hover:shadow-lg hover:shadow-brand-700/30 active:scale-[0.98];
   }
   .btn-secondary {
     @apply btn border border-brand-200 bg-white px-5 py-2.5 text-sm text-brand-800 hover:border-brand-600 hover:text-brand-700;
@@ -149,18 +178,21 @@ h5,
     @apply btn px-4 py-2 text-sm text-ink-muted hover:bg-brand-50 hover:text-brand-800;
   }
 
+  /* Bento card — continuous 24px curvature, clinical hairline border,
+     CRM .bento elevation (0 1px 3px + 0 6px 16px at 2%) with hover lift */
   .card {
-    @apply rounded-2xl border border-brand-900/10 bg-white shadow-sm;
+    @apply rounded-3xl border border-slate-200 bg-white;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.02), 0 6px 16px rgb(0 0 0 / 0.02);
   }
   .card-hover {
-    @apply transition-all duration-300 hover:-translate-y-1 hover:border-brand-600/40 hover:shadow-soft;
+    @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift;
   }
 
   .input {
     @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition-all placeholder:text-slate-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/10;
   }
   .label {
-    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500;
+    @apply mb-1.5 block text-xs font-medium text-slate-600;
   }
 
   .badge {
@@ -174,7 +206,7 @@ h5,
     @apply w-full text-left text-sm;
   }
   .data-table thead th {
-    @apply whitespace-nowrap border-b border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-4 sm:py-3;
+    @apply whitespace-nowrap border-b border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs font-medium text-slate-500 sm:px-4 sm:py-3;
   }
   .data-table tbody td {
     @apply border-b border-slate-100 px-3 py-2.5 align-middle text-slate-700 sm:px-4 sm:py-3;
@@ -195,4 +227,16 @@ h5,
   .data-table td.text-right {
     @apply whitespace-nowrap;
   }
+}
+
+/* 45° diagonal hatch — open capacity / zero-traffic / pending fills */
+.hatch {
+  background-color: var(--color-slate-100);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-slate-300),
+    var(--color-slate-300) 3px,
+    transparent 3px,
+    transparent 6px
+  );
 }

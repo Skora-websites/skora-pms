@@ -75,7 +75,7 @@ export default async function RolesPage() {
                 </span>
                 <RoleCardActions role={r} modules={permissionModules} />
               </div>
-              <h3 className="mt-4 font-display text-base font-bold text-slate-900">{r.name}</h3>
+              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-ink">{r.name}</h3>
               <p className="mt-1 text-sm text-slate-500">
                 {Number(r.permissionCount)} permission{Number(r.permissionCount) === 1 ? "" : "s"} assigned
               </p>

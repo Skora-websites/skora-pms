@@ -25,7 +25,7 @@ export function HeroCarousel({ items }: { items: LandingItem[] }) {
   return (
     <div className="relative">
       <div key={index} className="animate-[fadeUp_0.6s_ease-out]">
-        <div className="hero-badge mb-6 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-4 py-2 text-[13px] font-semibold text-brand-800 shadow-sm">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-4 py-2 text-[13px] font-semibold text-brand-800 shadow-sm">
           <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-500" />
           Trusted by 2,000+ healthcare providers
         </div>
@@ -38,7 +38,7 @@ export function HeroCarousel({ items }: { items: LandingItem[] }) {
         <div className="mt-8 flex flex-wrap gap-4">
           <a
             href={item.link ?? "/contact"}
-            className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-700 to-accent-600 px-7 py-3.5 font-semibold text-white shadow-lg shadow-brand-700/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-700/40"
+            className="group inline-flex items-center gap-2 rounded-full bg-brand-700 px-7 py-3.5 font-semibold text-white shadow-lg shadow-brand-700/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-700/40"
           >
             {item.linkText ?? "Request a demo"}
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -61,7 +61,7 @@ export function HeroCarousel({ items }: { items: LandingItem[] }) {
               onClick={() => setIndex(i)}
               className={cn(
                 "h-2 rounded-full transition-all duration-300",
-                i === index ? "w-8 bg-gradient-to-r from-brand-700 to-accent-600" : "w-2 bg-brand-900/15 hover:bg-brand-900/30"
+                i === index ? "w-8 bg-brand-700" : "w-2 bg-brand-900/15 hover:bg-brand-900/30"
               )}
             />
           ))}

@@ -35,7 +35,7 @@ export default async function DoctorEmergencyPage() {
       {/* Past emergency cases */}
       {history.length > 0 && (
         <div className="card mt-4 p-6">
-          <h2 className="font-display text-base font-bold text-slate-900">Past cases</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Past cases</h2>
           <ul className="mt-3 divide-y divide-slate-100">
             {history.map((h) => (
               <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">

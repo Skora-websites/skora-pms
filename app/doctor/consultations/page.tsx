@@ -48,7 +48,7 @@ export default async function ConsultationsPage() {
                   {consultations.map((c) => (
                     <tr key={c.id}>
                       <td>
-                        <p className="font-medium text-slate-900">{c.patientName}</p>
+                        <p className="font-medium text-ink">{c.patientName}</p>
                         <p className="text-xs text-slate-400">
                           {c.patientPhone ?? c.patientRegistrationId ?? `#${c.patientId}`}
                         </p>

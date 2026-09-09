@@ -1,16 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Sora, DM_Sans, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaSetup } from "@/components/pwa-setup";
 
-const sora = Sora({
-  variable: "--font-sora",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
   display: "swap",
 });
@@ -52,7 +46,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/icons/icon-192.png" }],
   },
   other: {
-    "theme-color": "#0a6e8a",
+    "theme-color": "#114232",
   },
 };
 
@@ -70,7 +64,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${sora.variable} ${dmSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${jakarta.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         {children}
