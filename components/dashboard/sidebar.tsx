@@ -34,6 +34,7 @@ import {
   Siren,
   Stethoscope,
   ReceiptText,
+  CreditCard,
   Settings,
   Download,
   type LucideIcon,
@@ -71,6 +72,7 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   siren: Siren,
   stethoscope: Stethoscope,
   receipt: ReceiptText,
+  "credit-card": CreditCard,
 };
 
 export type NavItem = {

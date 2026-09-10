@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LandingItem } from "@/lib/db/schema";
+import { PackageCheckoutButton } from "@/components/packages/package-checkout-button";
 
 type PlanFeature = {
   name: string;
@@ -13,8 +14,12 @@ type PlanFeature = {
   text_yearly?: string;
 };
 
-export function Pricing({ items }: { items: LandingItem[] }) {
+/** Maps a marketing plan title to its checkout package id (doctors only). */
+export type PricingCheckoutPlan = { title: string; packageId: string; buyerName?: string | null; buyerEmail?: string | null; buyerPhone?: string | null };
+
+export function Pricing({ items, checkoutPlans }: { items: LandingItem[]; checkoutPlans?: PricingCheckoutPlan[] }) {
   const [yearly, setYearly] = useState(false);
+  const checkoutByTitle = new Map((checkoutPlans ?? []).map((c) => [c.title, c]));
 
   return (
     <div>
@@ -49,6 +54,8 @@ export function Pricing({ items }: { items: LandingItem[] }) {
           const featured = Boolean(plan.badge);
           const price = yearly ? Number(plan.priceYearly ?? 0) : Number(plan.priceMonthly ?? 0);
           const original = yearly ? Number(plan.priceOriginalYearly ?? 0) : Number(plan.priceOriginalMonthly ?? 0);
+          const planTitle = plan.title ?? "";
+          const checkout = checkoutByTitle.get(planTitle);
           return (
             <div
               key={plan.id}
@@ -65,7 +72,7 @@ export function Pricing({ items }: { items: LandingItem[] }) {
                 </span>
               )}
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand-700">
-                {plan.title}
+                {planTitle}
               </h3>
               <div className="mt-3 flex items-baseline gap-1">
                 <span className="font-display text-5xl font-extrabold text-ink">
@@ -99,17 +106,34 @@ export function Pricing({ items }: { items: LandingItem[] }) {
                   );
                 })}
               </ul>
-              <a
-                href={plan.link ?? "/signup"}
-                className={cn(
-                  "mt-8 block rounded-full py-3 text-center text-sm font-semibold transition-all",
-                  featured
-                    ? "bg-brand-700 text-white hover:bg-brand-600 shadow-lg shadow-brand-700/25 hover:-translate-y-0.5"
-                    : "border-2 border-brand-200 text-brand-800 hover:border-brand-700 hover:bg-brand-50"
-                )}
-              >
-                {plan.linkText ?? "Get Started"}
-              </a>
+              {checkout ? (
+                <div className="mt-8">
+                  <PackageCheckoutButton
+                    packageId={checkout.packageId}
+                    packageName={planTitle}
+                    period={yearly ? "yearly" : "monthly"}
+                    label={plan.linkText ?? "Get Started"}
+                    variant={featured ? "primary" : "secondary"}
+                    buyer={{
+                      name: checkout.buyerName,
+                      email: checkout.buyerEmail,
+                      phone: checkout.buyerPhone,
+                    }}
+                  />
+                </div>
+              ) : (
+                <a
+                  href={plan.link ?? "/signup"}
+                  className={cn(
+                    "mt-8 block rounded-full py-3 text-center text-sm font-semibold transition-all",
+                    featured
+                      ? "bg-brand-700 text-white hover:bg-brand-600 shadow-lg shadow-brand-700/25 hover:-translate-y-0.5"
+                      : "border-2 border-brand-200 text-brand-800 hover:border-brand-700 hover:bg-brand-50"
+                  )}
+                >
+                  {plan.linkText ?? "Get Started"}
+                </a>
+              )}
             </div>
           );
         })}

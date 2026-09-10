@@ -1,5 +1,8 @@
 import { ArrowRight, Check, Star } from "lucide-react";
 import { getLandingData } from "@/lib/queries/landing";
+import { getCurrentUser } from "@/lib/auth/user";
+import { isRazorpayConfigured } from "@/lib/packages/razorpay";
+import { PACKAGE_PLANS } from "@/lib/packages/config";
 import { HeroCarousel } from "@/components/marketing/hero-carousel";
 import { Pricing } from "@/components/marketing/pricing";
 import { Faq } from "@/components/marketing/faq";
@@ -8,6 +11,19 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const data = await getLandingData();
+  // Doctors see live checkout buttons on the pricing cards (Razorpay); every
+  // other visitor keeps the marketing links.
+  const user = await getCurrentUser();
+  const checkoutPlans =
+    user?.role === "doctor" && isRazorpayConfigured()
+      ? PACKAGE_PLANS.map((p) => ({
+          title: p.name,
+          packageId: p.id,
+          buyerName: user.name,
+          buyerEmail: user.email,
+          buyerPhone: user.phone,
+        }))
+      : undefined;
 
   const hero = data.get("hero");
   const features = data.get("features");
@@ -269,7 +285,7 @@ export default async function HomePage() {
         <section className="py-24">
           <div className="mx-auto max-w-7xl px-5 lg:px-8">
             <SectionHeader section={pricing} />
-            <Pricing items={pricing.items} />
+            <Pricing items={pricing.items} checkoutPlans={checkoutPlans} />
           </div>
         </section>
       )}

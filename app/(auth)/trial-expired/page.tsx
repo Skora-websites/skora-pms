@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getCompanySettings } from "@/lib/queries/landing";
 import { logoutAction } from "@/lib/actions/auth";
+import { isRazorpayConfigured } from "@/lib/packages/razorpay";
+import { getPackagePricing } from "@/lib/packages/config";
+import { PackageCheckoutButton } from "@/components/packages/package-checkout-button";
 import { PhoneCall, Mail, MessageCircle, LogOut } from "lucide-react";
 
 export const metadata: Metadata = { title: "Trial Expired · SkoraCares" };
@@ -26,6 +29,11 @@ export default async function TrialExpiredPage() {
   const whatsappUrl = `https://wa.me/${wa}?text=${message}`;
   const emailUrl = `mailto:${supportEmail}?subject=${encodeURIComponent(`Subscription Renewal Request - ${user.name}`)}&body=${message}`;
   const callUrl = `tel:${supportPhone.replace(/[^0-9+]/g, "")}`;
+
+  // Self-serve renewal: pay for a package right here and access is restored
+  // immediately after signature verification (no support round-trip).
+  const renewPlanId = "package-2";
+  const renewPricing = isRazorpayConfigured() ? getPackagePricing(renewPlanId, "monthly") : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-navy-950 px-5 py-10">
@@ -89,6 +97,29 @@ export default async function TrialExpiredPage() {
           </div>
 
           <div className="mt-8">
+            {renewPricing && (
+              <div className="mb-6 rounded-2xl border border-brand-200 bg-brand-50/60 p-5">
+                <p className="text-xs font-bold uppercase tracking-widest text-brand-700">Renew now — {renewPricing.plan.name}</p>
+                <div className="mt-1.5 flex items-baseline gap-1">
+                  <span className="font-display text-3xl font-extrabold text-ink">
+                    ₹{(renewPricing.amount / 100).toLocaleString("en-IN")}
+                  </span>
+                  <span className="text-sm text-slate-500">/month</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Pay securely with UPI, cards or netbanking. Your dashboard unlocks instantly after payment.
+                </p>
+                <div className="mt-4">
+                  <PackageCheckoutButton
+                    packageId={renewPlanId}
+                    packageName={renewPricing.plan.name}
+                    period="monthly"
+                    label={`Renew for ₹${(renewPricing.amount / 100).toLocaleString("en-IN")}`}
+                    buyer={{ name: user.name, email: user.email, phone: user.phone }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex flex-col gap-3 sm:flex-row">
               <a
                 href={callUrl}

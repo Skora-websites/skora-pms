@@ -219,6 +219,42 @@ export const auditLogs = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Package payments (Razorpay audit trail for plan purchases)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Insert-only record of every package purchase attempt. The authoritative
+ * access expiry stays `users.trial_ends_at` (extended on verified payment);
+ * this table exists so super-admin can audit who paid what, when, and for
+ * which Razorpay order.
+ */
+export const packagePayments = mysqlTable(
+  "package_payments",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    packageId: varchar("package_id", { length: 50 }).notNull(),
+    packageName: varchar("package_name", { length: 255 }).notNull(),
+    /** Monthly or yearly billing period chosen at checkout. */
+    period: mysqlEnum("period", ["monthly", "yearly"]).notNull(),
+    /** Amount in paise (Razorpay's currency unit). */
+    amount: int("amount").notNull(),
+    status: mysqlEnum("status", ["created", "paid", "failed"]).notNull().default("created"),
+    razorpayOrderId: varchar("razorpay_order_id", { length: 100 }).notNull(),
+    razorpayPaymentId: varchar("razorpay_payment_id", { length: 100 }),
+    razorpaySignature: varchar("razorpay_signature", { length: 255 }),
+    /** Access expiry extended to (paid rows only) — informational. */
+    accessUntil: timestamp("access_until"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("package_payments_user_id_index").on(t.userId),
+    uniqueIndex("package_payments_order_id_unique").on(t.razorpayOrderId),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // In-app notifications (P7.5)
 // ─────────────────────────────────────────────────────────────────────────────
 

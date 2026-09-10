@@ -7,6 +7,7 @@ const NAV: NavItem[] = [
   { label: "Manage Doctors", href: "/super-admin/doctors", icon: "user-cog" },
   { label: "Manage Clinics", href: "/super-admin/clinics", icon: "building-2" },
   { label: "Manage Users", href: "/super-admin/users", icon: "users" },
+  { label: "Package Payments", href: "/super-admin/payments", icon: "credit-card" },
   { label: "Consult Masters", href: "/super-admin/masters", icon: "clipboard-list" },
   { label: "Blogs", href: "/super-admin/blogs", icon: "newspaper" },
   { label: "Support", href: "/super-admin/support", icon: "headset" },
