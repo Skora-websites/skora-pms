@@ -240,3 +240,77 @@ h5,
     transparent 6px
   );
 }
+
+/* ── Branded splash (components/pwa/splash-screen.tsx) ────────────────────
+   Shown once per session: canvas backdrop, pulsing ring echo around the
+   logo, cross bars staggered in. Keyframes live here (not Tailwind tokens)
+   because they're one-off animations. */
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--color-brand-800);
+  animation: splash-fade-out 0.4s ease 1.3s forwards;
+}
+.splash-logo-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.splash-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+  animation: splash-pop 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.splash-ring {
+  position: absolute;
+  inset: -12px;
+  border-radius: 34px;
+  border: 2px solid var(--color-accent-500);
+  animation: splash-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.splash-ring-delay {
+  animation-delay: 0.5s;
+}
+.splash-title {
+  font-family: var(--font-sans);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  animation: splash-rise 0.5s ease 0.2s both;
+}
+.splash-sub {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-accent-500);
+  animation: splash-rise 0.5s ease 0.35s both;
+}
+@keyframes splash-ping {
+  0% { transform: scale(1); opacity: 0.7; }
+  80%, 100% { transform: scale(1.55); opacity: 0; }
+}
+@keyframes splash-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes splash-rise {
+  0% { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes splash-fade-out {
+  to { opacity: 0; visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-ring { animation: none; opacity: 0.4; }
+  .splash-logo, .splash-title, .splash-sub { animation-duration: 0.01s; animation-delay: 0s; }
+}

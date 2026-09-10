@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaSetup } from "@/components/pwa-setup";
+import { SplashScreen } from "@/components/pwa/splash-screen";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -67,6 +68,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${jakarta.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
+        <SplashScreen />
         {children}
         <PwaSetup />
       </body>

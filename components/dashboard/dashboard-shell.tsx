@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar, type NavItem } from "./sidebar";
 import { DashboardHeader } from "./header";
 import { MobileAppShell } from "./mobile-app-shell";
+import { PermissionNudge } from "@/components/pwa/permission-nudge";
 
 export function DashboardShell({
   navItems,
@@ -65,6 +66,10 @@ export function DashboardShell({
           {children}
         </main>
       </div>
+
+      {/* Post-login permissions (notifications + location) — once per
+          browser, dismissed state remembered. */}
+      <PermissionNudge />
     </div>
   );
 }
