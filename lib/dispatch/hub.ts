@@ -21,7 +21,18 @@ export type SosEvent =
 
 type Listener = (event: SosEvent) => void;
 
-const listeners = new Map<number, Set<Listener>>();
+/**
+ * The listener registry MUST be a cross-bundle singleton. Next.js can load
+ * this module once per server bundle (route handlers vs. server actions are
+ * separate module graphs in dev), and a plain module-level Map would then be
+ * duplicated — broadcasts from triggerSos would never reach SSE subscribers.
+ * Storing it on globalThis guarantees one registry per server process.
+ */
+const HUB_KEY = "__skoracare_sos_hub__";
+type HubRegistry = { listeners: Map<number, Set<Listener>> };
+const g = globalThis as typeof globalThis & { [HUB_KEY]?: HubRegistry };
+const registry: HubRegistry = (g[HUB_KEY] ??= { listeners: new Map() });
+const listeners = registry.listeners;
 
 /** Subscribe a doctor to live events. Returns an unsubscribe function. */
 export function subscribe(doctorId: number, listener: Listener): () => void {
