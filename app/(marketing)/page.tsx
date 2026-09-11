@@ -6,6 +6,7 @@ import { PACKAGE_PLANS } from "@/lib/packages/config";
 import { HeroCarousel } from "@/components/marketing/hero-carousel";
 import { Pricing } from "@/components/marketing/pricing";
 import { Faq } from "@/components/marketing/faq";
+import { publicUploadUrl } from "@/lib/utils/uploads";
 
 export const dynamic = "force-dynamic";
 
@@ -43,61 +44,7 @@ export default async function HomePage() {
         <div className="mx-auto grid max-w-7xl gap-12 px-5 pb-20 pt-36 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-8 lg:pt-44">
           <HeroCarousel items={hero?.items ?? []} />
 
-          <div className="relative hidden lg:block">
-            <div className="animate-float rounded-3xl border border-brand-900/5 bg-white p-7 shadow-float">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-base font-bold text-white">
-                  AS
-                </div>
-                <div>
-                  <p className="font-display text-sm font-semibold text-ink">Dr. Aarav Sharma</p>
-                  <p className="text-xs text-ink-muted">General Physician · New Delhi</p>
-                </div>
-                <span className="badge ml-auto bg-accent-100 text-accent-800">Online</span>
-              </div>
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                {[
-                  { val: "128", label: "Patients this week" },
-                  { val: "32", label: "Appointments today" },
-                  { val: "₹48k", label: "Monthly billing" },
-                  { val: "4.9★", label: "Patient rating" },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-xl bg-surface p-3.5">
-                    <p className="font-display text-xl font-bold text-ink">{s.val}</p>
-                    <p className="mt-0.5 text-[11px] text-ink-muted">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-5">
-                <div className="mb-1.5 flex justify-between text-xs text-ink-muted">
-                  <span>Clinic capacity</span>
-                  <span>72%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-brand-100">
-                  <div className="h-full w-[72%] rounded-full bg-accent-500" />
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute -right-6 top-16 animate-float-slow rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-100 text-lg">📋</span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">Prescription</p>
-                  <p className="text-[11px] text-ink-muted">Uploaded just now</p>
-                </div>
-              </div>
-            </div>
-            <div className="absolute -left-8 bottom-24 animate-float rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft [animation-delay:1.2s]">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-lg">📍</span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">Home visit</p>
-                  <p className="text-[11px] text-ink-muted">Map navigation ready</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <HeroVisual item={hero?.items[0]} />
         </div>
 
         <div className="border-y border-brand-900/5 bg-navy-950 py-5">
@@ -184,11 +131,19 @@ export default async function HomePage() {
               {products.items.map((p) => {
                 const featList = (p.features as unknown as string[]) ?? [];
                 const reverse = p.icon === "reverse";
+                const imgSrc = publicUploadUrl(p.image);
                 return (
                   <div
                     key={p.id}
                     className={`grid items-center gap-12 lg:grid-cols-2 ${reverse ? "lg:[&>*:first-child]:order-2" : ""}`}
                   >
+                    {imgSrc ? (
+                      <img
+                        src={imgSrc}
+                        alt={p.title ?? "Product"}
+                        className="w-full rounded-3xl ring-1 ring-brand-900/5"
+                      />
+                    ) : (
                     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-50 to-accent-50/60 p-12 ring-1 ring-brand-900/5">
                       <div className="mx-auto max-w-sm">
                         <div className="rounded-2xl bg-white p-5 shadow-soft ring-1 ring-brand-900/5">
@@ -213,6 +168,7 @@ export default async function HomePage() {
                         </div>
                       </div>
                     </div>
+                    )}
                     <div>
                       <span className="badge bg-brand-100 text-brand-800">{p.badge}</span>
                       <h3 className="mt-4 font-display text-2xl font-extrabold text-ink lg:text-3xl">
@@ -337,6 +293,80 @@ export default async function HomePage() {
         </section>
       )}
     </>
+  );
+}
+
+/** Hero right column: CMS image when the first hero item has one, else the
+ *  decorative product mock (kept from the original design). */
+function HeroVisual({ item }: { item?: { image: string | null; title: string | null } }) {
+  const src = publicUploadUrl(item?.image);
+  if (src) {
+    return (
+      <div className="relative hidden lg:block">
+        <img
+          src={src}
+          alt={item?.title ?? "SkoraCare platform"}
+          className="animate-float w-full rounded-3xl border border-brand-900/5 shadow-float"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="relative hidden lg:block">
+      <div className="animate-float rounded-3xl border border-brand-900/5 bg-white p-7 shadow-float">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-base font-bold text-white">
+            AS
+          </div>
+          <div>
+            <p className="font-display text-sm font-semibold text-ink">Dr. Aarav Sharma</p>
+            <p className="text-xs text-ink-muted">General Physician · New Delhi</p>
+          </div>
+          <span className="badge ml-auto bg-accent-100 text-accent-800">Online</span>
+        </div>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          {[
+            { val: "128", label: "Patients this week" },
+            { val: "32", label: "Appointments today" },
+            { val: "₹48k", label: "Monthly billing" },
+            { val: "4.9★", label: "Patient rating" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-xl bg-surface p-3.5">
+              <p className="font-display text-xl font-bold text-ink">{s.val}</p>
+              <p className="mt-0.5 text-[11px] text-ink-muted">{s.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5">
+          <div className="mb-1.5 flex justify-between text-xs text-ink-muted">
+            <span>Clinic capacity</span>
+            <span>72%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-brand-100">
+            <div className="h-full w-[72%] rounded-full bg-accent-500" />
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute -right-6 top-16 animate-float-slow rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-100 text-lg">📋</span>
+          <div>
+            <p className="text-xs font-semibold text-ink">Prescription</p>
+            <p className="text-[11px] text-ink-muted">Uploaded just now</p>
+          </div>
+        </div>
+      </div>
+      <div className="absolute -left-8 bottom-24 animate-float rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft [animation-delay:1.2s]">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-lg">📍</span>
+          <div>
+            <p className="text-xs font-semibold text-ink">Home visit</p>
+            <p className="text-[11px] text-ink-muted">Map navigation ready</p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

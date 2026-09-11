@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays } from "lucide-react";
 import { getPublishedBlogs } from "@/lib/queries/blog";
 import { PageHeader } from "@/components/marketing/page-header";
 import { formatDate } from "@/lib/utils";
+import { publicUploadUrl } from "@/lib/utils/uploads";
 
 export const metadata: Metadata = { title: "Blog" };
 export const dynamic = "force-dynamic";
@@ -34,11 +35,19 @@ export default async function BlogPage() {
                   href={`/blog/${post.slug}`}
                   className="group flex flex-col overflow-hidden rounded-2xl border border-brand-900/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-soft"
                 >
+                  {publicUploadUrl(post.image) ? (
+                    <img
+                      src={publicUploadUrl(post.image) ?? ""}
+                      alt={post.title}
+                      className="h-44 w-full object-cover"
+                    />
+                  ) : (
                   <div className="flex h-44 items-center justify-center bg-brand-800">
                     <span className="text-5xl opacity-90 transition-transform duration-300 group-hover:scale-110">
                       🩺
                     </span>
                   </div>
+                  )}
                   <div className="flex flex-1 flex-col p-6">
                     <div className="flex items-center gap-3 text-xs text-ink-muted">
                       <span className="badge bg-brand-100 text-brand-800">{post.category}</span>

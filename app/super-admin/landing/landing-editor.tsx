@@ -11,6 +11,7 @@ import {
   updateLandingSection,
 } from "../actions";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
+import { publicUploadUrl } from "@/lib/utils/uploads";
 
 const initialState = { error: null as string | null };
 
@@ -157,6 +158,16 @@ function ItemForm({
         <form action={formAction} className="mt-5 space-y-4">
           <input type="hidden" name="section_key" value={section.key} />
           {item && <input type="hidden" name="id" value={item.id} />}
+          {item && publicUploadUrl(item.image) && (
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <img
+                src={publicUploadUrl(item.image) ?? ""}
+                alt=""
+                className="h-14 w-20 rounded-lg object-cover ring-1 ring-slate-200"
+              />
+              <p className="text-xs text-slate-500">Current image — pick a new file above to replace it.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label htmlFor="item_title" className="label">Title</label>
@@ -311,6 +322,12 @@ export function LandingEditor({ sections }: { sections: SectionRow[] }) {
               <div className="divide-y divide-slate-100">
                 {s.items.map((item, i) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                    {(() => {
+                      const thumb = publicUploadUrl(item.image);
+                      return thumb ? (
+                        <img src={thumb} alt="" className="h-10 w-14 flex-shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
+                      ) : null;
+                    })()}
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-ink">
                         {item.title ?? "Untitled"}

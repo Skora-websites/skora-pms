@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays } from "lucide-react";
 import { getBlogBySlug } from "@/lib/queries/blog";
 import { formatDate } from "@/lib/utils";
+import { publicUploadUrl } from "@/lib/utils/uploads";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,13 @@ export default async function BlogDetailPage({
       </section>
 
       <article className="py-14">
+        {publicUploadUrl(post.image) && (
+          <img
+            src={publicUploadUrl(post.image) ?? ""}
+            alt={post.title}
+            className="mx-auto mb-12 max-w-3xl rounded-2xl px-5 lg:px-0"
+          />
+        )}
         <div className="prose mx-auto max-w-3xl px-5 lg:px-0">
           {post.content.split("\n\n").map((para, i) => (
             <p

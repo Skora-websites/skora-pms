@@ -323,9 +323,9 @@ async function main() {
     db.insert(landingItems).values({ ...v, createdAt: now(), updatedAt: now() });
 
   await section("hero", "Hero Slider");
-  await item({ sectionKey: "hero", title: "SkoraCares – Smarter Patient & Clinic Management", description: "Online Prescription Upload, Multi Clinic Management, Home Visit with Map Integration — everything your practice needs in one powerful platform.", image: "front-assets/img/banner1.png", link: "#demo", linkText: "Request a demo →", order: 0 });
-  await item({ sectionKey: "hero", title: "Your Digital Backbone for Clinical Excellence", description: "From Consent Form Submission to Staff Management and Role Management — SkoraCares simplifies every step of care with multi vendor integration for lab tests.", image: "front-assets/img/banner1.png", link: "#demo", linkText: "Request a demo →", order: 1 });
-  await item({ sectionKey: "hero", title: "Your digital partner for smarter, faster, personalized care.", description: "I/E Management, Ledger Feature, Follow-up Management — healthcare teams get smart digital tools to deliver efficient, personalized patient care seamlessly.", image: "front-assets/img/banner1.png", link: "#demo", linkText: "Request a demo →", order: 2 });
+  await item({ sectionKey: "hero", title: "SkoraCares – Smarter Patient & Clinic Management", description: "Online Prescription Upload, Multi Clinic Management, Home Visit with Map Integration — everything your practice needs in one powerful platform.", link: "#demo", linkText: "Request a demo →", order: 0 });
+  await item({ sectionKey: "hero", title: "Your Digital Backbone for Clinical Excellence", description: "From Consent Form Submission to Staff Management and Role Management — SkoraCares simplifies every step of care with multi vendor integration for lab tests.", link: "#demo", linkText: "Request a demo →", order: 1 });
+  await item({ sectionKey: "hero", title: "Your digital partner for smarter, faster, personalized care.", description: "I/E Management, Ledger Feature, Follow-up Management — healthcare teams get smart digital tools to deliver efficient, personalized patient care seamlessly.", link: "#demo", linkText: "Request a demo →", order: 2 });
 
   await section("features", "Platform Features", "Everything Your Clinic Needs", "Purpose-built tools for modern healthcare professionals — from solo practitioners to multi-branch hospitals.", { badge: "Platform Features" });
   const features: [string, string, string][] = [
@@ -357,13 +357,13 @@ async function main() {
   await item({
     sectionKey: "products", title: "All-in-One Healthcare Management Platform",
     description: "Manage your complete healthcare operations with a powerful and easy-to-use platform. From patient records and prescriptions to staff management, billing, home visits, and multi-clinic operations — everything is available in one smart dashboard.",
-    badge: "⚙️ Explore Our Suite of Solutions", link: "tel:9217375832", linkText: "Contact Sales →", image: "front-assets/img/explore.jpeg", icon: "normal", order: 0,
+    badge: "⚙️ Explore Our Suite of Solutions", link: "tel:9217375832", linkText: "Contact Sales →", icon: "normal", order: 0,
     features: ["Online Prescription Upload & Consent Form Submission", "Multi Vendor Integration for Lab Tests", "Staff, Role & Profile Management", "Home Visit Management with Map Integration", "Multi Clinic Management & White Label Solution", "Ledger Feature, I/E Management & Follow Up Management"],
   });
   await item({
     sectionKey: "products", title: "Smart, Affordable & Trusted Solution",
     description: "Designed for modern healthcare professionals, our platform offers premium features at the best price. Hundreds of doctors, clinics, and healthcare businesses already trust us to streamline their daily operations and improve patient care.",
-    badge: "🚀 Why Choose Us", link: "tel:9217375832", linkText: "Contact Sales →", image: "front-assets/img/choose.jpeg", icon: "reverse", order: 1,
+    badge: "🚀 Why Choose Us", link: "tel:9217375832", linkText: "Contact Sales →", icon: "reverse", order: 1,
     features: ["PMS Complimentary for Existing Customers", "Affordable Paid PMS Plans Available", "30 Days Free Trial", "Easy to Use Interface", "Highest Features at Lowest Price", "24×7 Training & Support"],
   });
 
