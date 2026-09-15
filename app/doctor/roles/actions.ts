@@ -67,10 +67,16 @@ async function parsePermissionInput(raw: FormData | string[] | string): Promise<
           .filter(Boolean);
   if (names.length === 0) return [];
   const rows = await db
-    .select({ id: permissions.id, name: permissions.name })
+    .select({ id: permissions.id, name: permissions.name, parentId: permissions.parentId })
     .from(permissions)
     .where(inArray(permissions.name, names));
-  return rows.map((r) => r.id);
+  const ids = new Set(rows.map((r) => r.id));
+  // The role form toggles child permissions only; the nav + route guards
+  // check the parent module perm (e.g. "registrations"), so include each
+  // granted child's parent — otherwise UI-created roles can never see their
+  // modules in the sidebar.
+  for (const r of rows) if (r.parentId) ids.add(r.parentId);
+  return [...ids];
 }
 
 // ── Role CRUD (legacy `RoleController` parity) ─────────────────────────────
