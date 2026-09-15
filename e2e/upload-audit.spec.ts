@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
+import m from "mysql2/promise";
+import fs from "node:fs";
 import { unique, tinyPdf } from "./helpers";
 
-const m = require("mysql2/promise");
 const DB = { host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db" };
 type Row<T> = [T, unknown];
 async function query<T>(sql: string, params: unknown[]): Promise<T[]> {
@@ -133,9 +134,8 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await otherCtx.close();
 
     // ── Booking deletion leaves report file ORPHANED (documented bug) ────────
-    const storage = require("node:fs");
     const diskPath = `storage/uploads/${post[0].uploaded_file_path}`;
-    expect(storage.existsSync(diskPath), "report on disk before delete").toBe(true);
+    expect(fs.existsSync(diskPath), "report on disk before delete").toBe(true);
     page.on("dialog", (d) => d.accept());
     await page.goto("/doctor/test-bookings");
     const [bk] = await query<{ vendor_name: string }>(
@@ -147,7 +147,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await page.waitForTimeout(3_000);
     const goneRows = await query<{ id: number }>("SELECT id FROM test_bookings WHERE id = ?", [post[0].id]);
     expect(goneRows.length, "booking hard-deleted").toBe(0);
-    expect(storage.existsSync(diskPath), "report file removed with booking (no orphan PHI)").toBe(false);
+    expect(fs.existsSync(diskPath), "report file removed with booking (no orphan PHI)").toBe(false);
   });
 
   test("consent: anon patient uploads jpg on accept, file served via slug; double-submit blocked", async ({ browser }) => {
@@ -241,8 +241,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
       "SELECT id, clinic_logo FROM doctor_clinics WHERE clinic_name = ? AND doctor_id = 2 ORDER BY id DESC LIMIT 1", [clinicName]
     );
     expect(clinic.clinic_logo).toMatch(/^clinic\/[0-9a-f-]+\.png$/);
-    const storage = require("node:fs");
-    expect(storage.existsSync(`storage/uploads/${clinic.clinic_logo}`), "logo written to disk").toBe(true);
+    expect(fs.existsSync(`storage/uploads/${clinic.clinic_logo}`), "logo written to disk").toBe(true);
 
     // logo served via authed route (owner)
     const logoRes = await page.request.get(`/api/doctor/clinic-logo/${clinic.id}`);
@@ -264,7 +263,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
       "SELECT id FROM doctor_clinics WHERE id = ?", [clinic.id]
     );
     expect(goneRows.length, "clinic hard-deleted").toBe(0);
-    expect(storage.existsSync(`storage/uploads/${clinic.clinic_logo}`), "logo file removed with clinic").toBe(false);
+    expect(fs.existsSync(`storage/uploads/${clinic.clinic_logo}`), "logo file removed with clinic").toBe(false);
   });
 
   test("income-expense: attachment lifecycle (create, authed fetch, replace deletes old, delete removes file)", async ({ page, browser }) => {
@@ -307,9 +306,8 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     expect(tx2.file_path).toMatch(/^transactions\/.+\.jpg$/);
     expect(tx2.file_path).not.toBe(oldPath);
 
-    const storage = require("node:fs");
-    expect(storage.existsSync(`storage/uploads/${oldPath}`), "old file unlinked after replace").toBe(false);
-    expect(storage.existsSync(`storage/uploads/${tx2.file_path}`), "new file on disk").toBe(true);
+    expect(fs.existsSync(`storage/uploads/${oldPath}`), "old file unlinked after replace").toBe(false);
+    expect(fs.existsSync(`storage/uploads/${tx2.file_path}`), "new file on disk").toBe(true);
 
     // ── Delete entry → file removed from disk ──────────────────────────────
     page.on("dialog", (d) => d.accept());
@@ -319,7 +317,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
       "SELECT deleted_at FROM transactions WHERE id = ?", [tx.id]
     );
     expect(gone.deleted_at).toBeTruthy();
-    expect(storage.existsSync(`storage/uploads/${tx2.file_path}`), "file removed on delete").toBe(false);
+    expect(fs.existsSync(`storage/uploads/${tx2.file_path}`), "file removed on delete").toBe(false);
   });
 
   test("consent: wrong type (txt) rejected with friendly error", async ({ browser }) => {

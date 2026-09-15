@@ -16,6 +16,9 @@ export default async function globalSetup() {
   await doctorPage.getByLabel("Password").fill("Admin@123");
   await doctorPage.getByRole("button", { name: /Sign in/i }).click();
   await doctorPage.waitForURL(/\/doctor(\/|$)/, { timeout: 120_000 });
+  // Pre-dismiss the post-login permission nudge so its fixed overlay never
+  // intercepts clicks in tests (dismissal is localStorage-keyed per browser).
+  await doctorPage.evaluate(() => localStorage.setItem("skoracare-perms-dismissed", "1"));
   await doctorPage.context().storageState({ path: "e2e/.auth/doctor.json" });
 
   const adminPage = await browser.newPage();
@@ -24,6 +27,7 @@ export default async function globalSetup() {
   await adminPage.getByLabel("Password").fill("Admin@123");
   await adminPage.getByRole("button", { name: /Sign in/i }).click();
   await adminPage.waitForURL(/\/super-admin(\/|$)/, { timeout: 120_000 });
+  await adminPage.evaluate(() => localStorage.setItem("skoracare-perms-dismissed", "1"));
   await adminPage.context().storageState({ path: "e2e/.auth/admin.json" });
 
   await browser.close();

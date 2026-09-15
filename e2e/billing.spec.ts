@@ -85,6 +85,10 @@ test.describe("P3.1 Billing", () => {
     const modal = page.locator(".fixed.inset-0.z-50", { has: page.getByRole("heading", { name: "Edit bill" }) });
     await modal.getByLabel("Total amount (₹)").clear();
     await modal.getByLabel("Total amount (₹)").fill(editAmount);
+    // The bill was created paid (received = total), so lower received too —
+    // the server rejects received > total (overpay guard).
+    await modal.getByLabel("Received amount (₹)").clear();
+    await modal.getByLabel("Received amount (₹)").fill(editAmount);
     await modal.getByRole("button", { name: /Update bill/i }).click();
 
     // Verify the updated amount appears. The original row locator filtered on

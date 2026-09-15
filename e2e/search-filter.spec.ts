@@ -15,12 +15,14 @@ test("patients: search by exact name filters list, empty state on garbage term",
   await page.waitForURL(/\/doctor\/patients(\/|$|\?)/, { timeout: 20000 });
 
   await page.goto("/doctor/patients");
-  await page.locator("input[name=q]").fill(name);
+  // Scope to main — the dashboard header's global search input is also name="q".
+  const search = page.locator("main input[name=q]");
+  await search.fill(name);
   await page.getByRole("button", { name: "Search" }).click();
   await page.waitForURL(/q=SearchPat/, { timeout: 15000 });
   await expect(page.getByText(name).first()).toBeVisible();
 
-  await page.locator("input[name=q]").fill("zzzz-no-such-patient");
+  await search.fill("zzzz-no-such-patient");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("No patients found")).toBeVisible({ timeout: 15000 });
 });

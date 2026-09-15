@@ -1,8 +1,7 @@
 // Notifications: booking creates doctor notification (DB + UI), unread count, mark-all-read.
 import { test, expect } from "@playwright/test";
+import m from "mysql2/promise";
 import { unique } from "./helpers";
-
-const m = require("mysql2/promise");
 async function q(sql: string, params?: unknown[]): Promise<unknown[]> {
   const c = await m.createConnection({ host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db" });
   try { const [rows] = await c.query(sql, params); return rows as unknown[]; } finally { await c.end(); }

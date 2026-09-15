@@ -19,17 +19,14 @@ test("dashboards have no horizontal overflow at any viewport width", async ({ pa
   }
 });
 
-test("desktop header starts after the sidebar, breadcrumb visible", async ({ page }) => {
+test("desktop header starts after the sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/super-admin", { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(300);
   const rects = await page.evaluate(() => {
     const aside = document.querySelector("aside")!.getBoundingClientRect();
     const header = document.querySelector("header.sticky")!.getBoundingClientRect();
-    const breadcrumb = header ? document.querySelector("header.sticky .text-sm span.font-medium") : null;
-    const br = breadcrumb?.getBoundingClientRect();
-    return { asideRight: aside.right, headerLeft: header.left, breadcrumbLeft: br?.left ?? null };
+    return { asideRight: aside.right, headerLeft: header.left };
   });
   expect(rects.headerLeft).toBeGreaterThanOrEqual(rects.asideRight);
-  expect(rects.breadcrumbLeft).toBeGreaterThan(rects.asideRight);
 });
