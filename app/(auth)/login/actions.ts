@@ -6,7 +6,8 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { setSessionCookie, getSessionUserId, destroySession } from "@/lib/auth/session";
-import { homePathForRole } from "@/lib/auth/user";
+import { getCurrentUser, getUserPermissions, homePathForRole } from "@/lib/auth/user";
+import { firstPermittedDoctorPath } from "@/lib/auth/permissions";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
 import { loginSchema } from "@/lib/validation";
@@ -69,6 +70,12 @@ export async function loginAction(
   if (existing) {
     const [me] = await db.select({ role: users.role, status: users.status }).from(users).where(eq(users.id, existing));
     if (me?.status === "active") {
+      // Same one-hop rule as fresh login below — avoid the layout-redirect
+      // loop for restricted staff landing on /doctor.
+      if (me.role === "doctor" || me.role === "receptionist") {
+        const perms = await getUserPermissions(existing);
+        redirect(firstPermittedDoctorPath(perms));
+      }
       redirect(homePathForRole(me.role ?? "patient"));
     }
     await destroySession();
@@ -79,5 +86,16 @@ export async function loginAction(
   // logs in/out several times in a row must not hit "too many attempts".
   authRateLimit.loginReset(email);
   await audit.login(user.id, { email, role: user.role });
+
+  // Doctor-side users land on their first PERMITTED page directly. Landing on
+  // ROLE_HOME (/doctor) first makes the doctor layout redirect() during the
+  // action's client-side RSC render, and in Next 16 that redirect-in-layout
+  // during a server-action navigation never settles — the router re-fetches
+  // the destination forever and the page stays blank. One hop avoids it.
+  if (user.role === "doctor" || user.role === "receptionist") {
+    const me = await getCurrentUser();
+    const perms = me ? await getUserPermissions(user.id) : new Set<string>();
+    redirect(firstPermittedDoctorPath(perms));
+  }
   redirect(homePathForRole(user.role));
 }
