@@ -54,6 +54,21 @@ test("successful login sets httpOnly session cookie + lands on role home", async
   await page.close();
 });
 
+test("session cookie persists ~30 days (not a browser-session cookie)", async ({ browser }) => {
+  const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
+  await login(page, "doctor@gmail.com", "Admin@123");
+  await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
+  const cookie = (await page.context().cookies()).find((c) => c.name === "skora_session");
+  expect(cookie).toBeTruthy();
+  // Persistent cookie with a far-future expiry — the user must stay logged
+  // in for the full 30-day window unless they sign out or are revoked.
+  expect(cookie!.expires).toBeGreaterThan(-1); // -1 = session-scoped cookie
+  const days = (cookie!.expires - Date.now() / 1000) / 86400;
+  expect(days).toBeGreaterThan(29);
+  expect(days).toBeLessThanOrEqual(30.01);
+  await page.close();
+});
+
 test("session survives page refresh", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
   await login(page, "doctor@gmail.com", "Admin@123");
