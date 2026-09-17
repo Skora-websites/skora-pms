@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { CalendarPlus } from "lucide-react";
+import { useActionState, useRef, useState } from "react";
+import { CalendarPlus, FileUp, FilePlus2 } from "lucide-react";
 import { createAppointment } from "../actions";
 
 type Patient = { id: number; name: string; phone: string | null };
@@ -9,6 +9,7 @@ type Patient = { id: number; name: string; phone: string | null };
 const initialState = { error: null as string | null };
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+// "Generate new" paths — sub-options shown when the doctor picks "Generate new".
 const CONSENT_TYPES = [
   { value: "otp", label: "Send OTP (WhatsApp)" },
   { value: "consent", label: "Send Consent Link" },
@@ -16,10 +17,15 @@ const CONSENT_TYPES = [
   { value: "email", label: "Send Email" },
 ];
 
+type ConsentMode = "upload" | "generate";
+
 export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
   const [state, formAction, pending] = useActionState(createAppointment, initialState);
   const [showConsent, setShowConsent] = useState(false);
+  const [consentMode, setConsentMode] = useState<ConsentMode | null>(null);
   const [consentType, setConsentType] = useState("otp");
+  const [fileName, setFileName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const today = new Date().toLocaleDateString("en-CA");
 
   return (
@@ -168,24 +174,88 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
         {showConsent && (
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
             <h5 className="font-semibold text-gray-800">Consent Form</h5>
+
+            {/* Two top-level options: Upload existing / Generate new */}
             <div className="grid grid-cols-2 gap-3">
-              {CONSENT_TYPES.map((ct) => (
-                <label
-                  key={ct.value}
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm cursor-pointer hover:border-brand-300 has-[:checked]:border-brand-500 has-[:checked]:bg-accent-50"
-                >
-                  <input
-                    type="radio"
-                    name="consent_type"
-                    value={ct.value}
-                    checked={consentType === ct.value}
-                    onChange={(e) => setConsentType(e.target.value)}
-                    className="accent-brand-700"
-                  />
-                  {ct.label}
-                </label>
-              ))}
+              <button
+                type="button"
+                onClick={() => setConsentMode("upload")}
+                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                  consentMode === "upload"
+                    ? "border-brand-500 bg-accent-50"
+                    : "border-slate-200 bg-white hover:border-brand-300"
+                }`}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                  <FileUp className="h-4.5 w-4.5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-ink">Upload</span>
+                  <span className="block text-xs text-slate-500">Attach a signed consent form (JPG, PNG, PDF)</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsentMode("generate")}
+                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                  consentMode === "generate"
+                    ? "border-brand-500 bg-accent-50"
+                    : "border-slate-200 bg-white hover:border-brand-300"
+                }`}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                  <FilePlus2 className="h-4.5 w-4.5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-ink">Generate new</span>
+                  <span className="block text-xs text-slate-500">Send OTP, consent link, email, or skip</span>
+                </span>
+              </button>
             </div>
+
+            {/* Upload path: attach the signed/printed consent document */}
+            {consentMode === "upload" && (
+              <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                <input type="hidden" name="consent_type" value="upload" />
+                <label htmlFor="consent_file" className="label">Signed consent form</label>
+                <input
+                  ref={fileInputRef}
+                  id="consent_file"
+                  name="consent_file"
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  required
+                  onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+                />
+                {fileName && <p className="text-xs text-slate-500">Selected: {fileName}</p>}
+                <p className="text-xs text-slate-400">Max 5 MB. The appointment is confirmed immediately once uploaded.</p>
+              </div>
+            )}
+
+            {/* Generate-new path: the existing flow */}
+            {consentMode === "generate" && (
+              <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {CONSENT_TYPES.map((ct) => (
+                    <label
+                      key={ct.value}
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm cursor-pointer hover:border-brand-300 has-[:checked]:border-brand-500 has-[:checked]:bg-accent-50"
+                    >
+                      <input
+                        type="radio"
+                        name="consent_type"
+                        value={ct.value}
+                        checked={consentType === ct.value}
+                        onChange={(e) => setConsentType(e.target.value)}
+                        className="accent-brand-700"
+                      />
+                      {ct.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

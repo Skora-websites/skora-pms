@@ -81,6 +81,7 @@ test("appointment booking: duplicate submit creates exactly one appointment", as
   await page.getByLabel("Date").fill(dateStr);
   await page.getByLabel("Time").fill(timeStr);
   await page.getByRole("button", { name: /Show consent form/i }).click();
+  await page.getByRole("button", { name: /Generate new/i }).click();
   await page.getByText("Skip Consent").click();
   const btn = page.getByRole("button", { name: /Book appointment/i });
   await btn.dblclick();

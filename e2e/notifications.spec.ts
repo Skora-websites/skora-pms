@@ -30,6 +30,7 @@ test("booking an appointment notifies the doctor in DB and UI", async ({ page })
   await page.getByLabel("Date").fill(dateStr);
   await page.getByLabel("Time").fill(timeStr);
   await page.getByRole("button", { name: /Show consent form/i }).click();
+  await page.getByRole("button", { name: /Generate new/i }).click();
   await page.getByText("Skip Consent").click();
   await page.getByRole("button", { name: /Book appointment/i }).click();
   await page.waitForURL(/\/doctor\/appointments($|\?|\/)/, { timeout: 30000 });

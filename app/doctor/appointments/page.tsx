@@ -91,7 +91,11 @@ export default async function AppointmentsPage({
                       <td className="capitalize">{a.caseType.replace(/_/g, " ")}</td>
                       <td><StatusBadge status={a.status} /></td>
                       <td className="text-right">
-                        <AppointmentRowActions appointmentId={a.id} status={a.status} />
+                        <AppointmentRowActions
+                          appointmentId={a.id}
+                          status={a.status}
+                          consentFile={a.consentFile}
+                        />
                       </td>
                     </tr>
                   ))}

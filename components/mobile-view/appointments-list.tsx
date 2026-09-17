@@ -13,6 +13,7 @@ type Appt = {
   time: string;
   caseType: string;
   status: string;
+  consentFile?: string | null;
 };
 
 /**
@@ -48,7 +49,11 @@ export function AppointmentList({ appointments }: { appointments: Appt[] }) {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-end border-t border-slate-100 pt-3">
-            <AppointmentRowActions appointmentId={a.id} status={a.status} />
+            <AppointmentRowActions
+              appointmentId={a.id}
+              status={a.status}
+              consentFile={a.consentFile}
+            />
           </div>
         </div>
       ))}

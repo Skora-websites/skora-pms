@@ -36,6 +36,7 @@ test.describe("P2.2 Appointments", () => {
     await page.getByLabel("Time").fill(timeStr);
     // Use "Skip Consent" to get status = confirmed
     await page.getByRole("button", { name: /Show consent form/i }).click();
+    await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Skip Consent").click();
 
     // Submit

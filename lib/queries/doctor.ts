@@ -34,6 +34,7 @@ export type AppointmentRow = {
   caseType: string;
   status: string;
   consentType: string | null;
+  consentFile: string | null;
   patientId: number | null;
   patientName: string;
   patientString: string | null;
@@ -56,6 +57,7 @@ async function appointmentRows(where: SQL | undefined, order: SQL) {
       caseType: appointments.caseType,
       status: appointments.status,
       consentType: appointments.consentType,
+      consentFile: appointments.consentFile,
       patientId: appointments.patientId,
       patientString: appointments.patientString,
       mobileNumber: appointments.mobileNumber,

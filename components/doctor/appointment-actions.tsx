@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   CheckCircle2,
+  FileText,
 } from "lucide-react";
 import { updateAppointmentStatus } from "@/app/doctor/actions";
 import { cancelAppointment, completeAppointment, deleteAppointment } from "@/app/doctor/appointments/actions";
@@ -16,9 +17,11 @@ import Link from "next/link";
 export function AppointmentRowActions({
   appointmentId,
   status,
+  consentFile,
 }: {
   appointmentId: number;
   status: string;
+  consentFile?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -53,6 +56,18 @@ export function AppointmentRowActions({
         >
           <Check className="h-4 w-4" />
         </button>
+      )}
+
+      {consentFile && (
+        <a
+          href={`/api/doctor/appointments/${appointmentId}/consent-file`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View consent form"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-200 text-violet-700 transition-colors hover:bg-violet-50"
+        >
+          <FileText className="h-4 w-4" />
+        </a>
       )}
 
       {status === "completed" && (

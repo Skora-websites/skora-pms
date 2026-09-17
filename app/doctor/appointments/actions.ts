@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { saveConsentFile } from "@/lib/files/consent-upload";
 import crypto from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -20,6 +21,7 @@ import { audit } from "@/lib/security/audit-log";
 import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
+import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
 import { todayStr } from "@/lib/utils";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
@@ -28,9 +30,7 @@ export type AppointmentActionResult = { error: string | null };
 
 const CASE_TYPES = ["clinical_visit", "home_visit", "online_visit", "on_call_visit"] as const;
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-// "upload" removed: the book-form file input was dead (never read here) and
-// no consent file is stored at booking time.
-const CONSENT_TYPES = ["otp", "consent", "skipped", "email"];
+const CONSENT_TYPES = ["otp", "consent", "upload", "skipped", "email"];
 
 /** "h:mm AM/PM" or "HH:MM" -> minutes since midnight, or null. */
 function parseTimeToMinutes(t: string): number | null {
@@ -153,6 +153,21 @@ export async function createAppointment(
   const consentType = String(formData.get("consent_type") ?? "").trim() || null;
   const mobileNumber = String(formData.get("mobile_number") ?? "").trim() || null;
 
+  // Doctor-uploaded consent document (consent_type=upload). Validated early so
+  // the doctor fixes it before any DB work happens.
+  const consentFile = formData.get("consent_file");
+  let consentFilePath: string | null = null;
+  if (consentType === "upload") {
+    if (!(consentFile instanceof File) || consentFile.size === 0) {
+      return { error: "Upload the signed consent form first." };
+    }
+    try {
+      consentFilePath = await saveConsentFile(consentFile);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Invalid consent file." };
+    }
+  }
+
   const parsed = appointmentSchema.safeParse({
     patientId: patientIdRaw || undefined,
     date,
@@ -206,6 +221,10 @@ export async function createAppointment(
   const conflict = await findTimeConflict(doctorId, date, time);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
 
+  // ── Duplicates finder: same patient already booked at this date + time ──
+  const duplicate = await findDuplicateBooking({ patientId, patientString, mobileNumber, date, time });
+  if (duplicate) return { error: duplicateBookingError(duplicate) };
+
   // ── Schedule containment (mirrors legacy store) ──
   const { clinics, schedules } = await getSchedulesForDay(doctorId, date);
   if (clinics.length > 0 && schedules.length > 0) {
@@ -218,7 +237,7 @@ export async function createAppointment(
   // ── Status derivation (mirrors legacy store) ──
   let status: string = "pending";
   if (consentType === "consent" || consentType === "email") status = "pending_consent";
-  else if (consentType === "otp" || consentType === "skipped") status = "confirmed";
+  else if (consentType === "otp" || consentType === "upload" || consentType === "skipped") status = "confirmed";
 
   const clinic = clinics[0] ?? null;
 
@@ -231,6 +250,8 @@ export async function createAppointment(
     await tx.select({ id: users.id }).from(users).where(eq(users.id, doctorId)).for("update");
     const conflict = await findTimeConflict(doctorId, date, time);
     if (conflict) throw new Error(`Time slot ${time} is already booked.`);
+    const dup = await findDuplicateBooking({ patientId, patientString, mobileNumber, date, time });
+    if (dup) throw new Error(duplicateBookingError(dup));
 
     const [inserted] = await tx
       .insert(appointments)
@@ -247,6 +268,7 @@ export async function createAppointment(
         height: height !== null ? String(height) : null,
         remarks,
         consentType: (consentType as never) ?? null,
+        consentFile: consentFilePath,
         mobileNumber,
         status: status as never,
         clinicId: clinic?.id ?? null,
@@ -276,7 +298,7 @@ export async function createAppointment(
     });
   } catch (err) {
     // The in-transaction conflict check threw — surface as a form error.
-    if (err instanceof Error && err.message.startsWith("Time slot")) {
+    if (err instanceof Error && (err.message.startsWith("Time slot") || err.message.startsWith("Duplicate booking"))) {
       return { error: err.message };
     }
     throw err;
@@ -297,6 +319,7 @@ export async function createAppointment(
     caseType,
     status,
     consentType: consentType ?? null,
+    consentFile: consentFilePath ? "uploaded" : null,
     consentLink,
   });
 
@@ -430,6 +453,17 @@ export async function updateAppointment(
   const time = toLegacyTime(timeRaw);
   const conflict = await findTimeConflict(doctorId, date, time, appointmentId);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
+
+  // ── Duplicates finder: same patient already booked at this date + time ──
+  const duplicate = await findDuplicateBooking({
+    patientId,
+    patientString,
+    mobileNumber,
+    date,
+    time,
+    excludeId: appointmentId,
+  });
+  if (duplicate) return { error: duplicateBookingError(duplicate) };
 
   // ── Schedule containment ──
   const { clinics, schedules } = await getSchedulesForDay(doctorId, date);
