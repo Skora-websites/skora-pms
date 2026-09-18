@@ -77,9 +77,9 @@ test.describe("Business-fix verification", () => {
     await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
-    await page.getByRole("button", { name: /Show consent form/i }).click();
     await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Send Consent Link").click();
+    await page.getByRole("button", { name: /Continue to booking/i }).click();
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
@@ -126,9 +126,9 @@ test.describe("Business-fix verification", () => {
     await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
-    await page.getByRole("button", { name: /Show consent form/i }).click();
     await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Send Consent Link").click();
+    await page.getByRole("button", { name: /Continue to booking/i }).click();
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 

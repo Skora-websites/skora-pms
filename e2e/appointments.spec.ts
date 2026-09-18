@@ -34,10 +34,11 @@ test.describe("P2.2 Appointments", () => {
     await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
-    // Use "Skip Consent" to get status = confirmed
-    await page.getByRole("button", { name: /Show consent form/i }).click();
+    // Use "Skip Consent" to get status = confirmed. The consent popup opens
+    // automatically when the booking page loads.
     await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Skip Consent").click();
+    await page.getByRole("button", { name: /Continue to booking/i }).click();
 
     // Submit
     await page.getByRole("button", { name: /Book appointment/i }).click();

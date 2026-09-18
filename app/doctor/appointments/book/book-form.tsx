@@ -21,12 +21,36 @@ type ConsentMode = "upload" | "generate";
 
 export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
   const [state, formAction, pending] = useActionState(createAppointment, initialState);
-  const [showConsent, setShowConsent] = useState(false);
+  // Flow: the consent popup (Upload / Generate new) opens first, then the
+  // booking form becomes usable. The consent card stays mounted (hidden) after
+  // the popup closes so consent_type / consent_file still submit with the form.
+  const [step, setStep] = useState<"consent" | "booking">("consent");
   const [consentMode, setConsentMode] = useState<ConsentMode | null>(null);
   const [consentType, setConsentType] = useState("otp");
   const [fileName, setFileName] = useState("");
+  const [consentError, setConsentError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const today = new Date().toLocaleDateString("en-CA");
+
+  const continueToBooking = () => {
+    if (!consentMode) {
+      setConsentError("Choose Upload or Generate new to continue.");
+      return;
+    }
+    if (consentMode === "upload" && !fileName) {
+      setConsentError("Attach the signed consent form, or pick Generate new.");
+      return;
+    }
+    setConsentError("");
+    setStep("booking");
+  };
+
+  const consentSummary =
+    consentMode === "upload"
+      ? `Upload — signed consent form${fileName ? ` (${fileName})` : ""}`
+      : consentMode === "generate"
+        ? `Generate new — ${CONSENT_TYPES.find((c) => c.value === consentType)?.label ?? ""}`
+        : "Not selected";
 
   return (
     <div className="card p-7">
@@ -160,26 +184,72 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
           />
         </div>
 
-        {/* Consent form section */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowConsent(!showConsent)}
-            className="text-sm font-semibold text-brand-700 underline hover:text-brand-600"
-          >
-            {showConsent ? "Hide" : "Show"} consent form
-          </button>
-        </div>
+        {/* Consent summary — shown after the popup is completed */}
+        {step === "booking" && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">Consent form</p>
+              <p className="truncate text-sm text-slate-600">{consentSummary}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStep("consent")}
+              className="shrink-0 text-sm font-semibold text-brand-700 underline hover:text-brand-600"
+            >
+              Change
+            </button>
+          </div>
+        )}
 
-        {showConsent && (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-            <h5 className="font-semibold text-gray-800">Consent Form</h5>
+        {state.error && (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {state.error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={pending}
+          className="btn-primary w-full !rounded-xl !py-3.5"
+        >
+          <CalendarPlus className="h-4 w-4" />
+          {pending ? "Booking..." : "Book appointment"}
+        </button>
+
+        {/* Step 1: consent form popup — opens before the booking form; after
+            "Continue to booking" it hides (inputs stay mounted and submitted). */}
+        <div
+          className={
+            step === "consent"
+              ? "fixed inset-0 z-50 flex items-center justify-center p-4"
+              : "hidden"
+          }
+        >
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-hidden="true" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="consent-popup-title"
+            className="relative z-10 max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div>
+              <h2 id="consent-popup-title" className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                Consent form
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Choose how the patient&apos;s consent will be collected for this appointment, then continue to the booking form.
+              </p>
+            </div>
 
             {/* Two top-level options: Upload existing / Generate new */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setConsentMode("upload")}
+                onClick={() => {
+                  setConsentMode("upload");
+                  setConsentType("otp");
+                  setConsentError("");
+                }}
                 className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                   consentMode === "upload"
                     ? "border-brand-500 bg-accent-50"
@@ -196,7 +266,11 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
               </button>
               <button
                 type="button"
-                onClick={() => setConsentMode("generate")}
+                onClick={() => {
+                  setConsentMode("generate");
+                  setFileName("");
+                  setConsentError("");
+                }}
                 className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                   consentMode === "generate"
                     ? "border-brand-500 bg-accent-50"
@@ -224,7 +298,6 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
                   name="consent_file"
                   type="file"
                   accept="image/jpeg,image/png,application/pdf"
-                  required
                   onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
                   className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
                 />
@@ -233,7 +306,7 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
               </div>
             )}
 
-            {/* Generate-new path: the existing flow */}
+            {/* Generate-new path: send OTP / consent link / email, or skip */}
             {consentMode === "generate" && (
               <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -256,23 +329,37 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
                 </div>
               </div>
             )}
+
+            {consentError && (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {consentError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={continueToBooking}
+              className="btn-primary w-full !rounded-xl !py-3"
+            >
+              Continue to booking
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Decide later = submit NO consent choice: reset the mode so
+                // the hidden consent_type input / radios unmount and the
+                // appointment books with status "pending".
+                setConsentMode(null);
+                setFileName("");
+                setConsentError("");
+                setStep("booking");
+              }}
+              className="w-full text-center text-xs font-medium text-slate-400 underline hover:text-slate-600"
+            >
+              Decide later
+            </button>
           </div>
-        )}
-
-        {state.error && (
-          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {state.error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="btn-primary w-full !rounded-xl !py-3.5"
-        >
-          <CalendarPlus className="h-4 w-4" />
-          {pending ? "Booking..." : "Book appointment"}
-        </button>
+        </div>
       </form>
     </div>
   );

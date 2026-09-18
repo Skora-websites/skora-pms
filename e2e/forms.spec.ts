@@ -73,16 +73,15 @@ test("appointment booking: duplicate submit creates exactly one appointment", as
   const wanted = await sel.locator(`option`, { hasText: patientName }).allTextContents();
   expect(wanted.length).toBeGreaterThan(0);
   await sel.selectOption({ label: wanted[0].trim() });
-  // unique slot per run — first run's booking would otherwise conflict
-  // ("Time slot already booked") for every subsequent retry
+  // pick a genuinely free slot for doctor 2 — previous runs keep burning
+  // "current minute" slots on the fixed date ("Time slot already booked")
   const dateStr = "2026-12-15";
-  const minute = String(new Date().getUTCMinutes()).padStart(2, "0").padStart(2, "0");
-  const timeStr = `10:${minute}`;
+  const timeStr = await firstFreeSlot(dateStr);
   await page.getByLabel("Date").fill(dateStr);
   await page.getByLabel("Time").fill(timeStr);
-  await page.getByRole("button", { name: /Show consent form/i }).click();
   await page.getByRole("button", { name: /Generate new/i }).click();
   await page.getByText("Skip Consent").click();
+  await page.getByRole("button", { name: /Continue to booking/i }).click();
   const btn = page.getByRole("button", { name: /Book appointment/i });
   await btn.dblclick();
   await page.waitForURL(/\/doctor\/appointments($|\?|\/)/, { timeout: 30000 });
@@ -121,4 +120,17 @@ async function countAppointmentsFor(patientId: number, when: string): Promise<nu
   // time stored as "10:30 AM" varchar; patient is unique to this test so patient_id alone scopes it
   const r = await q("select count(*) n from appointments where patient_id=? and time=?", [patientId, when]) as { n: number }[];
   return r[0].n;
+}
+
+/** First 10:xx slot on the date not yet booked for doctor 2 (non-cancelled). */
+async function firstFreeSlot(dateStr: string): Promise<string> {
+  const r = await q(
+    "select time from appointments where doctor_id=2 and date=? and status<>'cancelled'",
+    [dateStr]
+  ) as { time: string }[];
+  for (let minute = 0; minute < 60; minute++) {
+    const candidate = `10:${String(minute).padStart(2, "0")} AM`;
+    if (!r.some((row) => row.time === candidate)) return `10:${String(minute).padStart(2, "0")}`;
+  }
+  throw new Error("No free 10:xx slot on " + dateStr + " — pick a later test date");
 }

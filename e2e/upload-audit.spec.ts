@@ -69,7 +69,10 @@ async function freshBooking(page: import("@playwright/test").Page): Promise<stri
 
 test.describe("Upload-audit: vendor test report lifecycle", () => {
   test("wrong type rejected, retry with valid pdf works, doctor report fetch auth-scoped", async ({ page, context, browser }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:3100" });
+    // Grant clipboard for the origin the suite actually runs on (E2E_BASE_URL
+    // overrides the default :3100 dev-server port).
+    const origin = new URL(process.env.E2E_BASE_URL ?? "http://localhost:3100").origin;
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
     const link = await freshBooking(page);
 
     // ── Wrong type (text/plain) rejected with friendly error ─────────────────
@@ -172,9 +175,9 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
-    await page.getByRole("button", { name: /Show consent form/i }).click();
     await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Send Consent Link").click();
+    await page.getByRole("button", { name: /Continue to booking/i }).click();
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
@@ -341,9 +344,9 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await patientSelect.selectOption({ index: chosenIndex });
     await page.getByLabel("Date").fill(dateStr);
     await page.getByLabel("Time").fill(timeStr);
-    await page.getByRole("button", { name: /Show consent form/i }).click();
     await page.getByRole("button", { name: /Generate new/i }).click();
     await page.getByText("Send Consent Link").click();
+    await page.getByRole("button", { name: /Continue to booking/i }).click();
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
