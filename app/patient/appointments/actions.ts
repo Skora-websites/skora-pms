@@ -6,6 +6,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
 import { sendMail } from "@/lib/mail/send";
 import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
@@ -126,6 +127,10 @@ export async function createPatientAppointment(
 
   const time = toLegacyTime(timeRaw);
 
+  // ── Duplicates finder: same patient already booked at this date + time ──
+  const duplicate = await findDuplicateBooking({ patientId: user.id, date, time });
+  if (duplicate) return { error: duplicateBookingError(duplicate) };
+
   // Insert under a doctor-row lock (SELECT ... FOR UPDATE) serializing
   // concurrent bookings for the same doctor — closes the check-then-insert
   // double-booking race (mirrors the doctor-side create).
@@ -145,6 +150,19 @@ export async function createPatientAppointment(
         )
         .limit(1);
       if (conflict) throw new Error(`Time slot ${time} is already booked.`);
+      const [dup] = await tx
+        .select({ id: appointments.id })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.patientId, user.id),
+            eq(appointments.date, date as never),
+            eq(appointments.time, time),
+            ne(appointments.status, "cancelled")
+          )
+        )
+        .limit(1);
+      if (dup) throw new Error("Duplicate booking: you already have an appointment on this date at this time.");
 
       await tx.insert(appointments).values({
         doctorId,
@@ -159,7 +177,7 @@ export async function createPatientAppointment(
       });
     });
   } catch (err) {
-    if (err instanceof Error && err.message.includes("already booked")) {
+    if (err instanceof Error && (err.message.includes("already booked") || err.message.startsWith("Duplicate booking"))) {
       return { error: err.message };
     }
     throw err;
