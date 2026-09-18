@@ -17,7 +17,10 @@ const INSTALL_DISMISS_KEY = "skoracare-pwa-install-dismissed";
  *   app tab is closed.
  */
 export function PwaSetup() {
-  const [installPrompt, setInstallPrompt] = useState<{ prompt: () => Promise<void> } | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<{
+    prompt: () => Promise<void>;
+    userChoice?: Promise<{ outcome: "accepted" | "dismissed" }>;
+  } | null>(null);
   const [showInstall, setShowInstall] = useState(false);
 
   /** Persist a PushSubscription to the server (idempotent). */
@@ -98,23 +101,26 @@ export function PwaSetup() {
   }, []);
 
   // Capture the install prompt (Android Chrome + desktop; iOS shows its own
-  // "Add to Home Screen" flow). A previously dismissed banner stays dismissed:
-  // the browser re-fires beforeinstallprompt on every visit, so the dismissal
-  // must be persisted (component state alone made the banner reappear).
+  // "Add to Home Screen" flow). The dismissal flag is checked on EVERY firing
+  // — Chromium can fire beforeinstallprompt multiple times per page (e.g. when
+  // the service worker activates) — and again at render time below, so a
+  // dismissed banner can never come back until the app is actually installed.
   useEffect(() => {
     const onPrompt = (e: Event) => {
+      // Always suppress the browser's own mini-infobar; we own the UX.
       e.preventDefault();
       try {
         if (localStorage.getItem(INSTALL_DISMISS_KEY) === "1") return;
       } catch {
         // Storage unavailable (privacy mode) — fall through and show.
       }
-      // @ts-expect-error beforeinstallprompt is not in TS lib types yet
-      setInstallPrompt(e);
+      setInstallPrompt(e as never);
       setShowInstall(true);
     };
     const onInstalled = () => {
       setShowInstall(false);
+      setInstallPrompt(null);
+      // Installed for real — reset the flag so a future reinstall can prompt.
       try {
         localStorage.removeItem(INSTALL_DISMISS_KEY);
       } catch {
@@ -131,7 +137,21 @@ export function PwaSetup() {
 
   const install = async () => {
     if (!installPrompt) return;
-    await installPrompt.prompt();
+    try {
+      await installPrompt.prompt();
+      // Cancelling Chrome's own dialog must also stop the nagging, otherwise
+      // the banner re-appears on the next load — persist it as a dismissal.
+      const choice = await installPrompt.userChoice?.catch(() => null);
+      if (choice?.outcome === "dismissed") {
+        try {
+          localStorage.setItem(INSTALL_DISMISS_KEY, "1");
+        } catch {
+          // Storage unavailable — banner still hides for this page view.
+        }
+      }
+    } catch {
+      // prompt() can throw if the event was already consumed — just hide.
+    }
     setShowInstall(false);
   };
 
@@ -144,7 +164,20 @@ export function PwaSetup() {
     setShowInstall(false);
   };
 
-  if (!showInstall) return null;
+  // Render-time gate (client only): the persisted dismissal wins over any
+  // state, so even a stale showInstall can never render the banner.
+  const storedDismissed =
+    typeof window !== "undefined"
+      ? (() => {
+          try {
+            return localStorage.getItem(INSTALL_DISMISS_KEY) === "1";
+          } catch {
+            return false;
+          }
+        })()
+      : false;
+
+  if (!showInstall || storedDismissed) return null;
   return (
     <div className="fixed bottom-20 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-brand-100 bg-white p-3 shadow-2xl lg:bottom-6">
       <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl">
