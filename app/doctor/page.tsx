@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   CalendarDays,
+  CalendarClock,
   Users,
   Wallet,
   ArrowUpRight,
@@ -55,11 +56,11 @@ export default async function DoctorDashboardPage() {
   });
   const maxCount = Math.max(...chartData.map((d) => d.count), 1);
 
-  // SVG geometry (mirrors the Weekly OPD Occupancy widget: 640×210 viewBox)
-  const BW = 44;
-  const GAP = (640 - 7 * BW) / 8;
-  const MAX_H = 140;
-  const BASE_Y = 160;
+  // SVG geometry — Weekly OPD Occupancy renders in a ~1fr bento card, so the
+  // viewBox is sized for that narrow column (280×180) instead of a wide strip.
+  const BW_2 = 26;
+  const MAX_H_2 = 110;
+  const BASE_Y_2 = 150;
   const next = todays[0];
 
   const queue = (todays.length > 0 ? todays : recent).slice(0, 5);
@@ -106,49 +107,47 @@ export default async function DoctorDashboardPage() {
 
       {/* ── MID BENTO ROW: Occupancy | Next Consultation | Clinical Queue (§5.4) */}
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr] [&>*]:min-w-0">
-        {/* Widget A — Weekly OPD Occupancy (tiered SVG bars with peak tooltip) */}
+        {/* Widget A — Weekly OPD Occupancy (tiered rounded bars with value labels).
+            Sized for its ~1fr card: a 280×180 viewBox with preserveAspectRatio
+            so bars scale cleanly instead of the old 640-wide chart rendering
+            as a thin messed-up strip in the narrow column. */}
         <div className="card flex flex-col p-6">
-          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Weekly OPD Occupancy</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Weekly OPD Occupancy</h2>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+              {chartData.reduce((a, d) => a + d.count, 0)} this week
+            </span>
+          </div>
           <svg
-            viewBox="0 0 640 210"
-            className="mt-4 w-full flex-1"
+            viewBox="0 0 280 180"
+            preserveAspectRatio="xMidYMid meet"
+            className="mt-4 max-h-56 w-full flex-1"
             role="img"
             aria-label="Weekly OPD occupancy by day"
           >
-            <defs>
-              <pattern id="barHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect width="6" height="6" fill="var(--color-brand-50)" />
-                <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-slate-300)" strokeWidth="3" />
-              </pattern>
-            </defs>
-
-            <line x1="0" y1={BASE_Y} x2="640" y2={BASE_Y} stroke="var(--color-slate-200)" strokeWidth="1" />
+            <line x1="0" y1={BASE_Y_2} x2="280" y2={BASE_Y_2} stroke="var(--color-slate-200)" strokeWidth="1" />
 
             {chartData.map((d, i) => {
-              const x = GAP + i * (BW + GAP);
-              const h = Math.max((d.count / maxCount) * MAX_H, 6);
-              const y = BASE_Y - h;
+              const x = 8 + i * 38;
+              const h = d.count > 0 ? Math.max((d.count / maxCount) * MAX_H_2, 10) : 4;
+              const y = BASE_Y_2 - h;
               const tier = tierOf(d.count, maxCount);
               const fill =
                 tier === "peak" ? "var(--color-accent-500)"
                 : tier === "heavy" ? "var(--color-brand-700)"
-                : tier === "moderate" ? "var(--color-sage)" : "url(#barHatch)";
-              const boldDay = tier === "peak" || tier === "heavy";
+                : tier === "moderate" ? "var(--color-sage)"
+                : d.count > 0 ? "var(--color-slate-300)" : "var(--color-slate-100)";
               return (
                 <g key={i}>
-                  <rect x={x} y={y} width={BW} height={h} rx="8" fill={fill}>
-                    <title>{`${d.count} appointment${d.count === 1 ? "" : "s"}`}</title>
+                  <rect x={x} y={y} width={BW_2} height={h} rx="6" fill={fill}>
+                    <title>{`${d.label}: ${d.count} appointment${d.count === 1 ? "" : "s"}`}</title>
                   </rect>
-                  {tier === "peak" && (
-                    <g>
-                      <rect x={x + BW / 2 - 62} y={y - 34} width="124" height="24" rx="12" fill="var(--color-brand-700)" />
-                      <path d={`M ${x + BW / 2 - 5} ${y - 10} L ${x + BW / 2 + 5} ${y - 10} L ${x + BW / 2} ${y - 4} Z`} fill="var(--color-brand-700)" />
-                      <text x={x + BW / 2} y={y - 18} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--color-brand-50)">
-                        {d.count} Peak Day
-                      </text>
-                    </g>
+                  {d.count > 0 && (
+                    <text x={x + BW_2 / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--color-ink)">
+                      {d.count}
+                    </text>
                   )}
-                  <text x={x + BW / 2} y="186" textAnchor="middle" fontSize="12" fontWeight={boldDay ? "700" : "400"} fill="var(--color-slate-500)">
+                  <text x={x + BW_2 / 2} y={BASE_Y_2 + 16} textAnchor="middle" fontSize="11" fontWeight={tier === "peak" ? "700" : "400"} fill="var(--color-slate-500)">
                     {d.label}
                   </text>
                 </g>
@@ -192,8 +191,14 @@ export default async function DoctorDashboardPage() {
             </>
           ) : (
             <>
-              <div className="hatch mt-4 flex-1 rounded-2xl px-5 py-10 text-center text-sm text-slate-400">
-                No consultations scheduled today.
+              <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-surface-subtle px-5 py-10 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                  <CalendarClock className="h-6 w-6" />
+                </div>
+                <p className="mt-3 text-sm font-semibold text-ink">No consultations today</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Your schedule is clear. New bookings will appear here.
+                </p>
               </div>
               <Link href="/doctor/appointments" className="btn-secondary mt-5 justify-center">
                 <CalendarPlus className="h-4 w-4" />
