@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Override with E2E_BASE_URL when the dev server runs on a different port
+// (e.g. E2E_BASE_URL=http://localhost:3000 when :3100 is occupied).
+const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3100";
+
 export default defineConfig({
   testDir: "./e2e",
   // e2e/probes.spec.ts is a standalone diagnostic script (not a Playwright
@@ -13,9 +17,9 @@ export default defineConfig({
   reporter: [["list"]],
   timeout: 60_000,
   use: {
-    // Port 3000 is occupied by another project on this machine — SkoraCare
-    // dev server for E2E runs on 3100 (see e2e/global-setup.ts).
-    baseURL: "http://localhost:3100",
+    // Port 3000 may be occupied by another project on this machine — SkoraCare
+    // dev server for E2E defaults to 3100 (see e2e/global-setup.ts).
+    baseURL,
     storageState: "e2e/.auth/doctor.json",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
