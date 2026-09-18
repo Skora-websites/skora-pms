@@ -54,6 +54,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       signaturePath: users.signaturePath,
       notificationPreferences: users.notificationPreferences,
       doctorId: users.doctorId,
+      referenceRoleId: users.referenceRoleId,
       qualification: users.qualification,
       registrationNumber: users.registrationNumber,
       salutation: users.salutation,
@@ -68,8 +69,16 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   // "already logged in" gap (session stays valid after super-admin
   // deactivates the account).
   if (row && row.status && row.status !== "active") return null;
+  if (!row) return null;
 
-  return row ?? null;
+  // Legacy/migrated staff rows have doctor_id = NULL but carry their doctor's
+  // id in reference_role_id (spatie team semantics). Without this fallback
+  // every receptionist-scoped query resolves to the staff member's own id
+  // and returns empty data right after login.
+  return {
+    ...row,
+    doctorId: row.doctorId ?? row.referenceRoleId,
+  };
 });
 
 /** Set of permission names the user holds (direct + via roles). */
@@ -114,6 +123,26 @@ export const getUserPermissions = cache(
         )
         .where(inArray(roleHasPermissions.roleId, roleIds));
       rolePerms.forEach((p) => permSet.add(p.name));
+    }
+
+    // ── Module expansion (team-login fix) ──
+    // The nav + route guards check the PARENT module perm ("schedule",
+    // "registrations", …), but roles granted via the UI (or legacy data) may
+    // only carry action-level children ("schedule-list", "billing-create", …)
+    // without the parent row. Granting any action of a module implies access
+    // to that module — expand the set so restricted staff aren't bounced to
+    // the landing page right after logging in.
+    if (permSet.size > 0) {
+      const allPerms = await db
+        .select({ id: permissions.id, name: permissions.name, parentId: permissions.parentId })
+        .from(permissions);
+      const nameById = new Map(allPerms.map((p) => [p.id, p.name]));
+      for (const p of allPerms) {
+        if (permSet.has(p.name) && p.parentId !== null) {
+          const parentName = nameById.get(p.parentId);
+          if (parentName) permSet.add(parentName);
+        }
+      }
     }
 
     return permSet;
