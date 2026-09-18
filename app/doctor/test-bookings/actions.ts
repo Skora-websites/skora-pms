@@ -267,7 +267,7 @@ export async function createTestBooking(
   const now = new Date();
   // Booking + auto-generated bill in ONE transaction — previously a failure
   // between the two left either an unbilled booking or (worse) an orphan bill.
-  const bookingId = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     const [createdBooking] = await tx
       .insert(testBookings)
       .values({

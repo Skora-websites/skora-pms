@@ -95,7 +95,6 @@ test("login page while authenticated: form submits → bounce to role home, no d
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
   await login(page, "doctor@gmail.com", "Admin@123");
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
-  const firstCookie = (await page.context().cookies()).find((c) => c.name === "skora_session");
   // second login submit while authed: loginAction sees existing session → redirect home
   await page.goto(LOGIN);
   await login(page, "doctor@gmail.com", "Admin@123");
