@@ -120,9 +120,13 @@ export function TestBookingsTable({
                 </div>
                 <div>
                   <p className="text-slate-400">Paid</p>
-                  <p className="font-medium capitalize text-slate-700">
-                    {formatINR(b.paymentAmount)} {b.paymentMethod ? `· ${b.paymentMethod}` : ""}
-                  </p>
+                  {b.paymentMethod === "pending" ? (
+                    <p className="font-medium text-amber-700">Pending payment</p>
+                  ) : (
+                    <p className="font-medium capitalize text-slate-700">
+                      {formatINR(b.paymentAmount)} {b.paymentMethod ? `· ${b.paymentMethod}` : ""}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
@@ -216,9 +220,13 @@ export function TestBookingsTable({
                   </td>
                   <td className="px-5 py-4">
                     <p className="font-semibold text-ink">{formatINR(b.totalAmount)}</p>
-                    <p className="mt-0.5 text-xs capitalize text-slate-400">
-                      {b.paymentMethod ?? "—"} · paid {formatINR(b.paymentAmount)}
-                    </p>
+                    {b.paymentMethod === "pending" ? (
+                      <p className="mt-0.5 text-xs font-semibold text-amber-700">Pending payment</p>
+                    ) : (
+                      <p className="mt-0.5 text-xs capitalize text-slate-400">
+                        {b.paymentMethod ?? "—"} · paid {formatINR(b.paymentAmount)}
+                      </p>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     <StatusBadge status={b.status} />

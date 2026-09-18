@@ -13,7 +13,15 @@ type Test = { id: number; name: string; price: string | null };
 
 type Suggest = { id: number; name: string; phone: string | null; registrationId: string | null };
 
-const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
+const PAYMENT_METHODS = ["pending", "upi", "cash", "card", "netbanking"];
+
+const PAYMENT_LABELS: Record<string, string> = {
+  pending: "Pending payment",
+  upi: "UPI",
+  cash: "Cash",
+  card: "Card",
+  netbanking: "Net banking",
+};
 
 export function BookingForm({
   vendors,
@@ -279,13 +287,15 @@ export function BookingForm({
                     >
                       {PAYMENT_METHODS.map((m) => (
                         <option key={m} value={m}>
-                          {m.charAt(0).toUpperCase() + m.slice(1)}
+                          {PAYMENT_LABELS[m] ?? m.charAt(0).toUpperCase() + m.slice(1)}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="amount" className="label">Amount received (₹)</label>
+                    <label htmlFor="amount" className="label">
+                      {paymentMethod === "pending" ? "Amount received (₹) — pay later" : "Amount received (₹)"}
+                    </label>
                     <input
                       id="amount"
                       name="amount"
@@ -293,10 +303,17 @@ export function BookingForm({
                       min="0"
                       step="0.01"
                       defaultValue={booking?.paymentAmount ?? "0"}
-                      className="input"
+                      disabled={paymentMethod === "pending"}
+                      className="input disabled:bg-slate-100 disabled:text-slate-400"
                     />
                   </div>
                 </div>
+
+                {paymentMethod === "pending" && (
+                  <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    No payment will be collected now — the bill is created as pending and can be settled later from Billing.
+                  </p>
+                )}
 
                 {paymentMethod === "upi" && (
                   <div className="mt-3 grid grid-cols-2 gap-3">

@@ -42,6 +42,15 @@ const BOOKING_TRANSITIONS: Record<string, readonly string[]> = {
   cancelled: [],
 };
 const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"] as const;
+/** "pending" = no payment collected at booking time (pay later). */
+const PAYMENT_OPTIONS = [...PAYMENT_METHODS, "pending"] as const;
+
+/** Map a booking payment method to the billings.payment_method enum value. */
+function billMethodOf(method: string): string {
+  // "credit" is the enum's not-yet-paid representation — the bill is created
+  // with status "pending" / received 0 and is settled from Billing.
+  return method === "pending" ? "credit" : method;
+}
 
 function randomToken(): string {
   return crypto.randomBytes(24).toString("hex");
@@ -90,7 +99,10 @@ function buildPaymentDetails(
 ): { details: Record<string, string>; paymentDate: string | null } {
   const details: Record<string, string> = {};
   let paymentDate: string | null = null;
-  if (method === "upi") {
+  if (method === "pending") {
+    // No payment collected yet — nothing to record.
+    return { details, paymentDate };
+  } else if (method === "upi") {
     const upiId = String(formData.get("upi_id") ?? "").trim();
     if (!upiId) throw new Error("UPI ID is required.");
     details.upi_id = upiId;
@@ -246,10 +258,10 @@ export async function createTestBooking(
   const ownedTests = testRows.filter((t) => testIds.includes(t.id));
   if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
 
-  if (!(PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
+  if (!(PAYMENT_OPTIONS as readonly string[]).includes(paymentMethod)) {
     return { error: "Invalid payment method." };
   }
-  const amountNum = Number(amount);
+  const amountNum = paymentMethod === "pending" ? 0 : Number(amount);
   if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid payment amount." };
   if (bookingDate && !/^\d{4}-\d{2}-\d{2}$/.test(bookingDate)) return { error: "Invalid booking date." };
 
@@ -296,7 +308,7 @@ export async function createTestBooking(
       patientId: patient.id,
       totalAmount,
       receivedAmount: amountNum,
-      paymentMethod,
+      paymentMethod: billMethodOf(paymentMethod),
       paymentDetails,
       bookingId,
       tx,
@@ -358,10 +370,10 @@ export async function updateTestBooking(
   const ownedTests = testRows.filter((t) => testIds.includes(t.id));
   if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
 
-  if (!(PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
+  if (!(PAYMENT_OPTIONS as readonly string[]).includes(paymentMethod)) {
     return { error: "Invalid payment method." };
   }
-  const amountNum = Number(amount);
+  const amountNum = paymentMethod === "pending" ? 0 : Number(amount);
   if (!Number.isFinite(amountNum) || amountNum < 0) return { error: "Invalid payment amount." };
 
   let paymentDetails: Record<string, string>;
@@ -410,7 +422,7 @@ export async function updateTestBooking(
         totalAmount: totalAmount.toFixed(2),
         receivedAmount: amountNum.toFixed(2),
         pendingAmount: pending.toFixed(2),
-        paymentMethod: paymentMethod as never,
+        paymentMethod: billMethodOf(paymentMethod) as never,
         paymentDetails,
         status: pending <= 0 ? "paid" : amountNum > 0 ? "partial" : "pending",
         updatedAt: new Date(),
@@ -427,7 +439,7 @@ export async function updateTestBooking(
           .update(transactions)
           .set({
             amount: amountNum.toFixed(2),
-            paymentMethod,
+            paymentMethod: billMethodOf(paymentMethod),
             updatedAt: new Date(),
           })
           .where(eq(transactions.id, tx.id));
