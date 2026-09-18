@@ -48,7 +48,7 @@ export type AppointmentRow = {
   note: string | null;
 };
 
-async function appointmentRows(where: SQL | undefined, order: SQL) {
+async function appointmentRows(where: SQL | undefined, order: SQL | SQL[]) {
   const rows = await db
     .select({
       id: appointments.id,
@@ -73,7 +73,7 @@ async function appointmentRows(where: SQL | undefined, order: SQL) {
     .from(appointments)
     .leftJoin(users, eq(users.id, appointments.patientId))
     .where(where)
-    .orderBy(order);
+    .orderBy(...(Array.isArray(order) ? order : [order]));
 
   return rows.map((r) => ({
     ...r,
@@ -94,12 +94,22 @@ export const getAppointments = cache(
     const conds = [eq(appointments.doctorId, doctorId)];
     if (filter.status && filter.status !== "all") conds.push(eq(appointments.status, filter.status as never));
     if (filter.date) conds.push(eq(appointments.date, filter.date));
-    return appointmentRows(and(...conds), desc(appointments.date));
+    // Newest bookings first: upcoming dates on top, most recently created
+    // booking first within the same date.
+    return appointmentRows(and(...conds), [
+      desc(appointments.date),
+      desc(appointments.createdAt),
+      desc(appointments.id),
+    ]);
   }
 );
 
 export const getRecentAppointments = cache(async (doctorId: number, limit = 5) => {
-  const rows = await appointmentRows(eq(appointments.doctorId, doctorId), desc(appointments.date));
+  // "Recent" = most recently BOOKED first (new > old), not by visit date.
+  const rows = await appointmentRows(eq(appointments.doctorId, doctorId), [
+    desc(appointments.createdAt),
+    desc(appointments.id),
+  ]);
   return rows.slice(0, limit);
 });
 

@@ -180,7 +180,8 @@ export const getPatientAppointments = cache(async (patientId: number) => {
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
     .where(eq(appointments.patientId, patientId))
-    .orderBy(desc(appointments.date));
+    // Newest bookings first (new > old), then by upcoming date.
+    .orderBy(desc(appointments.createdAt), desc(appointments.id));
 });
 
 export const getPatientStats = cache(async (patientId: number) => {

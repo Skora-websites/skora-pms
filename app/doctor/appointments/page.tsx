@@ -51,8 +51,38 @@ export default async function AppointmentsPage({
       <TabPills
         tabs={tabs}
         active={filter.status ?? "all"}
-        hrefFor={(key) => `/doctor/appointments?status=${key}`}
+        hrefFor={(key) =>
+          `/doctor/appointments?status=${key}${filter.date ? `&date=${filter.date}` : ""}`
+        }
       />
+
+      {/* Date filter (GET form) — combined with the status pills above. */}
+      <form method="get" action="/doctor/appointments" className="mb-5 flex flex-wrap items-center gap-2">
+        {filter.status && filter.status !== "all" && (
+          <input type="hidden" name="status" value={filter.status} />
+        )}
+        <input
+          type="date"
+          name="date"
+          defaultValue={filter.date ?? ""}
+          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] text-slate-700 focus:border-brand-400 focus:outline-none"
+          aria-label="Filter by date"
+        />
+        <button
+          type="submit"
+          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:border-brand-300 hover:text-brand-800"
+        >
+          Filter
+        </button>
+        {(filter.date || (filter.status && filter.status !== "all")) && (
+          <a
+            href="/doctor/appointments"
+            className="rounded-full px-3 py-1.5 text-[13px] font-medium text-slate-400 transition-colors hover:text-brand-800"
+          >
+            Clear
+          </a>
+        )}
+      </form>
 
       {appointments.length === 0 ? (
         <EmptyState
