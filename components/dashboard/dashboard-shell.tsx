@@ -5,6 +5,7 @@ import { Sidebar, type NavItem } from "./sidebar";
 import { DashboardHeader } from "./header";
 import { MobileAppShell } from "./mobile-app-shell";
 import { PermissionNudge } from "@/components/pwa/permission-nudge";
+import type { DutyMode } from "@/lib/utils";
 
 export function DashboardShell({
   navItems,
@@ -14,6 +15,7 @@ export function DashboardShell({
   footerLabel,
   searchHref,
   promo = false,
+  dutyMode = "off",
   children,
 }: {
   navItems: NavItem[];
@@ -25,6 +27,8 @@ export function DashboardShell({
   searchHref?: string;
   /** Show the sidebar "Download Doctor App" promo card (doctor shell only). */
   promo?: boolean;
+  /** Doctor duty mode — drives the header Online/Offline pill. */
+  dutyMode?: DutyMode;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -59,7 +63,7 @@ export function DashboardShell({
           collapsed ? "lg:pl-[76px]" : "lg:pl-64"
         }`}
       >
-        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} searchHref={searchHref} />
+        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} searchHref={searchHref} dutyMode={dutyMode} />
         {/* Single page content — never duplicated. Mobile: gutters + bottom
             tab bar clearance. Desktop: top padding below the in-flow header. */}
         <main className="overflow-x-hidden px-4 pb-24 pt-14 lg:px-8 lg:pb-8 lg:pt-6">

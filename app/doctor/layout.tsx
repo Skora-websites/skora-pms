@@ -7,6 +7,7 @@ import {
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DoctorPermissionGate } from "@/components/doctor/permission-gate";
 import type { NavItem } from "@/components/dashboard/sidebar";
+import { dutyModeOf } from "@/lib/utils";
 import { getUnreadCount } from "@/app/doctor/notifications/actions";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -85,6 +86,7 @@ export default async function DoctorLayout({
       footerLabel="View public site"
       searchHref="/doctor/patients"
       promo
+      dutyMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
     >
       <DoctorPermissionGate perms={[...perms]} />
       {children}

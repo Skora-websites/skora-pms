@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, Bell, LogOut, UserRound, ChevronDown, Search, MessageCircle, ShieldCheck } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
-import { initials } from "@/lib/utils";
+import { initials, cn, type DutyMode } from "@/lib/utils";
 
 export function DashboardHeader({
   user,
@@ -13,16 +13,23 @@ export function DashboardHeader({
   onOpenMobileMenu,
   searchHref,
   searchPlaceholder = "Search patient by name, phone or email…",
+  dutyMode = "off",
 }: {
   user: { name: string; role: string; email: string | null; profilePhotoPath: string | null };
   unreadCount?: number;
   onOpenMobileMenu: () => void;
   searchHref?: string;
   searchPlaceholder?: string;
+  /** Doctor duty mode — drives the Online/Offline status pill (§5.2). */
+  dutyMode?: DutyMode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // Doctor's duty mode drives the Online/Offline pill. Staff acting for a
+  // doctor (receptionist/admin) inherit the doctor's duty status too.
+  const onDuty = dutyMode !== "off";
 
   // ⌘F / Ctrl+F focuses the global search (per DESIGN.md §5.2 shortcut chip).
   useEffect(() => {
@@ -171,9 +178,16 @@ export function DashboardHeader({
             )}
           </div>
 
-          {/* Online status pill (DESIGN.md §5.2) */}
-          <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-brand-800 xl:inline-flex">
-            <span className="text-accent-500">●</span> Online
+          {/* Status pill (DESIGN.md §5.2) — reflects the doctor's duty mode:
+              on duty (clinic/home/both) = Online, off duty = Offline. */}
+          <span
+            className={cn(
+              "hidden items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.04em] xl:inline-flex",
+              onDuty ? "border-slate-200 text-brand-800" : "border-slate-200 text-slate-400"
+            )}
+            title={onDuty ? "You are on duty" : "You are off duty — set your status with the I'm on duty toggle"}
+          >
+            <span className={onDuty ? "text-accent-500" : "text-slate-400"}>●</span> {onDuty ? "Online" : "Offline"}
           </span>
         </div>
       </div>
