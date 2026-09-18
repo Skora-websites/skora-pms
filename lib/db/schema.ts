@@ -64,6 +64,8 @@ export const users = mysqlTable(
     longitude: varchar("longitude", { length: 255 }),
     status: varchar("status", { length: 255 }).notNull().default("active"),
     onDuty: boolean("on_duty").default(false),
+    clinicOnDuty: boolean("clinic_on_duty").default(false),
+    homeVisitOnDuty: boolean("home_visit_on_duty").default(false),
     emailVerifiedAt: timestamp("email_verified_at"),
     rememberToken: varchar("remember_token", { length: 100 }),
     currentTeamId: bigint("current_team_id", { mode: "number" }),
@@ -461,6 +463,7 @@ export const medicines = mysqlTable("medicines", {
   strength: varchar("strength", { length: 255 }),
   form: varchar("form", { length: 255 }).default("Tablet"),
   unit: varchar("unit", { length: 255 }).default("mg"),
+  quantityAvailable: int("quantity_available").notNull().default(0),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });

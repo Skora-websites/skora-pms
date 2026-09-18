@@ -3,6 +3,7 @@ import { Search, Pill, SlidersHorizontal } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getMedicineInventory } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
+import { MedicineStockControl } from "@/components/doctor/medicine-stock";
 
 export const metadata: Metadata = { title: "Shop · Medicine Inventory · Doctor" };
 
@@ -14,6 +15,8 @@ export default async function ShopPage({
   await requireRole(["doctor", "receptionist", "admin"]);
   const { q, form } = await searchParams;
   const inventory = await getMedicineInventory(q, form);
+  const totalUnits = inventory.reduce((sum, m) => sum + (m.quantityAvailable ?? 0), 0);
+  const outOfStock = inventory.filter((m) => (m.quantityAvailable ?? 0) <= 0).length;
 
   const forms = [...new Set(inventory.map((m) => m.form).filter(Boolean))].sort() as string[];
   const activeForm = form ?? "";
@@ -22,7 +25,7 @@ export default async function ShopPage({
     <div>
       <PageHeader
         title="Medicine Inventory"
-        subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue · managed by SkoraCares`}
+        subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue · ${totalUnits} unit${totalUnits === 1 ? "" : "s"} available${outOfStock > 0 ? ` · ${outOfStock} out of stock` : ""}`}
       />
 
       {/* Search + filter bar */}
@@ -91,10 +94,8 @@ export default async function ShopPage({
                   </div>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between border-t border-slate-50 pt-3">
-                <span className="rounded-full bg-accent-50 px-2.5 py-1 text-[11px] font-semibold text-accent-700">
-                  In catalogue
-                </span>
+              <MedicineStockControl medicineId={m.id} initialQuantity={m.quantityAvailable ?? 0} />
+              <div className="mt-3 flex items-center justify-between">
                 <span className="text-[11px] text-slate-400">
                   Added {m.createdAt ? new Date(m.createdAt).toLocaleDateString("en-IN") : "—"}
                 </span>

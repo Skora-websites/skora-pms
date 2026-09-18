@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   CalendarDays,
   Users,
-  PhoneCall,
   Wallet,
   ArrowUpRight,
   Video,
@@ -19,6 +18,8 @@ import {
   getRecentAppointments,
 } from "@/lib/queries/doctor";
 import { StatCard, StatusBadge, EmptyState, PageHeader } from "@/components/ui/dashboard-ui";
+import { DutyToggle } from "@/components/doctor/duty-toggle";
+import { dutyModeOf } from "@/lib/utils";
 import { formatINR, formatDate, cn } from "@/lib/utils";
 
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -72,6 +73,11 @@ export default async function DoctorDashboardPage() {
         subtitle="Real-time practice intelligence and multi-clinic orchestration."
         action={
           <div className="flex flex-wrap items-center gap-2.5">
+            {user.role === "doctor" && (
+              <DutyToggle
+                initialMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
+              />
+            )}
             <Link
               href="/doctor/patients/new"
               className="inline-flex items-center gap-2 rounded-full bg-accent-100 px-5 py-2.5 text-[13px] font-semibold text-brand-800 transition-all hover:bg-accent-200 active:scale-[0.98]"

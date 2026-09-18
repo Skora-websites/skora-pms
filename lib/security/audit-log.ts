@@ -51,7 +51,8 @@ export type AuditAction =
   | "sos_accepted"
   | "sos_declined"
   | "sos_completed"
-  | "sos_cancelled";
+  | "sos_cancelled"
+  | "duty_mode_changed";
 
 export interface AuditLogEntry {
   userId?: number | null;

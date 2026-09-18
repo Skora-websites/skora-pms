@@ -5,6 +5,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Duty-mode feature: derive the doctor's "I'm on duty" mode from the two duty flags. */
+export type DutyMode = "off" | "clinic" | "home" | "both";
+
+export function dutyModeOf(clinic: boolean | null | undefined, home: boolean | null | undefined): DutyMode {
+  if (clinic && home) return "both";
+  if (clinic) return "clinic";
+  if (home) return "home";
+  return "off";
+}
+
 /**
  * Generate a globally-unique invoice number. The legacy scheme
  * (`INV-` + last 6 digits of the ms timestamp) repeats every ~16.7 minutes,
