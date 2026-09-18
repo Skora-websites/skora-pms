@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaSetup } from "@/components/pwa-setup";
 import { SplashScreen } from "@/components/pwa/splash-screen";
+import { AgentationDev } from "@/components/dev/agentation-dev";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -71,6 +72,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SplashScreen />
         {children}
         <PwaSetup />
+        <AgentationDev />
       </body>
     </html>
   );
