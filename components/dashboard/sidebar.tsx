@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -86,6 +87,9 @@ export type NavItem = {
   section?: string;
 };
 
+/** localStorage flag: the user closed the "Download Doctor App" promo card. */
+const PROMO_DISMISS_KEY = "skoracare-sidebar-promo-dismissed";
+
 /** Decorative topographic contour lines for dark forest promo surfaces. */
 function ContourLines({ className }: { className?: string }) {
   return (
@@ -124,6 +128,31 @@ export function Sidebar({
   promo?: boolean;
 }) {
   const pathname = usePathname();
+  // Promo card dismissible per user (persisted). Render-time adjustment
+  // pattern: localStorage is only read on the client, so the first client
+  // render re-renders with the stored value before paint (SSR renders the
+  // card; hydration reconciles). No effect needed.
+  const [promoDismissed, setPromoDismissed] = useState<boolean | null>(null);
+  const storedDismissal =
+    typeof window !== "undefined"
+      ? (() => {
+          try {
+            return localStorage.getItem(PROMO_DISMISS_KEY) === "1";
+          } catch {
+            return false;
+          }
+        })()
+      : null;
+  const promoVisible = promo && !(storedDismissal ?? promoDismissed);
+
+  const dismissPromo = () => {
+    try {
+      localStorage.setItem(PROMO_DISMISS_KEY, "1");
+    } catch {
+      // Storage unavailable — still hide for this session.
+    }
+    setPromoDismissed(true);
+  };
 
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
@@ -198,10 +227,19 @@ export function Sidebar({
 
       <div className="p-3">
         {/* Sidebar footer promo (DESIGN.md §5.1) — static brand card with
-            contour-line texture, doctor shell only */}
-        {!collapsed && promo && (
+            contour-line texture, doctor shell only. Dismiss button lets the
+            user remove it permanently (persisted in localStorage). */}
+        {!collapsed && promoVisible && (
           <div className="relative mb-3 overflow-hidden rounded-3xl bg-navy-950 p-4 text-white">
             <ContourLines />
+            <button
+              type="button"
+              onClick={dismissPromo}
+              aria-label="Dismiss promo card"
+              className="absolute right-2 top-2 z-10 rounded-lg p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
             <div className="relative">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">Mobile App</p>
               <p className="mt-1 text-[13px] font-semibold">Download Doctor App</p>

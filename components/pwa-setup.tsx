@@ -5,6 +5,9 @@ import { Download, X } from "lucide-react";
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
 
+/** localStorage flag: the user closed the install banner — don't nag again. */
+const INSTALL_DISMISS_KEY = "skoracare-pwa-install-dismissed";
+
 /**
  * PWA setup (client-only):
  * - Registers the service worker (offline shell + Web Push).
@@ -95,15 +98,29 @@ export function PwaSetup() {
   }, []);
 
   // Capture the install prompt (Android Chrome + desktop; iOS shows its own
-  // "Add to Home Screen" flow).
+  // "Add to Home Screen" flow). A previously dismissed banner stays dismissed:
+  // the browser re-fires beforeinstallprompt on every visit, so the dismissal
+  // must be persisted (component state alone made the banner reappear).
   useEffect(() => {
     const onPrompt = (e: Event) => {
       e.preventDefault();
+      try {
+        if (localStorage.getItem(INSTALL_DISMISS_KEY) === "1") return;
+      } catch {
+        // Storage unavailable (privacy mode) — fall through and show.
+      }
       // @ts-expect-error beforeinstallprompt is not in TS lib types yet
       setInstallPrompt(e);
       setShowInstall(true);
     };
-    const onInstalled = () => setShowInstall(false);
+    const onInstalled = () => {
+      setShowInstall(false);
+      try {
+        localStorage.removeItem(INSTALL_DISMISS_KEY);
+      } catch {
+        // Ignore.
+      }
+    };
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
@@ -115,6 +132,15 @@ export function PwaSetup() {
   const install = async () => {
     if (!installPrompt) return;
     await installPrompt.prompt();
+    setShowInstall(false);
+  };
+
+  const dismissInstall = () => {
+    try {
+      localStorage.setItem(INSTALL_DISMISS_KEY, "1");
+    } catch {
+      // Storage unavailable — at least hide it for this page view.
+    }
     setShowInstall(false);
   };
 
@@ -135,7 +161,7 @@ export function PwaSetup() {
       >
         <Download className="h-3.5 w-3.5" /> Install
       </button>
-      <button onClick={() => setShowInstall(false)} className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100" aria-label="Dismiss">
+      <button onClick={dismissInstall} className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100" aria-label="Dismiss">
         <X className="h-4 w-4" />
       </button>
     </div>
