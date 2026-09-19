@@ -17,7 +17,10 @@ import {
   getDoctorFinanceTrend,
   getTodaysAppointments,
   getRecentAppointments,
+  getPracticeTodaysAppointments,
+  getPracticeRecentAppointments,
 } from "@/lib/queries/doctor";
+import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { StatCard, StatusBadge, EmptyState, PageHeader } from "@/components/ui/dashboard-ui";
 import { DutyToggle } from "@/components/doctor/duty-toggle";
 import { dutyModeOf } from "@/lib/utils";
@@ -38,11 +41,18 @@ function tierOf(count: number, max: number): "low" | "moderate" | "peak" | "heav
 export default async function DoctorDashboardPage() {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  // Receptionists see the whole practice's queue; doctors see their own.
+  const isReceptionist = user.role === "receptionist" || user.role === "admin";
+  const practiceIds = isReceptionist ? await getPracticeDoctorIds(doctorId) : [];
 
   const [stats, todays, recent, financeTrend] = await Promise.all([
     getDoctorStats(doctorId),
-    getTodaysAppointments(doctorId),
-    getRecentAppointments(doctorId, 6),
+    isReceptionist
+      ? getPracticeTodaysAppointments(practiceIds)
+      : getTodaysAppointments(doctorId),
+    isReceptionist
+      ? getPracticeRecentAppointments(practiceIds, 6)
+      : getRecentAppointments(doctorId, 6),
     getDoctorFinanceTrend(doctorId, 6),
   ]);
   const maxFinance = Math.max(...financeTrend.map((m) => Math.max(m.income, m.expense)), 1);

@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/guard";
 import { getAppointmentById, getDoctorPatients } from "@/lib/queries/doctor";
+import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import { db } from "@/lib/db";
+import { appointments } from "@/lib/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { EditAppointmentForm } from "./edit-form";
 
@@ -27,12 +31,25 @@ export default async function EditAppointmentPage({
 }) {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const isReceptionist = user.role === "receptionist" || user.role === "admin";
   const { id } = await params;
 
   const appointmentId = Number(id);
   if (!Number.isInteger(appointmentId)) notFound();
 
-  const appointment = await getAppointmentById(doctorId, appointmentId);
+  // Practice-aware fetch: receptionists may edit any practice doctor's
+  // appointment; doctors only their own.
+  let appointment = null;
+  if (isReceptionist) {
+    const practiceIds = await getPracticeDoctorIds(doctorId);
+    const [row] = await db
+      .select()
+      .from(appointments)
+      .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
+    appointment = row ?? null;
+  } else {
+    appointment = await getAppointmentById(doctorId, appointmentId);
+  }
   if (!appointment) notFound();
 
   const patients = await getDoctorPatients(doctorId);

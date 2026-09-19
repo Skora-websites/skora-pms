@@ -1,9 +1,10 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
   appointments,
+  clinicDoctors,
   consultations,
   doctorClinics,
   doctorSchedules,
@@ -89,6 +90,16 @@ export const getTodaysAppointments = cache(async (doctorId: number) => {
   );
 });
 
+/** Today's appointments across all practice doctors (receptionist view). */
+export const getPracticeTodaysAppointments = cache(async (doctorIds: number[]) => {
+  const today = todayStr();
+  if (doctorIds.length === 0) return [];
+  return appointmentRows(
+    and(inArray(appointments.doctorId, doctorIds), eq(appointments.date, today)),
+    asc(appointments.time)
+  );
+});
+
 export const getAppointments = cache(
   async (doctorId: number, filter: { status?: string; date?: string } = {}) => {
     const conds = [eq(appointments.doctorId, doctorId)];
@@ -104,9 +115,34 @@ export const getAppointments = cache(
   }
 );
 
+/** All practice doctors' appointments (receptionist view). */
+export const getPracticeAppointments = cache(
+  async (doctorIds: number[], filter: { status?: string; date?: string } = {}) => {
+    if (doctorIds.length === 0) return [];
+    const conds = [inArray(appointments.doctorId, doctorIds)];
+    if (filter.status && filter.status !== "all") conds.push(eq(appointments.status, filter.status as never));
+    if (filter.date) conds.push(eq(appointments.date, filter.date));
+    return appointmentRows(and(...conds), [
+      desc(appointments.date),
+      desc(appointments.createdAt),
+      desc(appointments.id),
+    ]);
+  }
+);
+
 export const getRecentAppointments = cache(async (doctorId: number, limit = 5) => {
   // "Recent" = most recently BOOKED first (new > old), not by visit date.
   const rows = await appointmentRows(eq(appointments.doctorId, doctorId), [
+    desc(appointments.createdAt),
+    desc(appointments.id),
+  ]);
+  return rows.slice(0, limit);
+});
+
+/** Recently booked across all practice doctors (receptionist view). */
+export const getPracticeRecentAppointments = cache(async (doctorIds: number[], limit = 5) => {
+  if (doctorIds.length === 0) return [];
+  const rows = await appointmentRows(inArray(appointments.doctorId, doctorIds), [
     desc(appointments.createdAt),
     desc(appointments.id),
   ]);
@@ -202,10 +238,22 @@ export const getPatientPhotoPath = cache(async (patientId: number) => {
 });
 
 export const getClinicsWithSchedules = cache(async (doctorId: number) => {
+  // Clinics the doctor owns or is an active member of (shared clinics).
   const clinics = await db
     .select()
     .from(doctorClinics)
-    .where(eq(doctorClinics.doctorId, doctorId));
+    .where(
+      or(
+        eq(doctorClinics.doctorId, doctorId),
+        inArray(
+          doctorClinics.id,
+          db
+            .select({ id: clinicDoctors.clinicId })
+            .from(clinicDoctors)
+            .where(and(eq(clinicDoctors.doctorId, doctorId), eq(clinicDoctors.isActive, true)))
+        )
+      )
+    );
 
   if (clinics.length === 0) return [];
 
@@ -214,6 +262,7 @@ export const getClinicsWithSchedules = cache(async (doctorId: number) => {
     .from(doctorSchedules)
     .where(
       and(
+        eq(doctorSchedules.doctorId, doctorId),
         eq(doctorSchedules.isActive, true),
         inArray(doctorSchedules.doctorClinicId, clinics.map((c) => c.id))
       )

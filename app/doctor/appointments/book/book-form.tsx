@@ -5,6 +5,7 @@ import { CalendarPlus, FileUp, FilePlus2 } from "lucide-react";
 import { createAppointment } from "../actions";
 
 type Patient = { id: number; name: string; phone: string | null };
+type DoctorOption = { id: number; name: string; salutation: string | null; qualification: string | null };
 
 const initialState = { error: null as string | null };
 
@@ -19,7 +20,13 @@ const CONSENT_TYPES = [
 
 type ConsentMode = "upload" | "generate";
 
-export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
+export function BookAppointmentForm({
+  patients,
+  doctors = [],
+}: {
+  patients: Patient[];
+  doctors?: DoctorOption[];
+}) {
   const [state, formAction, pending] = useActionState(createAppointment, initialState);
   // Flow: the consent popup (Upload / Generate new) opens first, then the
   // booking form becomes usable. The consent card stays mounted (hidden) after
@@ -55,6 +62,23 @@ export function BookAppointmentForm({ patients }: { patients: Patient[] }) {
   return (
     <div className="card p-7">
       <form action={formAction} className="space-y-5">
+        {/* Receptionist books on behalf of a practice doctor; doctors book for
+            themselves (no field submitted). */}
+        {doctors.length > 0 && (
+          <div>
+            <label htmlFor="doctor_id" className="label">Doctor</label>
+            <select id="doctor_id" name="doctor_id" className="input" defaultValue={String(doctors[0]?.id ?? "")}>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.salutation ? `${d.salutation} ` : ""}
+                  {d.name}
+                  {d.qualification ? ` — ${d.qualification}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="patient_id" className="label">Patient</label>

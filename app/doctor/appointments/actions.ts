@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { saveConsentFile } from "@/lib/files/consent-upload";
 import crypto from "node:crypto";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appointments,
   appointmentConsultConsents,
+  clinicDoctors,
   consultations,
   billings,
   doctorClinics,
@@ -16,7 +17,9 @@ import {
   users,
 } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { getCurrentUser } from "@/lib/auth/user";
 import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
+import { isPracticeDoctor, getPracticeDoctorIds, ensureClinicAccess, getClinicsOfDoctor } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
@@ -68,9 +71,21 @@ function weekdayName(dateStr: string): string {
     .toLowerCase();
 }
 
-/** Active clinics for the doctor, optionally narrowed to clinicId. */
+/** Active clinics the doctor practices at — owned or joined (member doctors). */
 async function getActiveClinics(doctorId: number, clinicId?: number | null) {
-  const conds = [eq(doctorClinics.doctorId, doctorId), eq(doctorClinics.isActive, true)];
+  const conds = [
+    or(
+      eq(doctorClinics.doctorId, doctorId),
+      inArray(
+        doctorClinics.id,
+        db
+          .select({ id: clinicDoctors.clinicId })
+          .from(clinicDoctors)
+          .where(and(eq(clinicDoctors.doctorId, doctorId), eq(clinicDoctors.isActive, true)))
+      )
+    ),
+    eq(doctorClinics.isActive, true),
+  ];
   if (clinicId && Number.isInteger(clinicId)) conds.push(eq(doctorClinics.id, clinicId));
   return db.select().from(doctorClinics).where(and(...conds));
 }
@@ -84,6 +99,7 @@ async function getSchedulesForDay(doctorId: number, date: string, clinicId?: num
     .from(doctorSchedules)
     .where(
       and(
+        eq(doctorSchedules.doctorId, doctorId),
         eq(doctorSchedules.dayOfWeek, weekdayName(date) as never),
         eq(doctorSchedules.isActive, true),
         inArray(
@@ -93,6 +109,48 @@ async function getSchedulesForDay(doctorId: number, date: string, clinicId?: num
       )
     );
   return { clinics, schedules };
+}
+
+/**
+ * Resolve the doctor the appointment is FOR. A receptionist/admin may pass
+ * doctor_id to book for a practice doctor; doctors always book for self.
+ * Returns null when the target doctor is outside the caller's practice.
+ */
+async function resolveTargetDoctor(
+  callerDoctorId: number,
+  callerRole: string,
+  formData: FormData
+): Promise<number | null | "unauthorized"> {
+  const raw = String(formData.get("doctor_id") ?? "").trim();
+  if (!raw) return callerDoctorId;
+  const targetId = Number(raw);
+  if (!Number.isInteger(targetId) || targetId <= 0) return null;
+  // Doctors can only ever book for themselves — an injected doctor_id from a
+  // doctor-role user must not silently retarget the booking.
+  if (callerRole === "doctor") return targetId === callerDoctorId ? callerDoctorId : "unauthorized";
+  if (!(await isPracticeDoctor(callerDoctorId, targetId))) return "unauthorized";
+  return targetId;
+}
+
+/**
+ * Effective clinic for the appointment: chosen clinic if accessible, else —
+ * when booking on behalf of another practice doctor — a clinic SHARED by the
+ * caller's practice and the target doctor (so the booking lands at the clinic
+ * the receptionist's practice actually knows, not the target's unrelated own
+ * clinic), else the target's first active clinic.
+ */
+async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, callerDoctorId: number) {
+  const clinicId = Number(clinicIdRaw);
+  if (clinicId && Number.isInteger(clinicId) && (await ensureClinicAccess(clinicId, effectiveDoctorId))) {
+    return clinicId;
+  }
+  const targetClinics = await getActiveClinics(effectiveDoctorId);
+  if (effectiveDoctorId !== callerDoctorId) {
+    const practiceClinics = await getClinicsOfDoctor(callerDoctorId);
+    const shared = targetClinics.find((c) => practiceClinics.includes(c.id));
+    if (shared) return shared.id;
+  }
+  return targetClinics[0]?.id ?? null;
 }
 
 /** Does the time fall inside the schedule (handles overnight ranges)? */
@@ -138,7 +196,15 @@ export async function createAppointment(
 ): Promise<AppointmentActionResult> {
   const doctorId = await requireDoctorPermission("appointments-create");
   if (!doctorId) return { error: "You don't have permission to book appointments." };
+  const caller = await getCurrentUser();
+  const callerRole = caller?.role ?? "doctor";
   const now = new Date();
+
+  // Receptionist may book for any practice doctor; doctors book for self.
+  const target = await resolveTargetDoctor(doctorId, callerRole, formData);
+  if (target === "unauthorized") return { error: "Selected doctor is not part of this practice." };
+  if (target === null) return { error: "Invalid doctor." };
+  const effectiveDoctorId = target;
 
   const patientIdRaw = String(formData.get("patient_id") ?? "").trim();
   const patientString = String(formData.get("patient_string") ?? "").trim();
@@ -218,15 +284,17 @@ export async function createAppointment(
 
   // ── Time-slot conflict (same doctor, date, time; exclude cancelled) ──
   const time = toLegacyTime(timeRaw);
-  const conflict = await findTimeConflict(doctorId, date, time);
+  const conflict = await findTimeConflict(effectiveDoctorId, date, time);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
 
   // ── Duplicates finder: same patient already booked at this date + time ──
   const duplicate = await findDuplicateBooking({ patientId, patientString, mobileNumber, date, time });
   if (duplicate) return { error: duplicateBookingError(duplicate) };
 
-  // ── Schedule containment (mirrors legacy store) ──
-  const { clinics, schedules } = await getSchedulesForDay(doctorId, date);
+  // ── Schedule containment (mirrors legacy store) — per SELECTED doctor ──
+  const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
+  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, doctorId);
+  const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));
     if (!matching) {
@@ -239,16 +307,14 @@ export async function createAppointment(
   if (consentType === "consent" || consentType === "email") status = "pending_consent";
   else if (consentType === "otp" || consentType === "upload" || consentType === "skipped") status = "confirmed";
 
-  const clinic = clinics[0] ?? null;
-
   // Appointment + consent row in ONE transaction, with a doctor-row lock
   // (SELECT ... FOR UPDATE) serializing concurrent bookings for the same
   // doctor — closes the check-then-insert double-booking race.
   let appointmentId: number | undefined;
   try {
     appointmentId = await db.transaction(async (tx) => {
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, doctorId)).for("update");
-    const conflict = await findTimeConflict(doctorId, date, time);
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, effectiveDoctorId)).for("update");
+    const conflict = await findTimeConflict(effectiveDoctorId, date, time);
     if (conflict) throw new Error(`Time slot ${time} is already booked.`);
     const dup = await findDuplicateBooking({ patientId, patientString, mobileNumber, date, time });
     if (dup) throw new Error(duplicateBookingError(dup));
@@ -256,7 +322,7 @@ export async function createAppointment(
     const [inserted] = await tx
       .insert(appointments)
       .values({
-        doctorId,
+        doctorId: effectiveDoctorId,
         patientId,
         patientString: patientString || null,
         date: date as never,
@@ -271,7 +337,7 @@ export async function createAppointment(
         consentFile: consentFilePath,
         mobileNumber,
         status: status as never,
-        clinicId: clinic?.id ?? null,
+        clinicId,
         createdAt: now,
         updatedAt: now,
       })
@@ -284,7 +350,7 @@ export async function createAppointment(
       const slug = crypto.randomUUID();
       await tx.insert(appointmentConsultConsents).values({
         appointmentId,
-        doctorId,
+        doctorId: effectiveDoctorId,
         patientId,
         slug,
         isAccepted: false,
@@ -324,7 +390,7 @@ export async function createAppointment(
   });
 
   void notifyUser({
-    userId: doctorId,
+    userId: effectiveDoctorId,
     title: "New appointment booked",
     message: `${patientString || `Patient #${patientId ?? "—"}`} — ${date} at ${time} (${caseType.replace(/_/g, " ")})`,
     type: "success",
@@ -366,6 +432,8 @@ export async function updateAppointment(
 ): Promise<AppointmentActionResult> {
   const doctorId = await requireDoctorPermission("appointments-edit");
   if (!doctorId) return { error: "You don't have permission to edit appointments." };
+  const caller = await getCurrentUser();
+  const callerRole = caller?.role ?? "doctor";
   const now = new Date();
 
   const appointmentIdRaw = String(formData.get("appointment_id") ?? "").trim();
@@ -386,8 +454,19 @@ export async function updateAppointment(
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
-    return { error: "Appointment not found." };
+  // Practice-aware ownership: receptionists may edit any practice doctor's
+  // appointment; doctors only their own.
+  if (callerRole === "doctor") {
+    if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
+      return { error: "Appointment not found." };
+    }
+  } else {
+    const practiceIds = await getPracticeDoctorIds(doctorId);
+    const [owned] = await db
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
+    if (!owned) return { error: "Appointment not found." };
   }
 
   // Business rule: completed and cancelled appointments are immutable —
@@ -450,8 +529,27 @@ export async function updateAppointment(
   }
   if (!patientId && !patientString) return { error: "Select a patient or add a walk-in name." };
 
+  // Receptionist may reassign the appointment to another practice doctor.
+  // No doctor_id in the form = keep the appointment's current doctor (never
+  // silently reassign to the owner).
+  const hasDoctorField = formData.get("doctor_id") !== null;
+  let effectiveDoctorId: number;
+  if (hasDoctorField) {
+    const target = await resolveTargetDoctor(doctorId, callerRole, formData);
+    if (target === "unauthorized") return { error: "Selected doctor is not part of this practice." };
+    if (target === null) return { error: "Invalid doctor." };
+    effectiveDoctorId = target;
+  } else {
+    const [current] = await db
+      .select({ doctorId: appointments.doctorId })
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId));
+    if (!current) return { error: "Appointment not found." };
+    effectiveDoctorId = current.doctorId;
+  }
+
   const time = toLegacyTime(timeRaw);
-  const conflict = await findTimeConflict(doctorId, date, time, appointmentId);
+  const conflict = await findTimeConflict(effectiveDoctorId, date, time, appointmentId);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
 
   // ── Duplicates finder: same patient already booked at this date + time ──
@@ -465,8 +563,10 @@ export async function updateAppointment(
   });
   if (duplicate) return { error: duplicateBookingError(duplicate) };
 
-  // ── Schedule containment ──
-  const { clinics, schedules } = await getSchedulesForDay(doctorId, date);
+  // ── Schedule containment — per (possibly reassigned) doctor ──
+  const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
+  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, doctorId);
+  const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));
     if (!matching) {
@@ -474,11 +574,10 @@ export async function updateAppointment(
     }
   }
 
-  const clinic = clinics[0] ?? null;
-
   await db
     .update(appointments)
     .set({
+      doctorId: effectiveDoctorId,
       patientId,
       patientString: patientString || null,
       date: date as never,
@@ -490,7 +589,7 @@ export async function updateAppointment(
       height: height !== null ? String(height) : null,
       remarks,
       mobileNumber,
-      clinicId: clinic?.id ?? null,
+      clinicId,
       // consent_type is immutable here by design (a sent consent link must
       // not silently change meaning mid-flight) — status stays untouched
       // because cancel/complete own it exclusively.
@@ -523,16 +622,33 @@ export async function updateAppointment(
 
 // ── Cancel ────────────────────────────────────────────────────────────────
 
+/** Practice-aware ownership for receptionists; strict single-doctor for doctors. */
+async function ensureAppointmentAccessible(
+  appointmentId: number,
+  doctorId: number,
+  callerRole: string
+): Promise<boolean> {
+  if (callerRole === "doctor") return ensureAppointmentOfDoctor(appointmentId, doctorId);
+  const practiceIds = await getPracticeDoctorIds(doctorId);
+  const [owned] = await db
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
+  return !!owned;
+}
+
 export async function cancelAppointment(appointmentId: number): Promise<AppointmentActionResult> {
   const doctorId = await requireDoctorPermission("appointments-cancel");
   if (!doctorId) return { error: "You don't have permission to cancel appointments." };
+  const caller = await getCurrentUser();
+  const callerRole = caller?.role ?? "doctor";
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
     return { error: "Appointment not found." };
   }
 
@@ -643,13 +759,15 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
 export async function completeAppointment(appointmentId: number): Promise<AppointmentActionResult> {
   const doctorId = await requireDoctorPermission("appointments-complete");
   if (!doctorId) return { error: "You don't have permission to complete appointments." };
+  const caller = await getCurrentUser();
+  const callerRole = caller?.role ?? "doctor";
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
     return { error: "Appointment not found." };
   }
 
@@ -720,13 +838,15 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
 export async function deleteAppointment(appointmentId: number): Promise<AppointmentActionResult> {
   const doctorId = await requireDoctorPermission("appointments-delete");
   if (!doctorId) return { error: "You don't have permission to delete appointments." };
+  const caller = await getCurrentUser();
+  const callerRole = caller?.role ?? "doctor";
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
     return { error: "Appointment not found." };
   }
 

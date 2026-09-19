@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/user";
+import { isPracticeDoctor } from "@/lib/queries/clinic";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/doctor/appointments/booked-times?date=YYYY-MM-DD&clinic_id=N&exclude_id=N
+ * GET /api/doctor/appointments/booked-times?date=YYYY-MM-DD&clinic_id=N&doctor_id=N&exclude_id=N
  *
  * Mirrors legacy AppointmentController@getBookedTimes:
  *  - returns all non-cancelled appointment times for the doctor on the given date
  *  - returns active DoctorSchedule rows for the weekday (optionally filtered by clinic)
+ *  - `doctor_id` lets a receptionist query a practice doctor's slots (validated
+ *    against the caller's practice — no cross-practice probing)
  *  - `exclude_id` lets the edit form ignore the appointment being edited
  */
 export async function GET(request: NextRequest) {
@@ -19,16 +22,33 @@ export async function GET(request: NextRequest) {
   if (!["doctor", "receptionist", "admin"].includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const resolvedDoctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const { searchParams } = request.nextUrl;
   const date = searchParams.get("date") ?? "";
   const clinicIdRaw = searchParams.get("clinic_id");
+  const doctorIdRaw = searchParams.get("doctor_id");
   const excludeIdRaw = searchParams.get("exclude_id");
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
+
+  let doctorId = resolvedDoctorId;
+  if (doctorIdRaw) {
+    const requested = Number(doctorIdRaw);
+    if (!Number.isInteger(requested) || requested <= 0) {
+      return NextResponse.json({ error: "Invalid doctor_id" }, { status: 400 });
+    }
+    if (
+      requested !== resolvedDoctorId &&
+      !(await isPracticeDoctor(resolvedDoctorId, requested))
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    doctorId = requested;
+  }
+
   const clinicId = clinicIdRaw ? Number(clinicIdRaw) : null;
   const excludeId = excludeIdRaw ? Number(excludeIdRaw) : null;
 
@@ -49,22 +69,39 @@ export async function GET(request: NextRequest) {
     .toLocaleDateString("en-US", { weekday: "long" })
     .toLowerCase();
 
-  const clinicConds = [eq(schema.doctorClinics.doctorId, doctorId), eq(schema.doctorClinics.isActive, true)];
+  // Clinics the doctor practices at — owned or joined (per-doctor schedules
+  // live on shared clinics, so membership must count here).
+  const clinicIdConds = [
+    or(
+      eq(schema.doctorClinics.doctorId, doctorId),
+      inArray(
+        schema.doctorClinics.id,
+        db
+          .select({ id: schema.clinicDoctors.clinicId })
+          .from(schema.clinicDoctors)
+          .where(
+            and(eq(schema.clinicDoctors.doctorId, doctorId), eq(schema.clinicDoctors.isActive, true))
+          )
+      )
+    ),
+    eq(schema.doctorClinics.isActive, true),
+  ];
   if (clinicId && Number.isInteger(clinicId)) {
-    clinicConds.push(eq(schema.doctorClinics.id, clinicId));
+    clinicIdConds.push(eq(schema.doctorClinics.id, clinicId));
   }
   const clinics = await db
     .select({ id: schema.doctorClinics.id })
     .from(schema.doctorClinics)
-    .where(and(...clinicConds));
+    .where(and(...clinicIdConds));
 
-  let schedules: typeof schema.doctorSchedules.$inferSelect[] = [];
+  let schedules: (typeof schema.doctorSchedules.$inferSelect)[] = [];
   if (clinics.length > 0) {
     schedules = await db
       .select()
       .from(schema.doctorSchedules)
       .where(
         and(
+          eq(schema.doctorSchedules.doctorId, doctorId),
           eq(schema.doctorSchedules.dayOfWeek, dayOfWeek as never),
           eq(schema.doctorSchedules.isActive, true),
           inArray(

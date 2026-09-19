@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarPlus, CalendarDays } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getAppointments } from "@/lib/queries/doctor";
+import { getAppointments, getPracticeAppointments } from "@/lib/queries/doctor";
+import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { PageHeader, StatusBadge, EmptyState, TabPills } from "@/components/ui/dashboard-ui";
 import { AppointmentRowActions } from "@/components/doctor/appointment-actions";
 import { AppointmentList } from "@/components/mobile-view/appointments-list";
@@ -21,7 +22,11 @@ export default async function AppointmentsPage({
   const params = await searchParams;
   const filter = { status: params.status ?? "all", date: params.date };
 
-  const appointments = await getAppointments(doctorId, filter);
+  // Receptionists see the whole practice's appointments; doctors see their own.
+  const isReceptionist = user.role === "receptionist" || user.role === "admin";
+  const appointments = isReceptionist
+    ? await getPracticeAppointments(await getPracticeDoctorIds(doctorId), filter)
+    : await getAppointments(doctorId, filter);
 
   const tabs = [
     { key: "all", label: "All" },
