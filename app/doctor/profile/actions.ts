@@ -128,14 +128,19 @@ export async function updateProfileAction(formData: FormData): Promise<ProfileSt
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim() || null;
+  const specialization = String(formData.get("specialization") ?? "").trim() || null;
   const currentPassword = String(formData.get("current_password") ?? "");
   const newPassword = String(formData.get("new_password") ?? "");
 
   if (!name) return { error: "Name is required." };
+  if (specialization && specialization.length > 255) {
+    return { error: "Specialization must be at most 255 characters." };
+  }
 
   const updates: Partial<typeof users.$inferInsert> = {
     name,
     phone,
+    specialization,
     updatedAt: new Date(),
   };
   let passwordChanged = false;

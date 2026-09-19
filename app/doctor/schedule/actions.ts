@@ -6,8 +6,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { doctorClinics, doctorSchedules } from "@/lib/db/schema";
+import { clinicDoctors, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { ensureClinicAccess, ensureClinicOwner } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 
 export type ScheduleActionResult = { error: string | null };
@@ -254,15 +255,6 @@ function calculateDuration(startTime: string, endTime: string): { hours: number;
   return { hours: Math.floor(diff / 60), minutes: diff % 60 };
 }
 
-/** Verify the clinic belongs to the doctor. */
-async function ensureClinicOfDoctor(clinicId: number, doctorId: number): Promise<boolean> {
-  const [row] = await db
-    .select({ id: doctorClinics.id })
-    .from(doctorClinics)
-    .where(and(eq(doctorClinics.id, clinicId), eq(doctorClinics.doctorId, doctorId)));
-  return !!row;
-}
-
 /** Create/replace weekly slots for a clinic. Mirrors legacy `storeSchedule`. */
 export async function saveSchedules(
   _prev: ScheduleActionResult,
@@ -287,7 +279,8 @@ export async function saveSchedules(
     .filter(Boolean);
 
   if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic." };
-  if (!(await ensureClinicOfDoctor(clinicId, doctorId))) return { error: "Clinic not found." };
+  // Members manage their own schedule at a shared clinic too.
+  if (!(await ensureClinicAccess(clinicId, doctorId))) return { error: "Clinic not found." };
   if (days.length === 0) return { error: "Select at least one day." };
   for (const day of days) {
     if (!(DAYS as readonly string[]).includes(day)) return { error: `Invalid day: ${day}` };
@@ -306,6 +299,7 @@ export async function saveSchedules(
     if (is24Hours) {
       const data = {
         doctorClinicId: clinicId,
+        doctorId,
         dayOfWeek: day as never,
         sessionType: "full_day" as never,
         maxPatients,
@@ -327,6 +321,7 @@ export async function saveSchedules(
         .where(
           and(
             eq(doctorSchedules.doctorClinicId, clinicId),
+            eq(doctorSchedules.doctorId, doctorId),
             eq(doctorSchedules.dayOfWeek, day as never),
             eq(doctorSchedules.sessionType, "full_day" as never)
           )
@@ -348,6 +343,7 @@ export async function saveSchedules(
         const duration = calculateDuration(startTime, endTime);
         const data = {
           doctorClinicId: clinicId,
+          doctorId,
           dayOfWeek: day as never,
           sessionType: sessionType as never,
           maxPatients,
@@ -369,6 +365,7 @@ export async function saveSchedules(
           .where(
             and(
               eq(doctorSchedules.doctorClinicId, clinicId),
+              eq(doctorSchedules.doctorId, doctorId),
               eq(doctorSchedules.dayOfWeek, day as never),
               eq(doctorSchedules.sessionType, sessionType as never)
             )
@@ -412,14 +409,11 @@ export async function updateSchedule(
     return { error: "Max patients must be at least 1." };
   }
 
-  // Ownership via clinic join.
+  // Ownership: the acting doctor's own slot (per-doctor schedules on shared clinics).
   const [rows] = await db
     .select({ id: doctorSchedules.id, doctorClinicId: doctorSchedules.doctorClinicId })
     .from(doctorSchedules)
-    .innerJoin(doctorClinics, eq(doctorClinics.id, doctorSchedules.doctorClinicId))
-    .where(
-      and(eq(doctorSchedules.id, scheduleId), eq(doctorClinics.doctorId, doctorId))
-    );
+    .where(and(eq(doctorSchedules.id, scheduleId), eq(doctorSchedules.doctorId, doctorId)));
   if (!rows) return { error: "Schedule not found." };
 
   const duration = !is24Hours && startTime && endTime ? calculateDuration(startTime, endTime) : { hours: 0, minutes: 0 };
@@ -452,13 +446,11 @@ export async function deleteSchedule(scheduleId: number): Promise<ScheduleAction
   if (!doctorId) return { error: "You don't have permission to delete schedules." };
   if (!scheduleId || !Number.isInteger(scheduleId)) return { error: "Invalid schedule ID." };
 
+  // Ownership: the acting doctor's own slot (per-doctor schedules on shared clinics).
   const [rows] = await db
     .select({ id: doctorSchedules.id })
     .from(doctorSchedules)
-    .innerJoin(doctorClinics, eq(doctorClinics.id, doctorSchedules.doctorClinicId))
-    .where(
-      and(eq(doctorSchedules.id, scheduleId), eq(doctorClinics.doctorId, doctorId))
-    );
+    .where(and(eq(doctorSchedules.id, scheduleId), eq(doctorSchedules.doctorId, doctorId)));
   if (!rows) return { error: "Schedule not found." };
 
   await db
@@ -467,6 +459,138 @@ export async function deleteSchedule(scheduleId: number): Promise<ScheduleAction
     .where(eq(doctorSchedules.id, scheduleId));
 
   void audit.fileUploaded(doctorId, { action: "schedule_deleted", scheduleId });
+
+  revalidatePath("/doctor/schedule");
+  return { error: null };
+}
+
+// ── Clinic membership (owner-only management) ──────────────────────────────
+
+export async function addClinicDoctor(
+  _prev: ScheduleActionResult,
+  formData: FormData
+): Promise<ScheduleActionResult> {
+  const doctorId = await requireDoctorPermission("schedule-edit");
+  if (!doctorId) return { error: "You don't have permission to manage clinic doctors." };
+  const clinicId = Number(formData.get("clinic_id"));
+  const memberEmail = String(formData.get("doctor_email") ?? "").trim().toLowerCase();
+
+  if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic." };
+  if (!(await ensureClinicOwner(clinicId, doctorId))) return { error: "Clinic not found." };
+  if (!memberEmail) return { error: "Doctor email is required." };
+
+  const [member] = await db
+    .select({ id: users.id, role: users.role, status: users.status })
+    .from(users)
+    .where(eq(users.email, memberEmail));
+  if (!member) return { error: "No account found with that email." };
+  if (member.role !== "doctor") return { error: "That user is not a doctor." };
+  if (member.status !== "active") return { error: "That doctor's account is not active." };
+  if (member.id === doctorId) return { error: "You already practice at this clinic." };
+
+  const [existing] = await db
+    .select({ id: clinicDoctors.id, isActive: clinicDoctors.isActive })
+    .from(clinicDoctors)
+    .where(and(eq(clinicDoctors.clinicId, clinicId), eq(clinicDoctors.doctorId, member.id)));
+  if (existing) {
+    if (existing.isActive) return { error: "That doctor is already at this clinic." };
+    await db
+      .update(clinicDoctors)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(eq(clinicDoctors.id, existing.id));
+  } else {
+    await db.insert(clinicDoctors).values({
+      clinicId,
+      doctorId: member.id,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  void audit.roleChanged(doctorId, { action: "clinic_doctor_added", clinicId, memberDoctorId: member.id });
+
+  revalidatePath("/doctor/schedule");
+  return { error: null };
+}
+
+export async function removeClinicDoctor(
+  _prev: ScheduleActionResult,
+  formData: FormData
+): Promise<ScheduleActionResult> {
+  const doctorId = await requireDoctorPermission("schedule-edit");
+  if (!doctorId) return { error: "You don't have permission to manage clinic doctors." };
+  const clinicId = Number(formData.get("clinic_id"));
+  const memberDoctorId = Number(formData.get("doctor_id"));
+
+  if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic." };
+  if (!memberDoctorId || !Number.isInteger(memberDoctorId)) return { error: "Invalid doctor." };
+  if (!(await ensureClinicOwner(clinicId, doctorId))) return { error: "Clinic not found." };
+  if (memberDoctorId === doctorId) return { error: "You cannot remove yourself as the owner." };
+
+  await db
+    .delete(clinicDoctors)
+    .where(and(eq(clinicDoctors.clinicId, clinicId), eq(clinicDoctors.doctorId, memberDoctorId)));
+
+  void audit.roleChanged(doctorId, { action: "clinic_doctor_removed", clinicId, memberDoctorId });
+
+  revalidatePath("/doctor/schedule");
+  return { error: null };
+}
+
+// ── Member doctor profile (owner/receptionist editable) ─────────────────────
+
+/**
+ * Edit a member doctor's profile details (specialization, qualification,
+ * phone) from the clinic member list. Allowed for the clinic owner
+ * (receptionists/admins resolve to the owner) and for the doctor editing
+ * their own card; the target doctor must be an active member of that clinic.
+ */
+export async function updateClinicDoctorProfile(
+  _prev: ScheduleActionResult,
+  formData: FormData
+): Promise<ScheduleActionResult> {
+  const doctorId = await requireDoctorPermission("schedule-edit");
+  if (!doctorId) return { error: "You don't have permission to edit doctor profiles." };
+  const clinicId = Number(formData.get("clinic_id"));
+  const memberDoctorId = Number(formData.get("doctor_id"));
+
+  if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic." };
+  if (!memberDoctorId || !Number.isInteger(memberDoctorId)) return { error: "Invalid doctor." };
+  // Owner of this clinic (receptionists resolve to the owner via
+  // requireDoctorPermission), or the doctor editing their own card.
+  const isOwner = await ensureClinicOwner(clinicId, doctorId);
+  if (!isOwner && doctorId !== memberDoctorId) return { error: "Clinic not found." };
+
+  const [member] = await db
+    .select({ id: clinicDoctors.id })
+    .from(clinicDoctors)
+    .where(
+      and(
+        eq(clinicDoctors.clinicId, clinicId),
+        eq(clinicDoctors.doctorId, memberDoctorId),
+        eq(clinicDoctors.isActive, true)
+      )
+    );
+  if (!member) return { error: "That doctor is not at this clinic." };
+
+  const specialization = String(formData.get("specialization") ?? "").trim() || null;
+  const qualification = String(formData.get("qualification") ?? "").trim() || null;
+  const phone = String(formData.get("phone") ?? "").trim() || null;
+  if (specialization && specialization.length > 255) {
+    return { error: "Specialization must be at most 255 characters." };
+  }
+  if (qualification && qualification.length > 255) {
+    return { error: "Qualification must be at most 255 characters." };
+  }
+  if (phone && phone.length > 20) return { error: "Phone must be at most 20 characters." };
+
+  await db
+    .update(users)
+    .set({ specialization, qualification, phone, updatedAt: new Date() })
+    .where(eq(users.id, memberDoctorId));
+
+  void audit.roleChanged(doctorId, { action: "clinic_doctor_profile_updated", clinicId, memberDoctorId });
 
   revalidatePath("/doctor/schedule");
   return { error: null };

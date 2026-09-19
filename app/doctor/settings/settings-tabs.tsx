@@ -18,6 +18,7 @@ type User = {
   role: string;
   profilePhotoPath: string | null;
   signaturePath: string | null;
+  specialization: string | null;
 };
 
 const TABS = [
@@ -66,7 +67,7 @@ export function SettingsTabs({ user }: { user: User }) {
                 photoUrl={user.profilePhotoPath ? "/api/doctor/profile/photo" : null}
               />
               <div className="mt-4">
-                <ProfileForm />
+                <ProfileForm user={{ name: user.name, phone: user.phone, specialization: user.specialization }} />
               </div>
             </div>
           </div>

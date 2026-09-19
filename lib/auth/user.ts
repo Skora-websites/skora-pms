@@ -28,6 +28,7 @@ export type CurrentUser = {
   notificationPreferences: unknown;
   doctorId: number | null;
   qualification: string | null;
+  specialization: string | null;
   registrationNumber: string | null;
   salutation: string | null;
   trialEndsAt: Date | null;
@@ -56,6 +57,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       doctorId: users.doctorId,
       referenceRoleId: users.referenceRoleId,
       qualification: users.qualification,
+      specialization: users.specialization,
       registrationNumber: users.registrationNumber,
       salutation: users.salutation,
       trialEndsAt: users.trialEndsAt,

@@ -3,11 +3,18 @@ import Image from "next/image";
 import { CalendarClock, MapPin, Clock, Phone, Wallet, CalendarRange } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getClinicsWithSchedules } from "@/lib/queries/doctor";
+import {
+  getClinicsOfDoctor,
+  getClinicDoctors,
+  getClinicSchedulesOfDoctor,
+  ensureClinicOwner,
+} from "@/lib/queries/clinic";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { AddClinicForm } from "./add-clinic-form";
 import { ClinicCardActions } from "./clinic-card-actions";
 import { ScheduleManager } from "./schedule-manager";
 import { WorkingHoursCard } from "./working-hours-card";
+import { MemberManager } from "./member-manager";
 
 export const metadata: Metadata = { title: "Schedule · Doctor" };
 
@@ -15,6 +22,24 @@ export default async function SchedulePage() {
   const user = await requireRole(["doctor", "receptionist", "admin"]);
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
   const clinics = await getClinicsWithSchedules(doctorId);
+  const clinicIds = await getClinicsOfDoctor(doctorId);
+  type MemberWithSchedules = Awaited<ReturnType<typeof getClinicDoctors>>[number] & {
+    schedules: Awaited<ReturnType<typeof getClinicSchedulesOfDoctor>>;
+  };
+  const membersByClinic = new Map<number, MemberWithSchedules[]>();
+  const ownerByClinic = new Map<number, boolean>();
+  for (const id of clinicIds) {
+    const members = await getClinicDoctors(id);
+    // Attach each member's own OPD slots at this clinic (profile cards).
+    const withSchedules = await Promise.all(
+      members.map(async (m) => ({
+        ...m,
+        schedules: await getClinicSchedulesOfDoctor(id, m.id),
+      }))
+    );
+    membersByClinic.set(id, withSchedules);
+    ownerByClinic.set(id, await ensureClinicOwner(id, doctorId));
+  }
 
   const weekSummary = (() => {
     const byDay = new Map<string, { count: number; minutes: number }>();
@@ -111,6 +136,17 @@ export default async function SchedulePage() {
               </div>
 
               <div className="p-6">
+                {/* Owner manages doctors + their profiles (receptionists resolve
+                    to the owner's id, so ownerByClinic covers them too) */}
+                {ownerByClinic.get(clinic.id) && (
+                  <div className="mb-6">
+                    <MemberManager
+                      clinicId={clinic.id}
+                      members={membersByClinic.get(clinic.id) ?? []}
+                    />
+                  </div>
+                )}
+
                 {/* Schedule grid */}
                 <div className="mb-6">
                   <h3 className="mb-3 text-sm font-semibold text-slate-700">Weekly schedule</h3>

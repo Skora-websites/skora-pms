@@ -35,6 +35,7 @@ export const users = mysqlTable(
     doctorId: bigint("doctor_id", { mode: "number" }),
     name: varchar("name", { length: 255 }).notNull(),
     qualification: varchar("qualification", { length: 255 }),
+    specialization: varchar("specialization", { length: 255 }),
     registrationNumber: varchar("registration_number", { length: 255 }),
     registrationId: varchar("registration_id", { length: 255 }),
     role: mysqlEnum("role", [
@@ -513,6 +514,9 @@ export const doctorSchedules = mysqlTable(
   {
     id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
     doctorClinicId: bigint("doctor_clinic_id", { mode: "number" }).notNull(),
+    // Which doctor at the clinic this slot belongs to (per-doctor schedules on
+    // shared clinics). Backfilled to the clinic owner for legacy rows.
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
     dayOfWeek: mysqlEnum("day_of_week", [
       "monday",
       "tuesday",
@@ -555,6 +559,39 @@ export const doctorSchedules = mysqlTable(
     foreignKey({
       columns: [t.doctorClinicId],
       foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+/**
+ * Doctors practicing at a clinic (many-to-many). The clinic OWNER always has
+ * a row here too — "doctors of a clinic" is a single query over this table,
+ * no implicit-owner special cases.
+ */
+export const clinicDoctors = mysqlTable(
+  "clinic_doctors",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    clinicId: bigint("clinic_id", { mode: "number" }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("clinic_doctors_clinic_doctor_unique").on(t.clinicId, t.doctorId),
+    index("clinic_doctors_doctor_id_index").on(t.doctorId),
+    foreignKey({
+      columns: [t.clinicId],
+      foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
     }).onDelete("cascade"),
   ]
 );
@@ -1618,6 +1655,8 @@ export const sosCases = mysqlTable(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const schema = mysqlSchema("skoracare");
+
+export type ClinicDoctor = typeof clinicDoctors.$inferSelect;
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

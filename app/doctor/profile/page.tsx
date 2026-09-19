@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { BadgeCheck, GraduationCap, IdCard, Mail, Phone } from "lucide-react";
+import { BadgeCheck, GraduationCap, IdCard, Mail, Phone, Stethoscope } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
@@ -33,6 +33,7 @@ export default async function ProfilePage() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <InfoTile icon={Mail} label="Email" value={user.email ?? "—"} />
             <InfoTile icon={Phone} label="Phone" value={user.phone ?? "—"} />
+            <InfoTile icon={Stethoscope} label="Specialization" value={user.specialization ?? "—"} />
             <InfoTile icon={GraduationCap} label="Qualification" value={user.qualification ?? "—"} />
             <InfoTile icon={IdCard} label="Registration number" value={user.registrationNumber ?? "—"} />
             <InfoTile icon={BadgeCheck} label="Member since" value={formatDate(user.createdAt)} />
@@ -41,7 +42,7 @@ export default async function ProfilePage() {
       </div>
 
       <div className="mt-6">
-        <ProfileForm />
+        <ProfileForm user={{ name: user.name, phone: user.phone, specialization: user.specialization }} />
       </div>
 
       <div className="mt-6">

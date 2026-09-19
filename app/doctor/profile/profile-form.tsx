@@ -4,7 +4,11 @@ import { useState, useTransition } from "react";
 import { CheckCircle2, Save } from "lucide-react";
 import { updateProfileAction } from "./actions";
 
-export function ProfileForm() {
+export function ProfileForm({
+  user,
+}: {
+  user: { name: string; phone: string | null; specialization: string | null };
+}) {
   const [pending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +30,15 @@ export function ProfileForm() {
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <label htmlFor="name" className="label">Full name</label>
-            <input id="name" name="name" className="input" required />
+            <input id="name" name="name" defaultValue={user.name} className="input" required />
           </div>
           <div>
             <label htmlFor="phone" className="label">Phone</label>
-            <input id="phone" name="phone" className="input" />
+            <input id="phone" name="phone" defaultValue={user.phone ?? ""} className="input" />
+          </div>
+          <div className="sm:col-span-2">
+            <label htmlFor="specialization" className="label">Specialization</label>
+            <input id="specialization" name="specialization" defaultValue={user.specialization ?? ""} maxLength={255} className="input" placeholder="e.g. Cardiologist" />
           </div>
         </div>
         <div className="grid gap-5 border-t border-slate-100 pt-5 sm:grid-cols-2">
