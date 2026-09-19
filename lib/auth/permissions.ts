@@ -88,3 +88,18 @@ export function hasDoctorModuleAccess(perms: Set<string>, pathname: string): boo
   if (!required) return true;
   return perms.has(required);
 }
+
+// ── Receptionist panel URL-space ──────────────────────────────────────
+// Receptionists browse the same dashboard routes under /receptionist/* (the
+// proxy rewrites them onto /doctor/*). These helpers translate between the
+// two prefixes so guards and redirects speak the visitor's language.
+
+/** "/doctor/…" → "/receptionist/…" (receptionist-facing URL). */
+export function doctorPathToReceptionist(path: string): string {
+  return path === "/doctor" ? "/receptionist" : path.replace(/^\/doctor(?=\/|$)/, "/receptionist");
+}
+
+/** "/receptionist/…" → "/doctor/…" (internal route). */
+export function receptionistPathToDoctor(path: string): string {
+  return path === "/receptionist" ? "/doctor" : path.replace(/^\/receptionist(?=\/|$)/, "/doctor");
+}

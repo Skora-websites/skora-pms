@@ -7,7 +7,7 @@ import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { setSessionCookie, getSessionUserId, destroySession } from "@/lib/auth/session";
 import { getCurrentUser, getUserPermissions, homePathForRole } from "@/lib/auth/user";
-import { firstPermittedDoctorPath } from "@/lib/auth/permissions";
+import { doctorPathToReceptionist, firstPermittedDoctorPath } from "@/lib/auth/permissions";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
 import { loginSchema } from "@/lib/validation";
@@ -74,7 +74,8 @@ export async function loginAction(
       // loop for restricted staff landing on /doctor.
       if (me.role === "doctor" || me.role === "receptionist") {
         const perms = await getUserPermissions(existing);
-        redirect(firstPermittedDoctorPath(perms));
+        const target = firstPermittedDoctorPath(perms);
+        redirect(me.role === "receptionist" ? doctorPathToReceptionist(target) : target);
       }
       redirect(homePathForRole(me.role ?? "patient"));
     }
@@ -95,7 +96,8 @@ export async function loginAction(
   if (user.role === "doctor" || user.role === "receptionist") {
     const me = await getCurrentUser();
     const perms = me ? await getUserPermissions(user.id) : new Set<string>();
-    redirect(firstPermittedDoctorPath(perms));
+    const target = firstPermittedDoctorPath(perms);
+    redirect(user.role === "receptionist" ? doctorPathToReceptionist(target) : target);
   }
   redirect(homePathForRole(user.role));
 }

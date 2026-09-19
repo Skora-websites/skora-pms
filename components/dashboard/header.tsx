@@ -160,7 +160,9 @@ export function DashboardHeader({
                       ? "/super-admin/settings"
                       : user.role === "patient"
                         ? "/patient"
-                        : "/doctor/profile"
+                        : user.role === "receptionist"
+                          ? "/receptionist/profile"
+                          : "/doctor/profile"
                   }
                   className="mt-1 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50"
                 >

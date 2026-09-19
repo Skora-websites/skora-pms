@@ -152,10 +152,15 @@ async function main() {
 
   const findPerm = (name: string) => db.query.permissions.findFirst({ where: (p, { eq }) => eq(p.name, name) });
   const accountantPerms = ["income-expense", "income-expense-list", "income-expense-export", "billing", "billing-list", "billing-print"];
+  // Receptionist panel: dashboard + Schedule, Registration, Appointment,
+  // Test, Follow-up only (drizzle/0005_receptionist_scope.sql).
   const receptionistPerms = [
-    "appointments", "appointments-list", "appointments-create",
-    "billing", "billing-list", "billing-create",
-    "registrations", "registrations-list", "registrations-create",
+    "dashboard", "dashboard-view",
+    "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
+    "registrations", "registrations-list", "registrations-create", "registrations-edit", "registrations-delete",
+    "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
+    "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
+    "follow-up", "follow-up-list", "follow-up-status-update",
   ];
 
   for (const name of accountantPerms) {
@@ -444,7 +449,7 @@ async function main() {
   ];
   for (const [dow, st, et, stype] of daySeeds) {
     await db.insert(doctorSchedules).values({
-      doctorClinicId: clinicId, dayOfWeek: dow as never, startTime: st, endTime: et,
+      doctorClinicId: clinicId, doctorId, dayOfWeek: dow as never, startTime: st, endTime: et,
       sessionType: stype as never, maxPatients: 10, slotDuration: 15, gapDuration: 5,
       isActive: true, createdAt: now(), updatedAt: now(),
     });

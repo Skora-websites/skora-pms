@@ -54,13 +54,22 @@ export function proxy(request: NextRequest) {
   // Expose the pathname to server components. Layouts can't call
   // usePathname(), so this header lets the doctor layout enforce
   // permissions server-side (redirect before restricted pages fetch data).
+  const pathname = request.nextUrl.pathname;
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  requestHeaders.set("x-pathname", pathname);
 
-  // Create response with security headers.
-  const response = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  // Receptionist panel URL-space: /receptionist/* renders the /doctor/*
+  // routes (the app internals stay on /doctor; the doctor layout bounces
+  // receptionist sessions from /doctor/* to /receptionist/* so the browser
+  // always shows their own panel prefix).
+  let response: NextResponse;
+  if (pathname === "/receptionist" || pathname.startsWith("/receptionist/")) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.replace(/^\/receptionist/, "/doctor");
+    response = NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+  } else {
+    response = NextResponse.next({ request: { headers: requestHeaders } });
+  }
 
   // ── Standard security headers ─────────────────────────────────
   response.headers.set("X-Content-Type-Options", "nosniff");

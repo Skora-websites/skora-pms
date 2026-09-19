@@ -1,8 +1,10 @@
 import { requireRole } from "@/lib/auth/guard";
 import { getUserPermissions } from "@/lib/auth/user";
 import {
+  doctorPathToReceptionist,
   firstPermittedDoctorPath,
   hasDoctorModuleAccess,
+  receptionistPathToDoctor,
 } from "@/lib/auth/permissions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DoctorPermissionGate } from "@/components/doctor/permission-gate";
@@ -25,15 +27,28 @@ export default async function DoctorLayout({
   }
   const perms = await getUserPermissions(user.id);
 
+  // URL-space split: receptionists browse under /receptionist/* (the proxy
+  // rewrites it onto these /doctor routes); doctors keep /doctor only. Bounce
+  // each role out of the other's prefix before any page data is fetched.
+  const rawPathname = (await headers()).get("x-pathname") ?? "/doctor";
+  const pathname = receptionistPathToDoctor(rawPathname);
+  if (user.role === "receptionist" && !rawPathname.startsWith("/receptionist")) {
+    redirect(doctorPathToReceptionist(rawPathname));
+  }
+  if (user.role !== "receptionist" && rawPathname.startsWith("/receptionist")) {
+    redirect(receptionistPathToDoctor(rawPathname));
+  }
+
   // Server-side page guard: redirect before the page component runs, so a
   // restricted URL never executes its data queries or renders. The client
   // <DoctorPermissionGate> mirrors this for client-side navigation.
-  const pathname = (await headers()).get("x-pathname") ?? "/doctor";
   if (!hasDoctorModuleAccess(perms, pathname)) {
     const target = firstPermittedDoctorPath(perms);
+    // Receptionists speak /receptionist/*; keep everyone on their own prefix.
+    const friendly = user.role === "receptionist" ? doctorPathToReceptionist(target) : target;
     // Avoid a redirect loop when the fallback is the page itself (e.g. a
     // user with no permissions landing on /doctor).
-    redirect(target === pathname ? "/" : target);
+    redirect(target === pathname ? (user.role === "receptionist" ? "/receptionist" : "/") : friendly);
   }
 
   // Shared route→permission map (lib/auth/permissions.ts) — the same map the
@@ -60,9 +75,12 @@ export default async function DoctorLayout({
     { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
   ];
 
+  // Receptionists see /receptionist/* URLs (rewritten onto these routes);
+  // doctors see /doctor/*.
+  const isReceptionistPanel = user.role === "receptionist";
   const navItems: NavItem[] = NAV_BY_PERM.filter((n) => perms.has(n.perm)).map((n) => ({
     label: n.label,
-    href: n.href,
+    href: isReceptionistPanel ? doctorPathToReceptionist(n.href) : n.href,
     icon: n.icon,
     ...(n.exact ? { exact: true } : {}),
     ...(n.section ? { section: n.section } : {}),
@@ -85,7 +103,7 @@ export default async function DoctorLayout({
       promo
       dutyMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
     >
-      <DoctorPermissionGate perms={[...perms]} />
+      <DoctorPermissionGate perms={[...perms]} isReceptionist={isReceptionistPanel} />
       {children}
     </DashboardShell>
   );

@@ -124,7 +124,7 @@ export function MobileAppShell({
             </div>
             <div className="mt-3 space-y-1">
               <Link
-                href={user.role === "super_admin" ? "/super-admin/settings" : user.role === "patient" ? "/patient" : "/doctor/profile"}
+                href={user.role === "super_admin" ? "/super-admin/settings" : user.role === "patient" ? "/patient" : user.role === "receptionist" ? "/receptionist/profile" : "/doctor/profile"}
                 onClick={closeAll}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-50"
               >
@@ -220,7 +220,7 @@ export function MobileAppShell({
 function pickPrimary(items: NavItem[], role: string): NavItem[] {
   const order: Record<string, string[]> = {
     doctor: ["/doctor", "/doctor/appointments", "/doctor/billing", "/doctor/patients"],
-    receptionist: ["/doctor", "/doctor/appointments", "/doctor/billing", "/doctor/patients"],
+    receptionist: ["/receptionist", "/receptionist/appointments", "/receptionist/patients", "/receptionist/schedule"],
     admin: ["/doctor", "/doctor/appointments", "/doctor/billing", "/doctor/patients"],
     patient: ["/patient", "/patient/appointments", "/patient/prescriptions", "/patient/find-doctor"],
     super_admin: ["/super-admin", "/super-admin/doctors", "/super-admin/users", "/super-admin/clinics"],

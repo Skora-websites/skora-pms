@@ -3,8 +3,10 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  doctorPathToReceptionist,
   doctorPermissionForPath,
   firstPermittedDoctorPath,
+  receptionistPathToDoctor,
 } from "@/lib/auth/permissions";
 
 /**
@@ -16,18 +18,22 @@ import {
  * the required module permission are redirected to their first permitted
  * page.
  */
-export function DoctorPermissionGate({ perms }: { perms: string[] }) {
+export function DoctorPermissionGate({ perms, isReceptionist = false }: { perms: string[]; isReceptionist?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
     const permSet = new Set(perms);
-    const required = doctorPermissionForPath(pathname);
+    // Under /receptionist/* the proxy rewrites onto /doctor/* — usePathname()
+    // reports the browser URL, so translate before matching route perms.
+    const internalPath = isReceptionist ? receptionistPathToDoctor(pathname) : pathname;
+    const required = doctorPermissionForPath(internalPath);
     if (required === null) return;
     if (!permSet.has(required)) {
-      router.replace(firstPermittedDoctorPath(permSet));
+      const target = firstPermittedDoctorPath(permSet);
+      router.replace(isReceptionist ? doctorPathToReceptionist(target) : target);
     }
-  }, [pathname, router, perms]);
+  }, [pathname, router, perms, isReceptionist]);
 
   return null;
 }
