@@ -16,16 +16,14 @@ export function SignupForm() {
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
 
   function handleSendOtp() {
-    const phone = (document.getElementById("phone") as HTMLInputElement | null)?.value ?? "";
     const email = (document.getElementById("email") as HTMLInputElement | null)?.value ?? "";
-    if (phone.replace(/[^0-9]/g, "").length < 10) {
-      setOtpMessage("Enter a valid phone number first.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setOtpMessage("Enter a valid email address first.");
       return;
     }
     setOtpMessage(null);
     startOtpSend(async () => {
       const fd = new FormData();
-      fd.set("phone", phone);
       fd.set("email", email);
       const res = await sendSignupOtp(initialState, fd);
       if (res.error) setOtpMessage(res.error);
@@ -120,7 +118,7 @@ export function SignupForm() {
 
       {/* OTP verification */}
       <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
-        <label className="label">Phone verification</label>
+        <label className="label">Email verification</label>
         <div className="flex gap-2">
           <input
             id="otp"
@@ -142,7 +140,7 @@ export function SignupForm() {
         </div>
         {otpMessage && <p className="mt-2 text-xs text-brand-800">{otpMessage}</p>}
         <p className="mt-1 text-xs text-slate-400">
-          We&apos;ll send a 6-digit code to verify your phone number.
+          We&apos;ll send a 6-digit code to verify your email address.
         </p>
       </div>
       <div>

@@ -103,7 +103,7 @@ export const passwordResetTokens = mysqlTable("password_reset_tokens", {
 
 export const registrationOtps = mysqlTable("registration_otps", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-  phone: varchar("phone", { length: 20 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
   otp: varchar("otp", { length: 10 }).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").default(false),

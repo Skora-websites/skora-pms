@@ -106,9 +106,23 @@ test.describe("Business-fix verification", () => {
   test("F12: patient accepts consent → appointment confirmed + doctor notified", async ({ page }) => {
     const future = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000);
     const dateStr = future.toISOString().slice(0, 10);
-    const minute = String(10 + (Date.now() % 49)).padStart(2, "0"); // varies across retries
-    const timeStr = `11:${minute}`;
-    const timeLabel = `11:${minute} AM`;
+    // Pick an 11:xx slot that is actually free — earlier runs leave rows on the
+    // same date, so a blind random minute collides ("Time slot already booked").
+    const taken = await query<{ time: string }>(
+      `SELECT time FROM appointments WHERE date = ? AND time LIKE '11:%'`,
+      [dateStr]
+    );
+    const takenSet = new Set(taken.map((r) => r.time));
+    let timeLabel = "";
+    for (let m = 10; m <= 58; m++) {
+      const candidate = `11:${String(m).padStart(2, "0")} AM`;
+      if (!takenSet.has(candidate)) {
+        timeLabel = candidate;
+        break;
+      }
+    }
+    expect(timeLabel, "a free 11:xx slot exists").not.toBe("");
+    const timeStr = timeLabel.replace(" AM", "");
 
     await page.goto("/doctor/appointments/book");
     const patientSelect = page.getByLabel("Patient");

@@ -102,9 +102,8 @@ export async function signupAction(
   }
 
   // OTP verification is required for signup.
-  if (!rawPhone) return { error: "Phone number is required for OTP verification." };
-  if (!otp) return { error: "Please enter the OTP sent to your phone." };
-  const otpOk = await verifySignupOtp(rawPhone, otp);
+  if (!otp) return { error: "Please enter the OTP sent to your email." };
+  const otpOk = await verifySignupOtp(rawEmail, otp);
   if (!otpOk) return { error: "Invalid or expired OTP. Please request a new one." };
 
   const { allowed, retryAfterMs } = authRateLimit.signup(rawEmail);
