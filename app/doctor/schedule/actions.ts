@@ -4,12 +4,22 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { clinicDoctors, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import {
+  clinicDoctors,
+  doctorClinics,
+  doctorSchedules,
+  modelHasPermissions,
+  modelHasRoles,
+  permissions,
+  roles,
+  users,
+} from "@/lib/db/schema";
+import { DEFAULT_DOCTOR_MODULE_PERMS, requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { ensureClinicAccess, ensureClinicOwner } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
+import bcrypt from "bcryptjs";
 
 export type ScheduleActionResult = { error: string | null };
 
@@ -466,6 +476,11 @@ export async function deleteSchedule(scheduleId: number): Promise<ScheduleAction
 
 // ── Clinic membership (owner-only management) ──────────────────────────────
 
+/**
+ * Add a doctor to the clinic with full profile details. If the email already
+ * belongs to an active doctor, they are linked to the clinic as-is; otherwise
+ * a new doctor account is created (owner sets the initial password).
+ */
 export async function addClinicDoctor(
   _prev: ScheduleActionResult,
   formData: FormData
@@ -473,42 +488,119 @@ export async function addClinicDoctor(
   const doctorId = await requireDoctorPermission("schedule-edit");
   if (!doctorId) return { error: "You don't have permission to manage clinic doctors." };
   const clinicId = Number(formData.get("clinic_id"));
+  const memberName = String(formData.get("doctor_name") ?? "").trim();
   const memberEmail = String(formData.get("doctor_email") ?? "").trim().toLowerCase();
+  const memberPhone = String(formData.get("doctor_phone") ?? "").trim() || null;
+  const memberSpecialization = String(formData.get("doctor_specialization") ?? "").trim() || null;
+  const memberQualification = String(formData.get("doctor_qualification") ?? "").trim() || null;
+  const memberRegistration = String(formData.get("doctor_registration") ?? "").trim() || null;
+  const memberPassword = String(formData.get("doctor_password") ?? "");
 
   if (!clinicId || !Number.isInteger(clinicId)) return { error: "Invalid clinic." };
   if (!(await ensureClinicOwner(clinicId, doctorId))) return { error: "Clinic not found." };
+  if (!memberName) return { error: "Doctor name is required." };
+  if (memberName.length > 255) return { error: "Doctor name must be at most 255 characters." };
   if (!memberEmail) return { error: "Doctor email is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(memberEmail)) return { error: "Enter a valid email." };
+  if (memberPhone && memberPhone.length > 20) return { error: "Phone must be at most 20 characters." };
+  if (memberSpecialization && memberSpecialization.length > 255) {
+    return { error: "Specialization must be at most 255 characters." };
+  }
+  if (memberQualification && memberQualification.length > 255) {
+    return { error: "Qualification must be at most 255 characters." };
+  }
+  if (memberRegistration && memberRegistration.length > 255) {
+    return { error: "Registration number must be at most 255 characters." };
+  }
 
-  const [member] = await db
+  const [existing] = await db
     .select({ id: users.id, role: users.role, status: users.status })
     .from(users)
     .where(eq(users.email, memberEmail));
-  if (!member) return { error: "No account found with that email." };
-  if (member.role !== "doctor") return { error: "That user is not a doctor." };
-  if (member.status !== "active") return { error: "That doctor's account is not active." };
-  if (member.id === doctorId) return { error: "You already practice at this clinic." };
 
-  const [existing] = await db
+  let memberId: number;
+  if (existing) {
+    // Link the existing account instead of erroring.
+    if (existing.role !== "doctor") return { error: "That email belongs to a non-doctor account." };
+    if (existing.status !== "active") return { error: "That doctor's account is not active." };
+    if (existing.id === doctorId) return { error: "You already practice at this clinic." };
+    memberId = existing.id;
+  } else {
+    if (memberPassword.length < 8) return { error: "Password must be at least 8 characters." };
+    // Account + role grant + default module permissions in one transaction —
+    // a crash between them (or a legacy Doctor role with zero permissions)
+    // would leave the doctor locked out of the dashboard. Mirrors signup.
+    const systemDoctorRole = await db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.name, "Doctor"), isNull(roles.doctorId)))
+      .limit(1);
+    if (!systemDoctorRole[0]) return { error: "System Doctor role is missing." };
+    const permRows = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(inArray(permissions.name, DEFAULT_DOCTOR_MODULE_PERMS));
+    memberId = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(users)
+        .values({
+          referenceRoleId: doctorId,
+          doctorId,
+          salutation: "Dr.",
+          name: memberName,
+          email: memberEmail,
+          phone: memberPhone,
+          specialization: memberSpecialization,
+          qualification: memberQualification,
+          registrationNumber: memberRegistration,
+          password: await bcrypt.hash(memberPassword, 12),
+          role: "doctor",
+          status: "active",
+          emailVerifiedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .$returningId();
+      const newId = Number(created.id);
+      await tx.insert(modelHasRoles).values({
+        roleId: systemDoctorRole[0].id,
+        modelType: "App\\Models\\User",
+        modelId: newId,
+      });
+      if (permRows.length > 0) {
+        await tx.insert(modelHasPermissions).values(
+          permRows.map((p) => ({ permissionId: p.id, modelType: "App\\Models\\User", modelId: newId }))
+        );
+      }
+      return newId;
+    });
+  }
+
+  const [membership] = await db
     .select({ id: clinicDoctors.id, isActive: clinicDoctors.isActive })
     .from(clinicDoctors)
-    .where(and(eq(clinicDoctors.clinicId, clinicId), eq(clinicDoctors.doctorId, member.id)));
-  if (existing) {
-    if (existing.isActive) return { error: "That doctor is already at this clinic." };
+    .where(and(eq(clinicDoctors.clinicId, clinicId), eq(clinicDoctors.doctorId, memberId)));
+  if (membership) {
+    if (membership.isActive) return { error: "That doctor is already at this clinic." };
     await db
       .update(clinicDoctors)
       .set({ isActive: true, updatedAt: new Date() })
-      .where(eq(clinicDoctors.id, existing.id));
+      .where(eq(clinicDoctors.id, membership.id));
   } else {
     await db.insert(clinicDoctors).values({
       clinicId,
-      doctorId: member.id,
+      doctorId: memberId,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
   }
 
-  void audit.roleChanged(doctorId, { action: "clinic_doctor_added", clinicId, memberDoctorId: member.id });
+  void audit.roleChanged(doctorId, {
+    action: existing ? "clinic_doctor_added" : "clinic_doctor_created",
+    clinicId,
+    memberDoctorId: memberId,
+  });
 
   revalidatePath("/doctor/schedule");
   return { error: null };

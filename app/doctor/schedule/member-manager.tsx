@@ -59,6 +59,7 @@ export function MemberManager({
   const [addState, addAction, addPending] = useActionState(addClinicDoctor, initialState);
   const [removeState, removeAction, removePending] = useActionState(removeClinicDoctor, initialState);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const error = addState.error ?? removeState.error;
 
   return (
@@ -174,26 +175,76 @@ export function MemberManager({
         {members.length === 0 && <li className="text-xs text-slate-400">No doctors added yet.</li>}
       </ul>
 
-      <form action={addAction} className="mt-3 flex items-center gap-2">
-        <input type="hidden" name="clinic_id" value={clinicId} />
-        <input
-          type="email"
-          name="doctor_email"
-          required
-          placeholder="Add doctor by email…"
-          className="input flex-1 !py-2 text-sm"
-        />
+      {addOpen ? (
+        <form action={addAction} className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+          <input type="hidden" name="clinic_id" value={clinicId} />
+          <p className="text-xs font-semibold text-slate-600">Add a doctor</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            New email → creates a doctor account. Existing doctor email → links them to this clinic.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="doctor_name" className="label">Full name *</label>
+              <input id="doctor_name" name="doctor_name" required maxLength={255} className="input !py-2 text-sm" placeholder="e.g. Anil Mehta" />
+            </div>
+            <div>
+              <label htmlFor="doctor_email" className="label">Email *</label>
+              <input id="doctor_email" name="doctor_email" type="email" required className="input !py-2 text-sm" />
+            </div>
+            <div>
+              <label htmlFor="doctor_phone" className="label">Phone</label>
+              <input id="doctor_phone" name="doctor_phone" maxLength={20} className="input !py-2 text-sm" />
+            </div>
+            <div>
+              <label htmlFor="doctor_specialization" className="label">Specialization</label>
+              <input id="doctor_specialization" name="doctor_specialization" maxLength={255} className="input !py-2 text-sm" placeholder="e.g. Cardiologist" />
+            </div>
+            <div>
+              <label htmlFor="doctor_qualification" className="label">Qualification</label>
+              <input id="doctor_qualification" name="doctor_qualification" maxLength={255} className="input !py-2 text-sm" placeholder="e.g. MBBS, MD" />
+            </div>
+            <div>
+              <label htmlFor="doctor_registration" className="label">Registration no.</label>
+              <input id="doctor_registration" name="doctor_registration" maxLength={255} className="input !py-2 text-sm" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="doctor_password" className="label">Initial password (new accounts only)</label>
+              <input
+                id="doctor_password"
+                name="doctor_password"
+                type="password"
+                minLength={8}
+                className="input !py-2 text-sm"
+                placeholder="At least 8 characters — ignored when the email already exists"
+              />
+            </div>
+          </div>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-3 flex items-center gap-2">
+            <button type="submit" disabled={addPending} className="btn-primary !px-3 !py-1.5 text-xs">
+              <UserPlus className="h-3.5 w-3.5" />
+              {addPending ? "Adding…" : "Add doctor"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
         <button
-          type="submit"
-          disabled={addPending}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:opacity-60"
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100"
         >
-          <UserPlus className="h-3.5 w-3.5" />
-          {addPending ? "Adding…" : "Add"}
+          <UserPlus className="h-3.5 w-3.5" /> Add doctor
         </button>
-      </form>
+      )}
 
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {!addOpen && error && <p className="mt-2 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
