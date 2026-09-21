@@ -70,7 +70,7 @@ export function BookAppointmentForm({
             <select id="doctor_id" name="doctor_id" className="input" defaultValue={String(doctors[0]?.id ?? "")}>
               {doctors.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.salutation ? `${d.salutation} ` : ""}
+                  {d.salutation && !d.name.startsWith(d.salutation) ? `${d.salutation} ` : ""}
                   {d.name}
                   {d.qualification ? ` — ${d.qualification}` : ""}
                 </option>
