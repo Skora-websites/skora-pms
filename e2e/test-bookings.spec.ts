@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 import { unique, tinyPdf } from "./helpers";
 
 test.describe("P4.2 Test Bookings", () => {
-  test("create vendor, create test, book for a patient, upload report via vendor link", async ({ page, context }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:3100" });
+  test("create vendor, create test, book for a patient, upload report via vendor link", async ({ page, context }, testInfo) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: testInfo.project.use.baseURL! });
     await page.goto("/doctor/test-bookings");
     await expect(page.getByRole("heading", { name: /Test Bookings/i }).first()).toBeVisible();
 

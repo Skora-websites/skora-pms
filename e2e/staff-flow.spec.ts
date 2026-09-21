@@ -41,7 +41,9 @@ test("staff login: nav filtered by role, blocked modules redirect", async ({ bro
   await page.getByLabel("Password").fill("Test@1234");
   await page.getByRole("button", { name: /Sign in/i }).click();
   // No dashboard perm → lands on first permitted page (registrations).
-  await page.waitForURL(/\/doctor\/patients(\/|$|\?)/, { timeout: 120_000 });
+  // Receptionists browse the panel under /receptionist/* (proxy rewrites
+  // onto the /doctor routes internally).
+  await page.waitForURL(/\/receptionist\/patients(\/|$|\?)/, { timeout: 120_000 });
 
   // ── Sidebar shows only permitted modules ─────────────────────────────────
   const navLink = page.locator("aside nav a", { hasText: "Registrations" }).first();
@@ -53,14 +55,14 @@ test("staff login: nav filtered by role, blocked modules redirect", async ({ bro
     expect(labels, `nav must not show ${absent}`).not.toContain(absent);
   }
 
-  // ── Permitted module renders ─────────────────────────────────────────────
+  // ── Permitted module renders (doctor prefix self-heals to /receptionist) ──
   await page.goto("/doctor/patients");
-  await expect(page).toHaveURL(/\/doctor\/patients/);
+  await expect(page).toHaveURL(/\/receptionist\/patients/);
 
   // ── Blocked modules redirect to first permitted page ────────────────────
-  for (const blocked of ["/doctor", "/doctor/income-expense", "/doctor/schedule", "/doctor/staff"]) {
+  for (const blocked of ["/receptionist", "/receptionist/income-expense", "/receptionist/schedule", "/receptionist/staff"]) {
     await page.goto(blocked);
-    await page.waitForURL(/\/doctor\/patients/, { timeout: 15_000 });
+    await page.waitForURL(/\/receptionist\/patients/, { timeout: 15_000 });
   }
 
   await ctx.close();

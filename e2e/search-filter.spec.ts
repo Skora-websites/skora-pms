@@ -59,7 +59,7 @@ test("super-admin users: role filter + search + pagination all work", async ({ b
 
   // search
   await page.locator("input[name=q]").fill("doctor@gmail.com");
-  await page.getByRole("button", { name: "Go" }).click();
+  await page.getByRole("button", { name: "Go", exact: true }).click();
   await page.waitForURL(/q=doctor/, { timeout: 15000 });
   // scope to the table row — the sidebar also shows the current admin email
   await expect(page.locator("main table").getByText("doctor@gmail.com").first()).toBeVisible({ timeout: 15000 });

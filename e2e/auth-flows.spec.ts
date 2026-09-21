@@ -1,7 +1,8 @@
 // Auth workflows: wrong password, deactivated account, logout, session persistence, refresh, rate limit.
 import { test, expect, type Page } from "@playwright/test";
 
-const LOGIN = "http://localhost:3100/login";
+// Relative URL — resolves against the config baseURL (E2E_BASE_URL override).
+const LOGIN = "/login";
 
 async function login(page: Page, email: string, password: string) {
   await page.goto(LOGIN);
@@ -32,7 +33,7 @@ test("empty email blocked — HTML required attr stops submit, stays on form", a
   await page.getByRole("button", { name: /Sign in/i }).click();
   // HTML5 validation: no navigation, no error text, still on /login
   await page.waitForTimeout(1000);
-  expect(page.url()).toBe(LOGIN);
+  expect(new URL(page.url()).pathname).toBe(LOGIN);
   expect((await page.context().cookies()).filter((c) => c.name === "skora_session")).toHaveLength(0);
   await page.close();
 });
@@ -84,8 +85,8 @@ test("logout destroys session — doctor page redirects to /login after", async 
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   await page.locator("header button", { hasText: "Doctor" }).first().click(); // open profile dropdown
   await page.getByRole("button", { name: "Log out" }).first().click();
-  await page.waitForURL("http://localhost:3100/", { timeout: 15000 }); // logoutAction redirects to marketing home
-  await page.goto("http://localhost:3100/doctor");
+  await page.waitForURL(/\/(login)?$/, { timeout: 15000 }); // logoutAction redirects to marketing home
+  await page.goto("/doctor");
   await page.waitForURL(/\/login/, { timeout: 15000 }); // no residual access
   expect((await page.context().cookies()).filter((c) => c.name === "skora_session")).toHaveLength(0);
   await page.close();
