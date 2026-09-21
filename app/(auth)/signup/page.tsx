@@ -20,7 +20,7 @@ export default function SignupPage() {
               Create your free account in minutes.
             </h1>
             <p className="mt-4 max-w-md text-white/70">
-              No credit card required. Doctor accounts start with a 14-day free trial.
+              No credit card required. Doctor accounts start with a 15-day free trial.
             </p>
             <ul className="mt-6 space-y-2.5 text-sm text-white/80">
               {[

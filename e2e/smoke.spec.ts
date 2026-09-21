@@ -19,7 +19,7 @@ const ADMIN_ROUTES = [
 ];
 
 const PUBLIC_ROUTES = [
-  "/", "/about", "/blog", "/contact", "/privacy-policy", "/terms-conditions",
+  "/", "/about", "/blog", "/contact", "/pricing", "/privacy-policy", "/terms-conditions",
   "/refund-policy", "/cancellation-policy", "/login", "/signup",
 ];
 

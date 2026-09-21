@@ -52,6 +52,7 @@ export const contactSchema = z.object({
   name: nonEmpty("Name").max(100, "Name must be at most 100 characters"),
   email: email(),
   phone: phone(),
+  clinic: z.string().trim().max(255, "Clinic must be at most 255 characters").optional(),
   message: nonEmpty("Message").max(2000, "Message must be at most 2000 characters"),
 });
 

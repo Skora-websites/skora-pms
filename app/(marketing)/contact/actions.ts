@@ -16,9 +16,16 @@ export async function bookDemo(
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
+  const clinic = String(formData.get("clinic") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 
-  const parsed = contactSchema.safeParse({ name, email, phone: phone || undefined, message });
+  const parsed = contactSchema.safeParse({
+    name,
+    email,
+    phone: phone || undefined,
+    clinic: clinic || undefined,
+    message,
+  });
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
@@ -37,6 +44,7 @@ export async function bookDemo(
         name,
         email,
         phone: phone || null,
+        clinic: clinic || null,
         message,
         createdAt: now,
         updatedAt: now,
@@ -45,7 +53,7 @@ export async function bookDemo(
 
     void auditLog({
       action: "demo_booked",
-      metadata: { leadId: Number(lead.id), email, name },
+      metadata: { leadId: Number(lead.id), email, name, clinic: clinic || null },
     }).catch(() => undefined);
 
     // Notify the sales inbox in the background — failures must never block
@@ -58,7 +66,7 @@ export async function bookDemo(
       void sendMail({
         to: process.env.DEMO_NOTIFY_EMAIL ?? "sales@example.com",
         subject: "New demo booking",
-        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || "—"}\nMessage: ${message}`,
+        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || "—"}\nClinic: ${clinic || "—"}\nMessage: ${message}`,
       }).catch(() => undefined);
       return sent;
     }).catch(() => undefined);

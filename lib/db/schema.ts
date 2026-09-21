@@ -1557,6 +1557,7 @@ export const leads = mysqlTable("leads", {
   name: varchar("name", { length: 100 }).notNull(),
   email: varchar("email", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 20 }),
+  clinic: varchar("clinic", { length: 255 }),
   message: text("message").notNull(),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),

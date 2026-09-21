@@ -49,7 +49,7 @@ export default async function HomePage() {
 
         <div className="border-y border-brand-900/5 bg-navy-950 py-5">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-12 gap-y-3 px-5 text-sm text-white/60">
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> HIPAA-grade security</span>
+            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> DPDP-compliant, data in India</span>
             <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> Multi-clinic support</span>
             <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> 24×7 support</span>
             <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> WhatsApp integration</span>
@@ -277,7 +277,7 @@ export default async function HomePage() {
             <p className="relative mx-auto mt-4 max-w-xl text-lg text-white/80">{cta.subtitle}</p>
             <div className="relative mt-9 flex flex-wrap justify-center gap-4">
               <a
-                href="/contact"
+                href="/signup"
                 className="rounded-full bg-white px-8 py-3.5 font-semibold text-brand-800 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl"
               >
                 Start Free Trial
@@ -289,6 +289,9 @@ export default async function HomePage() {
                 Request a Demo
               </a>
             </div>
+            <p className="relative mt-4 text-sm text-white/60">
+              No credit card required · Full access during your trial
+            </p>
           </div>
         </section>
       )}
