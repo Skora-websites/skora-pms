@@ -160,7 +160,22 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
 
     const future = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
     const dateStr = future.toISOString().slice(0, 10);
-    const timeStr = `10:${String(Math.floor(Math.random() * 49)).padStart(2, "0")}`;
+    // Pick a free 10:xx slot from the DB — earlier runs leave rows on the same
+    // date and a blind random minute collides ("Time slot already booked").
+    const taken = await query<{ time: string }>(
+      `SELECT time FROM appointments WHERE date = ? AND time LIKE '10:%'`,
+      [dateStr]
+    );
+    const takenSet = new Set(taken.map((r) => r.time));
+    let timeStr = "";
+    for (let m = 0; m <= 59; m++) {
+      const candidate = `10:${String(m).padStart(2, "0")}`;
+      if (!takenSet.has(`${candidate} AM`)) {
+        timeStr = candidate;
+        break;
+      }
+    }
+    expect(timeStr, "a free 10:xx slot exists").not.toBe("");
     await page.goto("/doctor/appointments/book");
     const patientSelect = page.getByLabel("Patient");
     const optionCount = await patientSelect.locator("option").count();
