@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { db } from "@/lib/db";
 import { pushSubscriptions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { isAllowedPushEndpoint } from "@/lib/push/endpoint";
 
 /**
  * Web Push sender for PWA background notifications (e.g. SOS emergency
@@ -13,7 +14,7 @@ import { eq } from "drizzle-orm";
  */
 const publicKey = process.env.VAPID_PUBLIC_KEY;
 const privateKey = process.env.VAPID_PRIVATE_KEY;
-const subject = process.env.VAPID_SUBJECT ?? "mailto:admin@skoracare.com";
+const subject = process.env.VAPID_SUBJECT ?? "mailto:admin@skoracare.com"; // see .env.example VAPID_SUBJECT
 
 let configured = false;
 if (publicKey && privateKey) {
@@ -30,6 +31,16 @@ export async function sendPushToSubscription(
   payload: { title: string; body: string; url?: string; tag?: string }
 ): Promise<boolean> {
   if (!configured) return false;
+  // Defense in depth: rows written before the subscribe-time allowlist must
+  // not be dereferenced either. A stale/unknown endpoint is pruned like a
+  // dead subscription instead of being POSTed to.
+  if (!isAllowedPushEndpoint(subscription.endpoint)) {
+    await db
+      .delete(pushSubscriptions)
+      .where(eq(pushSubscriptions.endpoint, subscription.endpoint))
+      .catch(() => {});
+    return false;
+  }
   try {
     await webpush.sendNotification(
       {

@@ -112,3 +112,19 @@ export function slugify(input: string) {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
 }
+
+/**
+ * Neutralize spreadsheet formula injection for CSV/XLSX export cells.
+ *
+ * Cells whose first character is =, +, - or @ may be evaluated as formulas
+ * by desktop spreadsheet applications when an exported file is opened.
+ * Exported values include patient-controlled free text (names, remarks,
+ * notes), so prefix a dangerous leading character with a single quote —
+ * the standard guard that renders the cell as literal text.
+ */
+const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@]/;
+
+export function sanitizeSpreadsheetCell(value: string | number | null | undefined): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  return SPREADSHEET_FORMULA_PREFIX.test(s) ? `'${s}` : s;
+}

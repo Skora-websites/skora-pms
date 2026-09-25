@@ -57,6 +57,14 @@ export async function sendSignupOtp(
 /** Verify an OTP for an email. Returns true when valid and marks it used. */
 export async function verifySignupOtp(email: string, otp: string): Promise<boolean> {
   const normalized = email.trim().toLowerCase();
+
+  // This action is exported (callable directly by an unauthenticated client)
+  // and guards a security decision, so failed attempts must be throttled
+  // here — not only in signupAction. 10 guesses per 10-minute OTP window
+  // keeps brute-forcing the 6-digit code impractical.
+  const { allowed } = authRateLimit.otpVerify(normalized);
+  if (!allowed) return false;
+
   const [row] = await db
     .select({ id: registrationOtps.id })
     .from(registrationOtps)

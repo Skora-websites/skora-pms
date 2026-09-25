@@ -4,8 +4,15 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, incomeTypes, expenseTypes } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { sanitizeSpreadsheetCell } from "@/lib/utils";
+import {
+  resolvePracticeDoctorId,
+  isPracticeWideUser,
+  getTransactions,
+  getAllTransactionsForExport,
+} from "@/lib/queries/doctor";
+import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
-import { getTransactions } from "@/lib/queries/doctor";
 
 export const runtime = "nodejs";
 
@@ -29,10 +36,13 @@ const STATUS_LABELS: Record<string, string> = {
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
+  const ledgerIds = isPracticeWideUser(user.role)
+    ? await getPracticeDoctorIds(doctorId)
+    : [doctorId];
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
@@ -41,7 +51,9 @@ export async function GET(req: NextRequest) {
   const periodRaw = searchParams.get("period");
   const period = periodRaw === "month" || periodRaw === "last_month" ? periodRaw : "all";
 
-  const { rows, incomeTypes: incomeCats, expenseTypes: expenseCats } = await getTransactions(doctorId, period);
+  // Exports always cover the whole period — bypass page limits.
+  const { rows, incomeTypes: incomeCats, expenseTypes: expenseCats } =
+    await getAllTransactionsForExport(ledgerIds, period);
 
   let filtered = rows;
   if (type === "income") filtered = filtered.filter((r) => r.type === 1);
@@ -56,10 +68,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   let ids: number[] = [];
   try {
@@ -155,7 +167,9 @@ async function exportWorkbook(
       payment: r.paymentMethod ?? "—",
       reference: r.referenceNumber ?? "—",
       status: r.status ? (STATUS_LABELS[r.status] ?? r.status) : "—",
-      description: r.description ?? "—",
+      // Free-text ledger description in an exported cell — neutralize
+      // spreadsheet formula injection.
+      description: sanitizeSpreadsheetCell(r.description ?? "—"),
     });
   });
 

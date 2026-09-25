@@ -3,10 +3,11 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!user || !["doctor", "receptionist"].includes(user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
@@ -48,8 +49,10 @@ export async function GET(request: NextRequest) {
     .orderBy(desc(users.createdAt));
 
   const header = ["ID", "Registration ID", "Name", "Email", "Phone", "Gender", "DOB", "Address", "City", "State", "Pincode", "Aadhaar", "Status", "Registered On"];
+  // esc: CSV quoting + spreadsheet formula neutralization (patient-controlled
+  // name/address/aadhaar fields must never open as a live formula).
   const esc = (v: unknown) => {
-    const s = v == null ? "" : String(v);
+    const s = sanitizeSpreadsheetCell(v == null ? "" : String(v));
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = [header, ...rows.map((r) => [

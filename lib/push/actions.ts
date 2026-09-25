@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { pushSubscriptions } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { isAllowedPushEndpoint } from "@/lib/push/endpoint";
 
 export type PushActionResult = { error: string | null; ok?: boolean };
 
@@ -25,8 +26,10 @@ export async function subscribeToPush(
 ): Promise<PushActionResult> {
   const user = await requireUser();
   if (!endpoint || !auth || !p256dh) return { error: "Invalid subscription." };
-  if (!endpoint.startsWith("https://") && !endpoint.startsWith("http://")) {
-    return { error: "Invalid endpoint." };
+  // The server later POSTs to this URL (SSRF risk) — only allow well-known
+  // web-push service hosts, never arbitrary internal targets.
+  if (!isAllowedPushEndpoint(endpoint)) {
+    return { error: "Unsupported push service." };
   }
   // Idempotent: if already subscribed, keep one row.
   const existing = await db

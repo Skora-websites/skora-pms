@@ -1,5 +1,6 @@
 import { getAllSupportTickets } from "@/lib/queries/support";
 import { getCurrentUser } from "@/lib/auth/user";
+import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -15,8 +16,8 @@ export async function GET() {
   const header = ["ID", "Subject", "User", "Role", "Status", "Created At"];
   const rows = tickets.map((t) => [
     String(t.id),
-    `"${(t.subject ?? "").replace(/"/g, '""')}"`,
-    `"${(t.userName ?? "").replace(/"/g, '""')}"`,
+    `"${sanitizeSpreadsheetCell(t.subject ?? "").replace(/"/g, '""')}"`,
+    `"${sanitizeSpreadsheetCell(t.userName ?? "").replace(/"/g, '""')}"`,
     t.userRole ?? "",
     t.status ?? "",
     t.createdAt ? new Date(t.createdAt).toISOString() : "",

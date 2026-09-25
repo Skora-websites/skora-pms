@@ -4,6 +4,7 @@ import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { symptoms, examinations, diagnoses, labTests, medicines } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth/guard";
+import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function GET(
     sheet.addRow(
       headers.map((h) => {
         const value = (row as unknown as Record<string, unknown>)[h];
-        return value == null ? "" : String(value);
+        return sanitizeSpreadsheetCell(value == null ? "" : String(value));
       })
     );
   }

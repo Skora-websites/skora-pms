@@ -1,9 +1,14 @@
 /**
  * In-memory sliding-window rate limiter for server actions.
  *
+ * Limits/windows are env-driven via lib/config (RATE_LIMIT_*) with the
+ * audit-recommended defaults below.
+ *
  * NOTE: In-memory state is per-process and resets on restart. For production
  * with multiple instances, swap this for a Redis-backed limiter (same API).
  */
+
+import { RATE_LIMIT } from "@/lib/config";
 
 type Bucket = {
   timestamps: number[];
@@ -60,12 +65,16 @@ export function resetRateLimit(key: string) {
 
 /** Dedicated helpers for common auth actions. */
 export const authRateLimit = {
-  login: (email: string) => rateLimit(`login:${email}`, 5, 15 * 60_000),
+  login: (email: string) => rateLimit(`login:${email}`, RATE_LIMIT.login, RATE_LIMIT.loginWindowMs),
   loginReset: (email: string) => resetRateLimit(`login:${email}`),
-  signup: (email: string) => rateLimit(`signup:${email}`, 3, 60 * 60_000),
-  consent: (slug: string) => rateLimit(`consent:${slug}`, 10, 60 * 60_000),
-  demo: (email: string) => rateLimit(`demo:${email}`, 5, 60 * 60_000),
-  chatPoll: (userId: number) => rateLimit(`chat-poll:${userId}`, 30, 60_000),
-  // SOS: at most 1 emergency request per minute per patient.
-  emergency: (userId: number) => rateLimit(`emergency:${userId}`, 1, 60_000),
+  signup: (email: string) => rateLimit(`signup:${email}`, RATE_LIMIT.signup, 60 * 60_000),
+  // Signup OTP verification: cap guesses per email per OTP window so
+  // brute-forcing the 6-digit code is impractical, including direct calls
+  // to the exported verifySignupOtp server action.
+  otpVerify: (email: string) => rateLimit(`otp-verify:${email}`, RATE_LIMIT.otpVerify, 10 * 60_000),
+  consent: (slug: string) => rateLimit(`consent:${slug}`, RATE_LIMIT.consent, 60 * 60_000),
+  demo: (email: string) => rateLimit(`demo:${email}`, RATE_LIMIT.demo, 60 * 60_000),
+  chatPoll: (userId: number) => rateLimit(`chat-poll:${userId}`, RATE_LIMIT.chatPoll, 60_000),
+  // SOS: at most N emergency requests per minute per patient.
+  emergency: (userId: number) => rateLimit(`emergency:${userId}`, RATE_LIMIT.emergency, 60_000),
 };

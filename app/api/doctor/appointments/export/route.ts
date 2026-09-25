@@ -3,7 +3,7 @@ import { and, desc, eq, gte, inArray, like, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
-import { todayStr } from "@/lib/utils";
+import { todayStr, sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!user || !["doctor", "receptionist"].includes(user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
@@ -107,7 +107,9 @@ export async function GET(request: Request) {
   ];
 
   const csv = (v: string | number | null | undefined) => {
-    const s = v === null || v === undefined ? "N/A" : String(v);
+    // Neutralize spreadsheet formula injection before quoting: exported
+    // remarks/notes are patient-controlled free text.
+    const s = sanitizeSpreadsheetCell(v === null || v === undefined ? "N/A" : String(v));
     return `"${s.replace(/"/g, '""')}"`;
   };
 
