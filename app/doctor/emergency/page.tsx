@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Emergency · Doctor" };
 export const dynamic = "force-dynamic";
 
 export default async function DoctorEmergencyPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
   const [offers, activeCase, history] = await Promise.all([
     getMySosOffers(),
     getMyActiveCase(),

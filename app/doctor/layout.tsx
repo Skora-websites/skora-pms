@@ -75,6 +75,7 @@ export default async function DoctorLayout({
     { perm: "shop", label: "Shop", href: "/doctor/shop", icon: "shopping-cart", section: "Clinical modules" },
     { perm: "consultations", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
     { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules" },
+    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules" },
     { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
     { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users", section: "Administration" },
     { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
