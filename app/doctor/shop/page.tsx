@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { getMedicineInventory } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { MedicineStockControl } from "@/components/doctor/medicine-stock";
+import { AddMedicineButton, MedicineCardActions } from "./medicine-forms";
 
 export const metadata: Metadata = { title: "Shop · Medicine Inventory · Doctor" };
 
@@ -12,7 +13,7 @@ export default async function ShopPage({
 }: {
   searchParams: Promise<{ q?: string; form?: string }>;
 }) {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  await requireRole(["doctor", "receptionist"]);
   const { q, form } = await searchParams;
   const inventory = await getMedicineInventory(q, form);
   const totalUnits = inventory.reduce((sum, m) => sum + (m.quantityAvailable ?? 0), 0);
@@ -26,6 +27,7 @@ export default async function ShopPage({
       <PageHeader
         title="Medicine Inventory"
         subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue · ${totalUnits} unit${totalUnits === 1 ? "" : "s"} available${outOfStock > 0 ? ` · ${outOfStock} out of stock` : ""}`}
+        action={<AddMedicineButton />}
       />
 
       {/* Search + filter bar */}
@@ -74,8 +76,13 @@ export default async function ShopPage({
           <p className="mt-1 max-w-sm text-sm text-slate-500">
             {q
               ? "Try a different keyword to find a medicine."
-              : "The shared SkoraCares catalogue has no medicines yet."}
+              : "Add your first medicine to start tracking stock."}
           </p>
+          {!q && (
+            <div className="mt-5">
+              <AddMedicineButton />
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -93,6 +100,15 @@ export default async function ShopPage({
                     </p>
                   </div>
                 </div>
+                <MedicineCardActions
+                  medicine={{
+                    id: m.id,
+                    name: m.name,
+                    strength: m.strength,
+                    form: m.form,
+                    unit: m.unit,
+                  }}
+                />
               </div>
               <MedicineStockControl medicineId={m.id} initialQuantity={m.quantityAvailable ?? 0} />
               <div className="mt-3 flex items-center justify-between">
