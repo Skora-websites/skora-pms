@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { ReceiptText } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getBillingOverview, getDoctorPatients } from "@/lib/queries/doctor";
+import {
+  getBillingOverview,
+  getDoctorPatients,
+  resolvePracticeDoctorId,
+} from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { BillForm } from "./bill-form";
 import { BillTable } from "./bill-table";
@@ -12,10 +17,13 @@ import { formatINR } from "@/lib/utils";
 export const metadata: Metadata = { title: "Billing · Doctor" };
 
 export default async function BillingPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
+  // Owner doctors + receptionists see practice bills; a member doctor sees
+  // strictly their own.
+  const doctorIds = await listDoctorIdsFor(user, doctorId);
   const [{ bills, billingTypes }, patients] = await Promise.all([
-    getBillingOverview(doctorId),
+    getBillingOverview(doctorIds),
     getDoctorPatients(doctorId),
   ]);
 

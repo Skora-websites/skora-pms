@@ -2,16 +2,41 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Video, MonitorSmartphone, Stethoscope } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getOnlineConsultations } from "@/lib/queries/doctor";
+import {
+  getPracticeOnlineConsultations,
+  resolvePracticeDoctorId,
+} from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
+import { TabPills } from "@/components/ui/dashboard-ui";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Online Consultations · Doctor" };
 
-export default async function OnlineConsultationsPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const consultations = await getOnlineConsultations(doctorId);
+export default async function OnlineConsultationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
+  const params = await searchParams;
+  const status = params.status ?? "all";
+
+  // Scope: clinic-owner doctors + their receptionists see all practice
+  // doctors' online visits; a member doctor sees strictly their own.
+  const doctorIds = await listDoctorIdsFor(user, doctorId);
+  const { rows: consultations } =
+    await getPracticeOnlineConsultations(doctorIds, { status });
+
+  const tabs = [
+    { key: "all", label: "All" },
+    { key: "pending", label: "Pending" },
+    { key: "pending_consent", label: "Pending consent" },
+    { key: "confirmed", label: "Confirmed" },
+    { key: "completed", label: "Completed" },
+    { key: "cancelled", label: "Cancelled" },
+  ];
 
   return (
     <div>
@@ -24,6 +49,12 @@ export default async function OnlineConsultationsPage() {
             Book online visit
           </Link>
         }
+      />
+
+      <TabPills
+        tabs={tabs}
+        active={status}
+        hrefFor={(key) => `/doctor/online-consultations?status=${key}`}
       />
 
       {consultations.length === 0 ? (
@@ -58,13 +89,15 @@ export default async function OnlineConsultationsPage() {
                     <StatusBadge status={c.status} />
                   </td>
                   <td className="text-right">
-                    <Link
-                      href={`/doctor/consultations/${c.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
-                    >
-                      <Stethoscope className="h-3.5 w-3.5" />
-                      Start consultation
-                    </Link>
+                    {(c.status === "pending" || c.status === "pending_consent" || c.status === "confirmed") && (
+                      <Link
+                        href={`/doctor/consultations/${c.id}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
+                      >
+                        <Stethoscope className="h-3.5 w-3.5" />
+                        Start consultation
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}

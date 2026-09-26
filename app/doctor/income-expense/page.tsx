@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getTransactions } from "@/lib/queries/doctor";
+import { getTransactions, resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { TransactionList } from "@/components/mobile-view/transactions-list";
 import { TransactionForm } from "./transaction-form";
@@ -25,18 +26,38 @@ type Period = (typeof PERIODS)[number]["key"];
 export default async function IncomeExpensePage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; page?: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const { period: periodRaw } = await searchParams;
   const period: Period = periodRaw === "month" || periodRaw === "last_month" ? periodRaw : "all";
-  const { rows, incomeTypes, expenseTypes } = await getTransactions(doctorId, period);
+  // The ledger is keyed by the practice owner's userId — owners and their
+  // staff fan out across all practice doctor ids (F-03); a member doctor
+  // sees strictly their own ledger entries.
+  const ledgerIds = await listDoctorIdsFor(user, doctorId);
+  const params = await searchParams;
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const {
+    rows,
+    hasMore,
+    incomeTotal,
+    expenseTotal,
+    incomeCount,
+    expenseCount,
+    incomeTypes,
+    expenseTypes,
+  } = await getTransactions(ledgerIds, period, { page });
+  const pageParams = (p: number) =>
+    `/doctor/income-expense?${new URLSearchParams({
+      ...(period !== "all" ? { period } : {}),
+      ...(p > 1 ? { page: String(p) } : {}),
+    }).toString()}`;
 
+  // Page-local splits for the per-section lists; totals come from SQL over
+  // the whole filtered period (correct across pages).
   const income = rows.filter((r) => r.type === 1);
   const expense = rows.filter((r) => r.type === 2);
-  const incomeTotal = income.reduce((s, r) => s + Number(r.amount), 0);
-  const expenseTotal = expense.reduce((s, r) => s + Number(r.amount), 0);
 
   return (
     <div>
@@ -71,7 +92,7 @@ export default async function IncomeExpensePage({
           </div>
           <p className="mt-3 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">{formatINR(incomeTotal)}</p>
           <p className="mt-3">
-            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{income.length} transactions</span>
+            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{incomeCount} transactions</span>
           </p>
         </div>
         <div className="card card-hover p-5">
@@ -83,7 +104,7 @@ export default async function IncomeExpensePage({
           </div>
           <p className="mt-3 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">{formatINR(expenseTotal)}</p>
           <p className="mt-3">
-            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{expense.length} transactions</span>
+            <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-800">{expenseCount} transactions</span>
           </p>
         </div>
         <div className="card card-hover p-5">
@@ -122,6 +143,27 @@ export default async function IncomeExpensePage({
           <CategoryManager incomeTypes={incomeTypes} expenseTypes={expenseTypes} />
         </div>
       </div>
+
+      {(page > 1 || hasMore) && (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          {page > 1 && (
+            <Link
+              href={pageParams(page - 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Previous
+            </Link>
+          )}
+          {hasMore && (
+            <Link
+              href={pageParams(page + 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Next
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }

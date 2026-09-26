@@ -6,9 +6,8 @@ import {
   getFollowUpReminders,
   getDoctorPatients,
   resolvePracticeDoctorId,
-  isPracticeWideUser,
 } from "@/lib/queries/doctor";
-import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, EmptyState, StatusBadge, QuickContactActions } from "@/components/ui/dashboard-ui";
 import { FollowUpList } from "@/components/mobile-view/follow-ups-list";
 import { formatDate, formatDateTime, todayStr } from "@/lib/utils";
@@ -19,9 +18,9 @@ export const metadata: Metadata = { title: "Follow Ups · Doctor" };
 export default async function FollowUpsPage() {
   const user = await requireRole(["doctor", "receptionist"]);
   const doctorId = resolvePracticeDoctorId(user);
-  const doctorIds = isPracticeWideUser(user.role)
-    ? await getPracticeDoctorIds(doctorId)
-    : [doctorId];
+  // Owner doctors + receptionists see the practice's follow-ups; a member
+  // doctor sees strictly their own patients' follow-ups.
+  const doctorIds = await listDoctorIdsFor(user, doctorId);
   const [followUps, reminders, patients] = await Promise.all([
     getFollowUps(doctorIds),
     getFollowUpReminders(doctorIds),

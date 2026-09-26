@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MapPin, ClipboardList, Home, Phone, CalendarDays } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getHomeVisits } from "@/lib/queries/doctor";
+import { getHomeVisits, resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
 import { PatientDetailsDrawer } from "./patient-details-drawer";
@@ -15,9 +16,11 @@ function mapsUrl(city: string | null, state: string | null) {
 }
 
 export default async function HomeVisitsPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const visits = await getHomeVisits(doctorId);
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
+  // Owner doctors + receptionists see the practice's home visits; a member
+  // doctor sees strictly their own.
+  const visits = await getHomeVisits(await listDoctorIdsFor(user, doctorId));
 
   return (
     <div>
@@ -105,13 +108,15 @@ export default async function HomeVisitsPage() {
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {v.patientId && <PatientDetailsDrawer patientId={v.patientId} patientName={v.patientName} />}
-                        <Link
-                          href={`/doctor/consultations/${v.id}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-800 transition-colors hover:bg-brand-50"
-                        >
-                          <ClipboardList className="h-3.5 w-3.5" />
-                          Consult
-                        </Link>
+                        {(v.status === "pending" || v.status === "pending_consent" || v.status === "confirmed") && (
+                          <Link
+                            href={`/doctor/consultations/${v.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-800 transition-colors hover:bg-brand-50"
+                          >
+                            <ClipboardList className="h-3.5 w-3.5" />
+                            Consult
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>

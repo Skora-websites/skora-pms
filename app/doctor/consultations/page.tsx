@@ -2,17 +2,28 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FileDown, Stethoscope } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getConsultations } from "@/lib/queries/doctor";
+import { getConsultations, resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { ConsultationList } from "@/components/mobile-view/consultations-list";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Consultations · Doctor" };
 
-export default async function ConsultationsPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const consultations = await getConsultations(doctorId);
+export default async function ConsultationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const user = await requireRole(["doctor", "receptionist"]);
+  const searchParamsValue = await searchParams;
+  const doctorId = resolvePracticeDoctorId(user);
+  // Receptionists (and clinic-owner doctors) see the whole practice's history;
+  // a member doctor sees strictly their own consultations.
+  const doctorIds = await listDoctorIdsFor(user, doctorId);
+  const page = Math.max(1, Number.parseInt(searchParamsValue.page ?? "1", 10) || 1);
+  const { rows: consultations, hasMore } = await getConsultations(doctorIds, { page });
+  const pageParams = (p: number) => (p > 1 ? `/doctor/consultations?page=${p}` : "/doctor/consultations");
 
   return (
     <div>
@@ -76,12 +87,14 @@ export default async function ConsultationsPage() {
                             <FileDown className="h-3.5 w-3.5" />
                             PDF
                           </a>
-                          <Link
-                            href={`/doctor/consultations/${c.appointmentId ?? "0"}`}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
-                          >
-                            View
-                          </Link>
+                          {c.appointmentId && (
+                            <Link
+                              href={`/doctor/consultations/${c.appointmentId}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
+                            >
+                              View
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -91,6 +104,27 @@ export default async function ConsultationsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {(page > 1 || hasMore) && (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          {page > 1 && (
+            <Link
+              href={pageParams(page - 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Previous
+            </Link>
+          )}
+          {hasMore && (
+            <Link
+              href={pageParams(page + 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Next
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );

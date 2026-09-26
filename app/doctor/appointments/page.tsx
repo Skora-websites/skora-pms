@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarPlus, CalendarDays } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getAppointments, getPracticeAppointments } from "@/lib/queries/doctor";
-import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import {
+  getPracticeAppointments,
+  resolvePracticeDoctorId,
+} from "@/lib/queries/doctor";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { PageHeader, StatusBadge, EmptyState, TabPills } from "@/components/ui/dashboard-ui";
 import { AppointmentRowActions } from "@/components/doctor/appointment-actions";
 import { AppointmentList } from "@/components/mobile-view/appointments-list";
@@ -15,18 +18,26 @@ export const metadata: Metadata = { title: "Appointments · Doctor" };
 export default async function AppointmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; date?: string }>;
+  searchParams: Promise<{ status?: string; date?: string; page?: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const params = await searchParams;
   const filter = { status: params.status ?? "all", date: params.date };
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
 
-  // Receptionists see the whole practice's appointments; doctors see their own.
-  const isReceptionist = user.role === "receptionist" || user.role === "admin";
-  const appointments = isReceptionist
-    ? await getPracticeAppointments(await getPracticeDoctorIds(doctorId), filter)
-    : await getAppointments(doctorId, filter);
+  // Scope: clinic-owner doctors + their receptionists see the whole
+  // practice's appointments; a member doctor sees strictly their own —
+  // never a peer's. listDoctorIdsFor collapses to [ownId] for members.
+  const doctorIds = await listDoctorIdsFor(user, doctorId);
+  const { rows: appointments, hasMore } =
+    await getPracticeAppointments(doctorIds, filter, { page });
+  const pageParams = (p: number) =>
+    `/doctor/appointments?${new URLSearchParams({
+      ...(filter.status !== "all" ? { status: filter.status } : {}),
+      ...(filter.date ? { date: filter.date } : {}),
+      ...(p > 1 ? { page: String(p) } : {}),
+    }).toString()}`;
 
   const tabs = [
     { key: "all", label: "All" },
@@ -41,7 +52,7 @@ export default async function AppointmentsPage({
     <div>
       <PageHeader
         title="Appointments"
-        subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} found`}
+        subtitle={`${appointments.length} on this page${hasMore ? " · more available" : ""}`}
         action={
           <div className="flex items-center gap-2">
             <ExportAppointmentsButton status={params.status} />
@@ -139,6 +150,27 @@ export default async function AppointmentsPage({
             </div>
           </div>
         </>
+      )}
+
+      {(page > 1 || hasMore) && (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          {page > 1 && (
+            <Link
+              href={pageParams(page - 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Previous
+            </Link>
+          )}
+          {hasMore && (
+            <Link
+              href={pageParams(page + 1)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              Next
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );

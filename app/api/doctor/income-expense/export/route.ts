@@ -7,11 +7,10 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 import {
   resolvePracticeDoctorId,
-  isPracticeWideUser,
   getTransactions,
   getAllTransactionsForExport,
 } from "@/lib/queries/doctor";
-import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import { listDoctorIdsFor } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 
 export const runtime = "nodejs";
@@ -40,9 +39,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const doctorId = resolvePracticeDoctorId(user);
-  const ledgerIds = isPracticeWideUser(user.role)
-    ? await getPracticeDoctorIds(doctorId)
-    : [doctorId];
+  // Owner doctors + receptionists export the practice ledger; a member
+  // doctor exports strictly their own entries (matches the page scope).
+  const ledgerIds = await listDoctorIdsFor(user, doctorId);
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
