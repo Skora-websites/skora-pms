@@ -73,7 +73,10 @@ export default async function DoctorLayout({
     { perm: "home-visit", label: "Home Visit", href: "/doctor/home-visits", icon: "home", section: "Clinical modules" },
     { perm: "chat", label: "Chat", href: "/doctor/chat", icon: "messages-square", section: "Clinical modules" },
     { perm: "shop", label: "Shop", href: "/doctor/shop", icon: "shopping-cart", section: "Clinical modules" },
-    { perm: "consultations", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
+    // "consultations" isn't in the permission catalog (nothing grants it),
+    // so gating on it hid this entry for everyone. Route access already maps
+    // /doctor/consultations to the "dashboard" module — match the nav to it.
+    { perm: "dashboard", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
     { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules" },
     { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules" },
     { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
