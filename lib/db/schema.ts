@@ -44,6 +44,7 @@ export const users = mysqlTable(
       "doctor",
       "patient",
       "receptionist",
+      "manager",
     ])
       .default("patient")
       .notNull(),
@@ -1114,6 +1115,43 @@ export const consultations = mysqlTable(
   ]
 );
 
+/**
+ * Follow-up reminders — receptionist/doctor-created follow-up call list
+ * entries (distinct from consultation follow-ups, which live on the
+ * consultations row). Shown on the doctor/receptionist/admin Follow-ups page.
+ */
+export const followUpReminders = mysqlTable(
+  "follow_up_reminders",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    followUpDate: date("follow_up_date", { mode: "string" }).notNull(),
+    note: text("note"),
+    status: varchar("status", { length: 255 }).default("pending"),
+    createdBy: bigint("created_by", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("follow_up_reminders_doctor_id_index").on(t.doctorId),
+    index("follow_up_reminders_patient_id_index").on(t.patientId),
+    index("follow_up_reminders_follow_up_date_index").on(t.followUpDate),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.createdBy],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
 export const consultationSymptoms = mysqlTable(
   "consultation_symptoms",
   {
@@ -1652,6 +1690,104 @@ export const sosCases = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Businesses (multi-tier hierarchy: super-admin → business owner (admin) →
+// clinic managers → team (doctors/receptionists) → patients)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A business owned by an `admin`-role user. It groups the owner's clinics
+ * (via `businessClinics`) so owners/managers can see cross-clinic views
+ * while day-to-day data stays doctor-scoped (appointments, billings, …).
+ */
+export const businesses = mysqlTable(
+  "businesses",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    ownerId: bigint("owner_id", { mode: "number" }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }),
+    phone: varchar("phone", { length: 255 }),
+    address: text("address"),
+    logo: varchar("logo", { length: 255 }),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("businesses_slug_unique").on(t.slug),
+    index("businesses_owner_id_index").on(t.ownerId),
+    foreignKey({
+      columns: [t.ownerId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+/**
+ * Links a business to the clinics (doctor_clinics rows) it operates.
+ * A clinic belongs to exactly one business — hence the unique clinic_id.
+ */
+export const businessClinics = mysqlTable(
+  "business_clinics",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    businessId: bigint("business_id", { mode: "number" }).notNull(),
+    clinicId: bigint("clinic_id", { mode: "number" }).notNull(),
+    isPrimary: boolean("is_primary").default(false),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("business_clinics_clinic_unique").on(t.clinicId),
+    index("business_clinics_business_id_index").on(t.businessId),
+    foreignKey({
+      columns: [t.businessId],
+      foreignColumns: [businesses.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.clinicId],
+      foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+/**
+ * Clinic-manager assignments: a `manager`-role user operating one clinic of
+ * a business. Managers see only the clinics they're assigned to; owners see
+ * everything of the businesses they own.
+ */
+export const clinicManagers = mysqlTable(
+  "clinic_managers",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    businessId: bigint("business_id", { mode: "number" }).notNull(),
+    clinicId: bigint("clinic_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("clinic_managers_clinic_user_unique").on(t.clinicId, t.userId),
+    index("clinic_managers_user_id_index").on(t.userId),
+    index("clinic_managers_business_id_index").on(t.businessId),
+    foreignKey({
+      columns: [t.businessId],
+      foreignColumns: [businesses.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.clinicId],
+      foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1673,3 +1809,9 @@ export type SosOffer = typeof sosOffers.$inferSelect;
 export type NewSosOffer = typeof sosOffers.$inferInsert;
 export type SosCase = typeof sosCases.$inferSelect;
 export type NewSosCase = typeof sosCases.$inferInsert;
+export type Business = typeof businesses.$inferSelect;
+export type NewBusiness = typeof businesses.$inferInsert;
+export type BusinessClinic = typeof businessClinics.$inferSelect;
+export type NewBusinessClinic = typeof businessClinics.$inferInsert;
+export type ClinicManager = typeof clinicManagers.$inferSelect;
+export type NewClinicManager = typeof clinicManagers.$inferInsert;

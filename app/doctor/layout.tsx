@@ -19,7 +19,7 @@ export default async function DoctorLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
   // Trial-expired guard (legacy trialExpired parity): doctors with an ended
   // trial are locked out of the dashboard until they renew.
   if (user.role === "doctor" && user.trialEndsAt && user.trialEndsAt <= new Date()) {
@@ -42,6 +42,12 @@ export default async function DoctorLayout({
   // Server-side page guard: redirect before the page component runs, so a
   // restricted URL never executes its data queries or renders. The client
   // <DoctorPermissionGate> mirrors this for client-side navigation.
+  // Emergency dispatch is doctor-only: bounce receptionists off it first
+  // (regardless of module permissions).
+  const isReceptionistPanel = user.role === "receptionist";
+  if (isReceptionistPanel && pathname === "/doctor/emergency") {
+    redirect("/receptionist");
+  }
   if (!hasDoctorModuleAccess(perms, pathname)) {
     const target = firstPermittedDoctorPath(perms);
     // Receptionists speak /receptionist/*; keep everyone on their own prefix.
@@ -69,7 +75,6 @@ export default async function DoctorLayout({
     { perm: "shop", label: "Shop", href: "/doctor/shop", icon: "shopping-cart", section: "Clinical modules" },
     { perm: "consultations", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
     { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules" },
-    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules" },
     { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
     { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users", section: "Administration" },
     { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
@@ -77,8 +82,11 @@ export default async function DoctorLayout({
 
   // Receptionists see /receptionist/* URLs (rewritten onto these routes);
   // doctors see /doctor/*.
-  const isReceptionistPanel = user.role === "receptionist";
-  const navItems: NavItem[] = NAV_BY_PERM.filter((n) => perms.has(n.perm)).map((n) => ({
+  // Emergency dispatch is a doctor-facing module — hidden from receptionist
+  // panels (the on-duty SOS flow belongs to the doctor, not front desk).
+  const navItems: NavItem[] = NAV_BY_PERM.filter(
+    (n) => perms.has(n.perm) && !(isReceptionistPanel && n.href === "/doctor/emergency")
+  ).map((n) => ({
     label: n.label,
     href: isReceptionistPanel ? doctorPathToReceptionist(n.href) : n.href,
     icon: n.icon,

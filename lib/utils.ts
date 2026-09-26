@@ -104,6 +104,24 @@ export function initials(name: string) {
     .toUpperCase();
 }
 
+/**
+ * Normalized wa.me link for a stored patient phone number, or null when the
+ * number is unusable. Strips everything but digits, drops a leading "0"
+ * trunk prefix, and defaults the country code to India (91) when the number
+ * carries none — matching the legacy WhatsApp quick-action behaviour.
+ */
+export function waMeLink(phone: string | null | undefined): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  // Drop a trunk prefix before prefixing the country code — a stored
+  // "09812345670" and a bare "9812345670" are the same Indian mobile.
+  const stripped = digits.replace(/^0+/, "");
+  if (stripped.length < 10) return null;
+  const withCountry = stripped.length === 10 ? `91${stripped}` : stripped;
+  if (withCountry.length < 11 || withCountry.length > 15) return null;
+  return `https://wa.me/${withCountry}`;
+}
+
 export function slugify(input: string) {
   return input
     .toLowerCase()

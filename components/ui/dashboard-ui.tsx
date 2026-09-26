@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ArrowUpRight, type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowUpRight, Phone, MessageCircle, type LucideIcon } from "lucide-react";
+import { cn, waMeLink } from "@/lib/utils";
 
 export function PageHeader({
   title,
@@ -116,6 +116,55 @@ export function EmptyState({
           <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </Link>
       )}
+    </div>
+  );
+}
+
+/**
+ * WhatsApp + call quick-actions for a stored phone number (legacy parity:
+ * the follow-ups list carried wa.me links so front desk could reach the
+ * patient in one tap). Renders nothing without a usable number. Server-safe:
+ * pure links, no client JS.
+ */
+export function QuickContactActions({
+  phone,
+  size = "sm",
+}: {
+  phone: string | null | undefined;
+  size?: "sm" | "xs";
+}) {
+  const wa = waMeLink(phone);
+  if (!wa) return null;
+  const pill =
+    size === "xs"
+      ? "px-2 py-0.5 text-[10px]"
+      : "px-2.5 py-1 text-[11px]";
+  return (
+    <div className="flex items-center gap-1.5">
+      <a
+        href={wa}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border border-accent-200 bg-accent-50 font-semibold text-accent-700 transition-colors hover:bg-accent-100",
+          pill
+        )}
+        title={`WhatsApp ${phone}`}
+      >
+        <MessageCircle className={size === "xs" ? "h-3 w-3" : "h-3.5 w-3.5"} />
+        WhatsApp
+      </a>
+      <a
+        href={`tel:${(phone ?? "").replace(/[^+\d]/g, "")}`}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-800",
+          pill
+        )}
+        title={`Call ${phone}`}
+      >
+        <Phone className={size === "xs" ? "h-3 w-3" : "h-3.5 w-3.5"} />
+        Call
+      </a>
     </div>
   );
 }

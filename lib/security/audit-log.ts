@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Audit-log helpers for sensitive operations.
  *
@@ -52,7 +54,10 @@ export type AuditAction =
   | "sos_declined"
   | "sos_completed"
   | "sos_cancelled"
-  | "duty_mode_changed";
+  | "duty_mode_changed"
+  | "follow_up_status_changed"
+  | "follow_up_reminder_created"
+  | "follow_up_reminder_status_changed";
 
 export interface AuditLogEntry {
   userId?: number | null;

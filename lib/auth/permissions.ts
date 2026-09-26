@@ -57,6 +57,102 @@ export function doctorPermissionForPath(pathname: string): DoctorNavPerm | null 
   return null;
 }
 
+// ── Admin-tier (business owner + clinic manager) URL-space ────────────
+// The /admin shell serves BOTH tiers from one role-adaptive layout:
+//   - owners (`admin` role) see everything of their businesses — module
+//     permission checks are bypassed for them, so no DB grants are needed;
+//   - managers (`manager` role) hold a subset of the SAME module permission
+//     names the doctor dashboard uses (dashboard, schedule, registrations,
+//     appointments, follow-up, test-booking, billing, income-expense,
+//     roles-permissions) — assigned directly (model_has_permissions) when
+//     the owner creates them, so the existing permission catalog and
+//     getUserPermissions() expansion keep working unchanged.
+// Owner-only modules (managers/clinics/business-settings) are gated on the
+// viewer role itself — they can't be delegated to a manager by design.
+
+export type AdminNavPerm =
+  | "dashboard"
+  | "schedule"
+  | "registrations"
+  | "appointments"
+  | "follow-up"
+  | "income-expense"
+  | "test-booking"
+  | "billing"
+  | "roles-permissions"
+  | "managers"
+  | "clinics"
+  | "business-settings";
+
+/** Longest-prefix first so `/admin/appointments` wins over `/admin`. */
+export const ADMIN_ROUTE_PERMISSIONS: { prefix: string; perm: AdminNavPerm; ownerOnly?: boolean }[] = [
+  // Owner-only modules
+  { prefix: "/admin/managers", perm: "managers", ownerOnly: true },
+  { prefix: "/admin/clinics", perm: "clinics", ownerOnly: true },
+  { prefix: "/admin/settings", perm: "business-settings", ownerOnly: true },
+  // Shared clinic-ops modules (owner bypasses; managers need the perm)
+  { prefix: "/admin/schedule", perm: "schedule" },
+  { prefix: "/admin/patients", perm: "registrations" },
+  { prefix: "/admin/appointments", perm: "appointments" },
+  { prefix: "/admin/follow-ups", perm: "follow-up" },
+  { prefix: "/admin/income-expense", perm: "income-expense" },
+  { prefix: "/admin/test-bookings", perm: "test-booking" },
+  { prefix: "/admin/billing", perm: "billing" },
+  { prefix: "/admin/staff", perm: "roles-permissions" },
+  { prefix: "/admin", perm: "dashboard" },
+];
+
+/** Module permission required for an admin-tier pathname (or null). */
+export function adminPermissionForPath(pathname: string): AdminNavPerm | null {
+  for (const { prefix, perm } of ADMIN_ROUTE_PERMISSIONS) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/")) return perm;
+  }
+  return null;
+}
+
+/**
+ * Admin-tier page access: owners pass everything; managers need the module
+ * perm (owner-only modules always fail for them).
+ */
+export function hasAdminModuleAccess(
+  perms: Set<string>,
+  pathname: string,
+  viewerRole: "owner" | "manager"
+): boolean {
+  if (viewerRole === "owner") return true;
+  const entry = ADMIN_ROUTE_PERMISSIONS.find(
+    ({ prefix }) => pathname === prefix || pathname.startsWith(prefix + "/")
+  );
+  if (!entry) return true;
+  return !entry.ownerOnly && perms.has(entry.perm);
+}
+
+/**
+ * First admin-tier path the viewer may see, in nav order. Owners always
+ * start at the overview; managers fall back to it when they hold no module.
+ */
+export function firstPermittedAdminPath(
+  perms: Set<string>,
+  viewerRole: "owner" | "manager"
+): string {
+  if (viewerRole === "owner") return "/admin";
+  const order: { perm: AdminNavPerm; path: string }[] = [
+    { perm: "dashboard", path: "/admin" },
+    { perm: "schedule", path: "/admin/schedule" },
+    { perm: "registrations", path: "/admin/patients" },
+    { perm: "appointments", path: "/admin/appointments" },
+    { perm: "follow-up", path: "/admin/follow-ups" },
+    { perm: "income-expense", path: "/admin/income-expense" },
+    { perm: "test-booking", path: "/admin/test-bookings" },
+    { perm: "billing", path: "/admin/billing" },
+    { perm: "roles-permissions", path: "/admin/staff" },
+  ];
+  for (const { perm, path } of order) {
+    if (perms.has(perm)) return path;
+  }
+  return "/admin";
+}
+
 /**
  * First path the user is permitted to see, in nav order. Used to redirect
  * users who try to open a page outside their permission set.

@@ -19,6 +19,8 @@ import {
   getRecentAppointments,
   getPracticeTodaysAppointments,
   getPracticeRecentAppointments,
+  resolvePracticeDoctorId,
+  isPracticeWideUser,
 } from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { StatCard, StatusBadge, EmptyState, PageHeader } from "@/components/ui/dashboard-ui";
@@ -39,10 +41,10 @@ function tierOf(count: number, max: number): "low" | "moderate" | "peak" | "heav
 }
 
 export default async function DoctorDashboardPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   // Receptionists see the whole practice's queue; doctors see their own.
-  const isReceptionist = user.role === "receptionist" || user.role === "admin";
+  const isReceptionist = isPracticeWideUser(user.role);
   const practiceIds = isReceptionist ? await getPracticeDoctorIds(doctorId) : [];
 
   const [stats, todays, recent, financeTrend] = await Promise.all([
@@ -84,11 +86,11 @@ export default async function DoctorDashboardPage() {
         subtitle="Real-time practice intelligence and multi-clinic orchestration."
         action={
           <div className="flex flex-wrap items-center gap-2.5">
-            {user.role === "doctor" && (
-              <DutyToggle
-                initialMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
-              />
-            )}
+            {/* Doctors set their own duty; receptionists toggle it on behalf
+                of the practice owner (setDutyMode resolves staff → owner). */}
+            <DutyToggle
+              initialMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
+            />
             <Link
               href="/doctor/patients/new"
               className="inline-flex items-center gap-2 rounded-full bg-accent-100 px-5 py-2.5 text-[13px] font-semibold text-brand-800 transition-all hover:bg-accent-200 active:scale-[0.98]"
