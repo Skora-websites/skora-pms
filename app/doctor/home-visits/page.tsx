@@ -17,6 +17,7 @@ function mapsUrl(city: string | null, state: string | null) {
 
 export default async function HomeVisitsPage() {
   const user = await requireRole(["doctor", "receptionist"]);
+  const isReceptionist = user.role === "receptionist";
   const doctorId = resolvePracticeDoctorId(user);
   // Owner doctors + receptionists see the practice's home visits; a member
   // doctor sees strictly their own.
@@ -108,7 +109,7 @@ export default async function HomeVisitsPage() {
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {v.patientId && <PatientDetailsDrawer patientId={v.patientId} patientName={v.patientName} />}
-                        {(v.status === "pending" || v.status === "pending_consent" || v.status === "confirmed") && (
+                        {!isReceptionist && (v.status === "pending" || v.status === "pending_consent" || v.status === "confirmed") && (
                           <Link
                             href={`/doctor/consultations/${v.id}`}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-800 transition-colors hover:bg-brand-50"

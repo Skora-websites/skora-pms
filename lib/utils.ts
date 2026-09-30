@@ -36,6 +36,23 @@ export function generateBillNumber(): string {
  * patient-facing records would be dated yesterday. This helper is the single
  * source of truth for server-side date-of-day.
  */
+/** Time-of-day greeting for dashboard headers (Good morning/afternoon/evening). */
+export function timeGreeting(d: Date = new Date()): string {
+  const h = d.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+/** First token of a full name, honoring salutations like "Dr." / "Mr.". */
+export function firstName(fullName: string | null | undefined): string {
+  const tokens = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return "Doctor";
+  // Skip a leading salutation ("Dr. Arjun" → "Arjun", "Dr Arjun" → "Arjun").
+  if (tokens.length > 1 && /^(dr|mr|mrs|ms|prof)\.?$/i.test(tokens[0])) return tokens[1];
+  return tokens[0];
+}
+
 export function todayStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");

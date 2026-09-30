@@ -42,10 +42,18 @@ export default async function DoctorLayout({
   // Server-side page guard: redirect before the page component runs, so a
   // restricted URL never executes its data queries or renders. The client
   // <DoctorPermissionGate> mirrors this for client-side navigation.
-  // Emergency dispatch is doctor-only: bounce receptionists off it first
-  // (regardless of module permissions).
+  // Doctor-only modules: bounce receptionists off them first (regardless of
+  // module permissions) — Emergency dispatch and the Consultation features
+  // (consultation records + online consultations) belong to the doctor, not
+  // the front desk.
   const isReceptionistPanel = user.role === "receptionist";
-  if (isReceptionistPanel && pathname === "/doctor/emergency") {
+  if (
+    isReceptionistPanel &&
+    (pathname === "/doctor/emergency" ||
+      pathname === "/doctor/consultations" ||
+      pathname.startsWith("/doctor/consultations/") ||
+      pathname === "/doctor/online-consultations")
+  ) {
     redirect("/receptionist");
   }
   if (!hasDoctorModuleAccess(perms, pathname)) {
@@ -61,7 +69,7 @@ export default async function DoctorLayout({
   // server actions and the page gate enforce. Keeps nav + guards in sync.
   // `section` only affects sidebar grouping (DESIGN.md §5.1); access control
   // is unchanged.
-  const NAV_BY_PERM: { perm: string; label: string; href: string; icon: NavItem["icon"]; exact?: boolean; section?: string }[] = [
+  const NAV_BY_PERM: { perm: string; label: string; href: string; icon: NavItem["icon"]; exact?: boolean; section?: string; doctorOnly?: boolean }[] = [
     { perm: "dashboard", label: "Dashboard", href: "/doctor", icon: "layout-dashboard", exact: true },
     { perm: "schedule", label: "Schedule Time", href: "/doctor/schedule", icon: "calendar-clock", section: "Clinical modules" },
     { perm: "registrations", label: "Registrations", href: "/doctor/patients", icon: "user-plus", section: "Clinical modules" },
@@ -76,9 +84,9 @@ export default async function DoctorLayout({
     // "consultations" isn't in the permission catalog (nothing grants it),
     // so gating on it hid this entry for everyone. Route access already maps
     // /doctor/consultations to the "dashboard" module — match the nav to it.
-    { perm: "dashboard", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules" },
-    { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules" },
-    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules" },
+    { perm: "dashboard", label: "Consultations", href: "/doctor/consultations", icon: "stethoscope", section: "Clinical modules", doctorOnly: true },
+    { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules", doctorOnly: true },
+    { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules", doctorOnly: true },
     { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
     { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users", section: "Administration" },
     { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
@@ -89,7 +97,7 @@ export default async function DoctorLayout({
   // Emergency dispatch is a doctor-facing module — hidden from receptionist
   // panels (the on-duty SOS flow belongs to the doctor, not front desk).
   const navItems: NavItem[] = NAV_BY_PERM.filter(
-    (n) => perms.has(n.perm) && !(isReceptionistPanel && n.href === "/doctor/emergency")
+    (n) => perms.has(n.perm) && !(isReceptionistPanel && n.doctorOnly)
   ).map((n) => ({
     label: n.label,
     href: isReceptionistPanel ? doctorPathToReceptionist(n.href) : n.href,

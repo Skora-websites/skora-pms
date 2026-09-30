@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appointments,
@@ -17,12 +17,11 @@ import {
   users,
 } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
+import { requireWriteScope, ensureIncomeTypeInScope, ensureExpenseTypeInScope } from "@/lib/auth/action-scope";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import {
   ensurePatientOfDoctor,
   ensureAppointmentOfDoctor,
-  ensureIncomeTypeOfUser,
-  ensureExpenseTypeOfUser,
   ensureTicketOwner,
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
@@ -52,15 +51,15 @@ const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
   if (!APPOINTMENT_STATUSES.includes(status)) return;
-  const doctorId = await requireDoctorPermission("appointments-edit");
-  if (!doctorId) return;
+  const scope = await requireWriteScope("appointments-edit");
+  if (!scope) return;
   // Business state machine: only the confirm transition (-> confirmed) is a
   // generic status change. Complete/cancel have dedicated validated actions;
   // reversal (completed/pending etc.) must not be possible via this action.
   const [current] = await db
     .select({ status: appointments.status })
     .from(appointments)
-    .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+    .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, scope.doctorIds)));
   if (!current) return;
   if (status === "confirmed") {
     // pending_consent must not be confirmed manually — that would bypass the
@@ -74,10 +73,11 @@ export async function updateAppointmentStatus(appointmentId: number, status: str
   await db
     .update(appointments)
     .set({ status: status as never, updatedAt: new Date() })
-    .where(and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId)));
+    .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, scope.doctorIds)));
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 }
 
 // Billing lives in app/doctor/billing/actions.ts (the older duplicate here was
@@ -125,8 +125,9 @@ export async function createTransaction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-create");
-  if (!doctorId) return { error: "You don't have permission to add transactions." };
+  const scope = await requireWriteScope("income-expense-create");
+  if (!scope) return { error: "You don't have permission to add transactions." };
+  const doctorId = scope.anchorDoctorId;
   const now = new Date();
   const type = Number(formData.get("type"));
   const amount = String(formData.get("amount") ?? "0");
@@ -148,11 +149,11 @@ export async function createTransaction(
   }
 
   if (type === 1) {
-    if (!incomeTypeId || !Number.isInteger(incomeTypeId) || !(await ensureIncomeTypeOfUser(incomeTypeId, doctorId))) {
+    if (!incomeTypeId || !Number.isInteger(incomeTypeId) || !(await ensureIncomeTypeInScope(incomeTypeId, scope))) {
       return { error: "Income category is required." };
     }
   } else {
-    if (!expenseTypeId || !Number.isInteger(expenseTypeId) || !(await ensureExpenseTypeOfUser(expenseTypeId, doctorId))) {
+    if (!expenseTypeId || !Number.isInteger(expenseTypeId) || !(await ensureExpenseTypeInScope(expenseTypeId, scope))) {
       return { error: "Expense category is required." };
     }
   }
@@ -186,9 +187,10 @@ export async function createTransaction(
     updatedAt: now,
   });
 
-  void audit.transactionCreated(doctorId, { type, amount, incomeTypeId, expenseTypeId, fileAttached: !!filePath });
+  void audit.transactionCreated(scope.callerId, { type, amount, incomeTypeId, expenseTypeId, fileAttached: !!filePath });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -198,6 +200,13 @@ export async function saveConsultation(
   _prev: { error: string | null; consultationId: number | null },
   formData: FormData
 ): Promise<{ error: string | null; consultationId: number | null }> {
+  const user = await getCurrentUser();
+  // Consultations are a doctor-facing module — the receptionist panel never
+  // records them, even though staff hold `appointments-complete` for the
+  // appointment status controls.
+  if (user?.role === "receptionist") {
+    return { error: "Only doctors can record consultations.", consultationId: null };
+  }
   const doctorId = await requireDoctorPermission("appointments-complete");
   if (!doctorId) {
     return { error: "You don't have permission to record consultations.", consultationId: null };
@@ -353,14 +362,14 @@ type TicketAction = { error: string | null };
 
 export async function updateFollowUpStatus(consultationId: number, status: string) {
   if (!isFollowUpStatus(status)) return;
-  const doctorId = await requireDoctorPermission("follow-up-status-update");
-  if (!doctorId) return;
+  const scope = await requireWriteScope("follow-up-status-update");
+  if (!scope) return;
 
   // Fetch current status to validate transition.
   const [current] = await db
     .select({ followUpStatus: consultations.followUpStatus })
     .from(consultations)
-    .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)))
+    .where(and(eq(consultations.id, consultationId), inArray(consultations.doctorId, scope.doctorIds)))
     .limit(1);
   if (!current) return;
   const from = current.followUpStatus ?? "pending";
@@ -370,9 +379,10 @@ export async function updateFollowUpStatus(consultationId: number, status: strin
   await db
     .update(consultations)
     .set({ followUpStatus: status, updatedAt: new Date() })
-    .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)));
+    .where(and(eq(consultations.id, consultationId), inArray(consultations.doctorId, scope.doctorIds)));
 
   revalidatePath("/doctor/follow-ups");
+  revalidatePath("/admin/follow-ups");
 }
 
 // ── Support ──────────────────────────────────────────────────────────────
@@ -383,7 +393,7 @@ export async function createSupportTicket(
 ): Promise<TicketAction> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     redirect(homePathForRole(user.role));
   }
   const allowed = await hasPermission(user.id, "support-view");

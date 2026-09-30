@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, like, or } from "drizzle-orm";
+import { and, eq, inArray, like, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
 
@@ -10,14 +11,18 @@ export const runtime = "nodejs";
  * Patient mobile / registration suggestions for the test booking form
  * (legacy `getMobileSuggestions` / `getRegistrationSuggestions` parity).
  * GET /api/doctor/test-bookings/suggestions?q=...&type=mobile|registration
+ * Admin-tier callers search across their whole business scope.
  */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  const isAdminTier = user.role === "admin" || user.role === "manager";
+  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const ownerIds = isAdminTier
+    ? (await getBusinessScope()).doctorIds
+    : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];
 
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   const type = req.nextUrl.searchParams.get("type") ?? "mobile";
@@ -25,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const likeQ = `%${q}%`;
   const conds = [
-    eq(users.referenceRoleId, doctorId),
+    inArray(users.referenceRoleId, ownerIds.length ? ownerIds : [-1]),
     eq(users.role, "patient"),
     type === "registration"
       ? like(users.registrationId, likeQ)

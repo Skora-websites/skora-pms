@@ -11,16 +11,14 @@
 
 ## 1. Doctor Dashboard (shared with Receptionist)
 
+> **Updated 2026-09-30:** the doctor home is now a focused view — greeting + today's/recent appointments only. The full "Clinic OS" widgets (KPIs, occupancy chart, next-appointment, clinical queue, finance trend) moved to the manager dashboard (`/admin` for managers).
+
 | Module | Features | Status |
 |---|---|---|
-| **Dashboard home** (`/doctor`) | KPI row (patients this week, appointments today + pending follow-ups, monthly billing, registered patients + month expense) | ✅ |
-| | Weekly OPD occupancy chart (tiered bars) | ✅ |
-| | Next Consultation widget with Start Consultation shortcut | ✅ |
-| | Clinical Queue (today's schedule, start/status per row) | ✅ |
+| **Dashboard home** (`/doctor`) | Time-aware greeting + today's schedule summary | ✅ |
+| | Today's Appointments card (booked list with status) | ✅ |
 | | Recent appointments table | ✅ |
-| | 6-month Income & Expense trend chart | ✅ |
-| | Duty toggle (clinic/home-visit on-duty) | ✅ |
-| | Quick actions: Add Patient, New Appointment | ✅ |
+| | Quick action: Book appointment | ✅ |
 | **Schedule Time** (`/doctor/schedule`) | Clinic CRUD (create / update / delete) | ✅ |
 | | Weekly schedule slot CRUD (save / update / delete) | ✅ |
 | | Multi-doctor clinics: add / remove clinic doctors, edit profile | ✅ |
@@ -57,8 +55,8 @@
 | | Add / edit / delete medicine (catalogue CRUD) + stock add/set controls | ✅ |
 | **Consultations** (`/doctor/consultations`) | List + per-appointment consultation form (diagnosis, meds, vitals, follow-up) | ✅ |
 | | Medicine search AJAX API | ✅ |
-| | Nav entry gated on the `dashboard` module (matches the route map) — visible to doctors & receptionists with dashboard access | ✅ |
-| **Online Consultations** (`/doctor/online-consultations`) | List with status tabs (pending / pending consent / confirmed / completed / cancelled), book online visit | ✅ |
+| | Nav entry gated on the `dashboard` module (matches the route map) | ✅ doctor-only (hidden from receptionists) |
+| **Online Consultations** (`/doctor/online-consultations`) | List with status tabs (pending / pending consent / confirmed / completed / cancelled), book online visit | ✅ doctor-only (hidden from receptionists) |
 | **Emergency** (`/doctor/emergency`) | Live SOS dispatch offers (SSE stream), accept case, active-case tracking, past cases | ✅ doctor-only (hidden from receptionists) |
 | **Support** (`/doctor/support`) | Create ticket + reply | ✅ |
 | **My Staff** (`/doctor/staff`) | Staff CRUD | ✅ |
@@ -80,6 +78,7 @@
 | Practice-wide data scope (owner doctor's patients, appointments, billing, I/E, follow-ups, test bookings) | ✅ |
 | Duty toggle on behalf of the practice owner | ✅ |
 | Emergency module hidden from panel; direct URL bounced | ✅ |
+| Consultation features hidden (nav, dashboard widgets, row CTAs, direct URL bounce, server action) | ✅ |
 | Nav filtered by per-staff permissions (roles & permission manager) | ✅ |
 
 ---
@@ -88,8 +87,9 @@
 
 | Module | Features | Status |
 |---|---|---|
-| **Overview** (`/admin`) | Cross-clinic KPIs: appointments today, MTD revenue, active staff, total patients | ✅ |
-| | Revenue by clinic, upcoming appointments feed (clinic-tenancy scoping w/ legacy fallback) | ✅ |
+| **Overview** (`/admin`) | **Owners:** cross-clinic KPIs (appointments today, MTD revenue, active staff, total patients) | ✅ |
+| | Owners: revenue by clinic, upcoming appointments feed (clinic-tenancy scoping w/ legacy fallback) | ✅ |
+| | **Managers:** full "Clinic OS" overview — KPI row (patients this week, appointments today + pending follow-ups, monthly billing, registered patients), Weekly OPD occupancy chart, Next Appointment widget, Clinical Queue, Recent Appointments table, 6-month Income & Expense trend (business-scoped via getPracticeStats/getPracticeFinanceTrend, all CTAs on `/admin/*`) | ✅ |
 | **Clinics** (owner only) | Clinic list with revenue per clinic | ✅ view |
 | **Managers** (owner only) | Create manager, assign / unassign manager to clinics | ✅ full CRUD |
 | **Business Settings** (owner only) | Business settings page | ✅ |
@@ -101,10 +101,11 @@
 | **Billing** | Bill list + totals (total / received / pending) | ✅ view |
 | **Income & Expense** | Transaction list + totals (+ scoped export API) | ✅ view |
 | **Clinic Staff** | Staff / manager roster | ✅ view |
+| **Full clinic-ops CRUD** | Appointments (book / edit / confirm / cancel / complete / delete), Registrations (create / edit / delete), Billing (bill CRUD + credit collection + billing types), Income & Expense (transaction + category CRUD), Test Bookings (booking / vendor / test CRUD + status + upload links), Follow-ups (new reminder, status transitions) | ✅ owners full · managers per-permission |
 | Empty / error states | No-business empty state, error boundary, loading states | ✅ |
 
-> Design note: the admin tier is a **monitoring tier** — read-only everywhere except Manager management. Write flows (booking, billing edits, transactions) live on the doctor/receptionist panels by design.
-> Managers see only modules they hold permissions for; `ownerOnly` entries never render for them.
+> Design note: the admin tier has **full CRUD** over shared clinic operations. Owners bypass module permission checks (requireAdminTier parity); managers must hold the same module permissions the doctor/staff roles use. All writes flow through the unified `requireWriteScope` guard (lib/auth/action-scope.ts) — business-scoped (business → clinics → doctor ids), anchored to a real doctor account so records stay visible on clinic dashboards, and every mutation is audit-logged.
+> Managers see only modules they hold permissions for; `ownerOnly` entries (Clinics / Managers / Business Settings) never render for them.
 
 ---
 
@@ -169,4 +170,4 @@
 | 3 | 🟡 Doctor Settings has only notification prefs. | Legacy settings hub (bank accounts, invoice, tax rates, payment methods, integrations) not built. |
 | 4 | ❌ WhatsApp Cloud API automation (appointment confirmations). | Only click-to-chat pills exist. |
 | 5 | ❌ Video call + Wallet (legacy extras). | Not started. |
-| 6 | Admin tier is intentionally read-only outside Managers. | Owners needing write flows use doctor/receptionist panels. |
+| 6 | ✅ **FIXED 2026-09-30:** Admin tier had full CRUD — appointments, registrations, billing, income & expense, test bookings, and follow-ups are now writable for owners (and permission-gated managers) via the unified write-scope guard. | — |

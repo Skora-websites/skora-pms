@@ -4,14 +4,13 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions, incomeTypes, expenseTypes } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import {
-  ensureIncomeTypeOfUser,
-  ensureExpenseTypeOfUser,
-} from "@/lib/auth/ownership";
+import { transactions, incomeTypes, expenseTypes } from "@/lib/db/schema";import {
+  requireWriteScope,
+  ensureIncomeTypeInScope,
+  ensureExpenseTypeInScope,
+} from "@/lib/auth/action-scope";
 import { audit } from "@/lib/security/audit-log";
 
 type ActionResult = { error: string | null };
@@ -71,8 +70,8 @@ export async function updateTransaction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-edit");
-  if (!doctorId) return { error: "You don't have permission to edit transactions." };
+  const scope = await requireWriteScope("income-expense-edit");
+  if (!scope) return { error: "You don't have permission to edit transactions." };
   const now = new Date();
   const txId = Number(formData.get("id"));
   const type = Number(formData.get("type"));
@@ -105,7 +104,7 @@ export async function updateTransaction(
       filePath: transactions.filePath,
     })
     .from(transactions)
-    .where(and(eq(transactions.id, txId), eq(transactions.userId, doctorId)));
+    .where(and(eq(transactions.id, txId), inArray(transactions.userId, scope.doctorIds)));
   if (!existing) return { error: "Transaction not found." };
 
   // Billing-linked transactions are read-only — edit the bill instead.
@@ -116,11 +115,11 @@ export async function updateTransaction(
   }
 
   if (type === 1) {
-    if (!incomeTypeId || !(await ensureIncomeTypeOfUser(incomeTypeId, doctorId))) {
+    if (!incomeTypeId || !(await ensureIncomeTypeInScope(incomeTypeId, scope))) {
       return { error: "Income category is required." };
     }
   } else {
-    if (!expenseTypeId || !(await ensureExpenseTypeOfUser(expenseTypeId, doctorId))) {
+    if (!expenseTypeId || !(await ensureExpenseTypeInScope(expenseTypeId, scope))) {
       return { error: "Expense category is required." };
     }
   }
@@ -155,21 +154,22 @@ export async function updateTransaction(
 
   if (newFilePath) await deleteAttachment(existing.filePath);
 
-  void audit.transactionUpdated(doctorId, { txId, type, amount, date, status });
+  void audit.transactionUpdated(scope.callerId, { txId, type, amount, date, status });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
 export async function deleteTransaction(txId: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-delete");
-  if (!doctorId) return { error: "You don't have permission to delete transactions." };
+  const scope = await requireWriteScope("income-expense-delete");
+  if (!scope) return { error: "You don't have permission to delete transactions." };
   if (!txId || !Number.isInteger(txId)) return { error: "Invalid transaction ID." };
 
   const [existing] = await db
     .select({ id: transactions.id, billingId: transactions.billingId, filePath: transactions.filePath })
     .from(transactions)
-    .where(and(eq(transactions.id, txId), eq(transactions.userId, doctorId)));
+    .where(and(eq(transactions.id, txId), inArray(transactions.userId, scope.doctorIds)));
   if (!existing) return { error: "Transaction not found." };
 
   // Prevent deleting auto-created billing income (delete the bill instead) — legacy parity.
@@ -186,9 +186,10 @@ export async function deleteTransaction(txId: number): Promise<ActionResult> {
 
   await deleteAttachment(existing.filePath);
 
-  void audit.transactionDeleted(doctorId, { txId });
+  void audit.transactionDeleted(scope.callerId, { txId });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -196,15 +197,15 @@ export async function updateTransactionStatus(
   txId: number,
   status: string
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-approve");
-  if (!doctorId) return { error: "You don't have permission to approve transactions." };
+  const scope = await requireWriteScope("income-expense-approve");
+  if (!scope) return { error: "You don't have permission to approve transactions." };
   if (!txId || !Number.isInteger(txId)) return { error: "Invalid transaction ID." };
   if (!(TX_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
 
   const [existing] = await db
     .select({ id: transactions.id })
     .from(transactions)
-    .where(and(eq(transactions.id, txId), eq(transactions.userId, doctorId)));
+    .where(and(eq(transactions.id, txId), inArray(transactions.userId, scope.doctorIds)));
   if (!existing) return { error: "Transaction not found." };
 
   await db
@@ -212,9 +213,10 @@ export async function updateTransactionStatus(
     .set({ status: status as never, updatedAt: new Date() })
     .where(eq(transactions.id, txId));
 
-  void audit.transactionStatusChanged(doctorId, { txId, status });
+  void audit.transactionStatusChanged(scope.callerId, { txId, status });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -224,16 +226,19 @@ export async function createIncomeType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-create");
-  if (!doctorId) return { error: "You don't have permission to add categories." };
+  const scope = await requireWriteScope("income-expense-create");
+  if (!scope) return { error: "You don't have permission to add categories." };
+  const doctorId = scope.anchorDoctorId;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Category name is required." };
   if (name.length > 150) return { error: "Category name must be at most 150 characters." };
 
+  // Duplicate check across the whole write scope so an admin tier doesn't
+  // create "Consultation Fees" once per practice doctor.
   const [existing] = await db
     .select({ id: incomeTypes.id })
     .from(incomeTypes)
-    .where(and(eq(incomeTypes.name, name), eq(incomeTypes.userId, doctorId)));
+    .where(and(eq(incomeTypes.name, name), inArray(incomeTypes.userId, scope.doctorIds), isNull(incomeTypes.deletedAt)));
   if (existing) return { error: "This income category already exists." };
 
   await db.insert(incomeTypes).values({
@@ -243,9 +248,10 @@ export async function createIncomeType(
     updatedAt: new Date(),
   });
 
-  void audit.categoryCreated(doctorId, { kind: "income", name });
+  void audit.categoryCreated(scope.callerId, { kind: "income", name });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -253,8 +259,8 @@ export async function updateIncomeType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-edit");
-  if (!doctorId) return { error: "You don't have permission to edit categories." };
+  const scope = await requireWriteScope("income-expense-edit");
+  if (!scope) return { error: "You don't have permission to edit categories." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
@@ -264,7 +270,7 @@ export async function updateIncomeType(
   const [existing] = await db
     .select({ id: incomeTypes.id })
     .from(incomeTypes)
-    .where(and(eq(incomeTypes.id, id), eq(incomeTypes.userId, doctorId)));
+    .where(and(eq(incomeTypes.id, id), inArray(incomeTypes.userId, scope.doctorIds)));
   if (!existing) return { error: "Income category not found." };
 
   await db
@@ -272,21 +278,22 @@ export async function updateIncomeType(
     .set({ name, updatedAt: new Date() })
     .where(eq(incomeTypes.id, id));
 
-  void audit.categoryUpdated(doctorId, { kind: "income", id, name });
+  void audit.categoryUpdated(scope.callerId, { kind: "income", id, name });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
 export async function deleteIncomeType(id: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-delete");
-  if (!doctorId) return { error: "You don't have permission to delete categories." };
+  const scope = await requireWriteScope("income-expense-delete");
+  if (!scope) return { error: "You don't have permission to delete categories." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
 
   const [existing] = await db
     .select({ id: incomeTypes.id })
     .from(incomeTypes)
-    .where(and(eq(incomeTypes.id, id), eq(incomeTypes.userId, doctorId)));
+    .where(and(eq(incomeTypes.id, id), inArray(incomeTypes.userId, scope.doctorIds)));
   if (!existing) return { error: "Income category not found." };
 
   // Soft-delete so historical transactions keep their category name via join.
@@ -295,9 +302,10 @@ export async function deleteIncomeType(id: number): Promise<ActionResult> {
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(eq(incomeTypes.id, id));
 
-  void audit.categoryDeleted(doctorId, { kind: "income", id });
+  void audit.categoryDeleted(scope.callerId, { kind: "income", id });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -305,8 +313,9 @@ export async function createExpenseType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-create");
-  if (!doctorId) return { error: "You don't have permission to add categories." };
+  const scope = await requireWriteScope("income-expense-create");
+  if (!scope) return { error: "You don't have permission to add categories." };
+  const doctorId = scope.anchorDoctorId;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Category name is required." };
   if (name.length > 150) return { error: "Category name must be at most 150 characters." };
@@ -314,7 +323,7 @@ export async function createExpenseType(
   const [existing] = await db
     .select({ id: expenseTypes.id })
     .from(expenseTypes)
-    .where(and(eq(expenseTypes.name, name), eq(expenseTypes.userId, doctorId)));
+    .where(and(eq(expenseTypes.name, name), inArray(expenseTypes.userId, scope.doctorIds), isNull(expenseTypes.deletedAt)));
   if (existing) return { error: "This expense category already exists." };
 
   await db.insert(expenseTypes).values({
@@ -324,9 +333,10 @@ export async function createExpenseType(
     updatedAt: new Date(),
   });
 
-  void audit.categoryCreated(doctorId, { kind: "expense", name });
+  void audit.categoryCreated(scope.callerId, { kind: "expense", name });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
@@ -334,8 +344,8 @@ export async function updateExpenseType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-edit");
-  if (!doctorId) return { error: "You don't have permission to edit categories." };
+  const scope = await requireWriteScope("income-expense-edit");
+  if (!scope) return { error: "You don't have permission to edit categories." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
@@ -345,7 +355,7 @@ export async function updateExpenseType(
   const [existing] = await db
     .select({ id: expenseTypes.id })
     .from(expenseTypes)
-    .where(and(eq(expenseTypes.id, id), eq(expenseTypes.userId, doctorId)));
+    .where(and(eq(expenseTypes.id, id), inArray(expenseTypes.userId, scope.doctorIds)));
   if (!existing) return { error: "Expense category not found." };
 
   await db
@@ -353,21 +363,22 @@ export async function updateExpenseType(
     .set({ name, updatedAt: new Date() })
     .where(eq(expenseTypes.id, id));
 
-  void audit.categoryUpdated(doctorId, { kind: "expense", id, name });
+  void audit.categoryUpdated(scope.callerId, { kind: "expense", id, name });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }
 
 export async function deleteExpenseType(id: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("income-expense-delete");
-  if (!doctorId) return { error: "You don't have permission to delete categories." };
+  const scope = await requireWriteScope("income-expense-delete");
+  if (!scope) return { error: "You don't have permission to delete categories." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid category ID." };
 
   const [existing] = await db
     .select({ id: expenseTypes.id })
     .from(expenseTypes)
-    .where(and(eq(expenseTypes.id, id), eq(expenseTypes.userId, doctorId)));
+    .where(and(eq(expenseTypes.id, id), inArray(expenseTypes.userId, scope.doctorIds)));
   if (!existing) return { error: "Expense category not found." };
 
   await db
@@ -375,8 +386,9 @@ export async function deleteExpenseType(id: number): Promise<ActionResult> {
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(eq(expenseTypes.id, id));
 
-  void audit.categoryDeleted(doctorId, { kind: "expense", id });
+  void audit.categoryDeleted(scope.callerId, { kind: "expense", id });
 
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/income-expense");
   return { error: null };
 }

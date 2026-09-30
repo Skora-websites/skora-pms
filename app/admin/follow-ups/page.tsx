@@ -1,13 +1,26 @@
 import type { Metadata } from "next";
 import { PhoneCall } from "lucide-react";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
-import { getFollowUps, getFollowUpReminders, getDoctorPatients } from "@/lib/queries/doctor";
+import { getFollowUps, getFollowUpReminders } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState, StatusBadge, QuickContactActions } from "@/components/ui/dashboard-ui";
 import { formatDate, todayStr } from "@/lib/utils";
 import { NewFollowUpForm, ReminderActions } from "@/app/doctor/follow-ups/follow-up-forms";
 
 export const metadata: Metadata = { title: "Follow Ups · Business" };
+
+/** Patients across ALL scoped doctors (unlike single-owner getDoctorPatients). */
+async function getScopePatients(doctorIds: number[]) {
+  if (doctorIds.length === 0) return [];
+  return db
+    .select({ id: users.id, name: users.name, phone: users.phone })
+    .from(users)
+    .where(and(eq(users.role, "patient"), inArray(users.referenceRoleId, doctorIds)))
+    .orderBy(desc(users.createdAt));
+}
 
 export default async function AdminFollowUpsPage() {
   await requireAdminTier("/admin/follow-ups");
@@ -16,7 +29,10 @@ export default async function AdminFollowUpsPage() {
     getFollowUps(scope.doctorIds),
     getFollowUpReminders(scope.doctorIds),
   ]);
-  const patients = await getDoctorPatients(scope.doctorIds[0] ?? 0);
+  // The New Follow-up form needs the whole business's patient list, not just
+  // the anchor doctor's (getDoctorPatients is single-owner scoped; the admin
+  // tier fans out across all scoped doctors).
+  const patients = await getScopePatients(scope.doctorIds);
 
   const today = todayStr();
   const pending = followUps.filter((f) => f.followUpStatus === "pending");

@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { audit } from "@/lib/security/audit-log";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
 
@@ -30,10 +31,13 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  const isAdminTier = user.role === "admin" || user.role === "manager";
+  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
     return new Response("Forbidden", { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const allowedUserIds = isAdminTier
+    ? (await getBusinessScope()).doctorIds
+    : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];
 
   const { id } = await params;
   const txId = Number(id);
@@ -46,8 +50,8 @@ export async function GET(
 
   if (!tx?.filePath) return new Response("Not found", { status: 404 });
 
-  // Ownership check: the transaction must belong to this doctor.
-  if (tx.userId !== doctorId) return new Response("Forbidden", { status: 403 });
+  // Ownership check: the transaction must belong to an in-scope doctor.
+  if (!allowedUserIds.includes(tx.userId)) return new Response("Forbidden", { status: 403 });
 
   const ext = path.extname(tx.filePath).toLowerCase();
   const contentType = CONTENT_TYPES[ext];

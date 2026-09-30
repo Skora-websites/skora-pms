@@ -56,10 +56,13 @@ export function TestBookingsTable({
   bookings,
   vendors,
   tests,
+  patientBaseHref = "/doctor/patients",
 }: {
   bookings: BookingRow[];
   vendors: Vendor[];
   tests: Test[];
+  /** Panel prefix for patient links (admin tier uses /admin/patients). */
+  patientBaseHref?: string;
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editing, setEditing] = useState<BookingRow | null>(null);
@@ -93,7 +96,7 @@ export function TestBookingsTable({
             <div key={b.id} className="card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <Link href={`/doctor/patients/${b.patientId}`} className="truncate text-sm font-semibold text-slate-800 hover:text-brand-800">
+                  <Link href={`${patientBaseHref}/${b.patientId}`} className="truncate text-sm font-semibold text-slate-800 hover:text-brand-800">
                     {b.patientName}
                   </Link>
                   <p className="truncate text-xs text-slate-400">
@@ -201,7 +204,7 @@ export function TestBookingsTable({
               return (
                 <tr key={b.id} className="transition-colors hover:bg-brand-50/40">
                   <td className="px-5 py-4">
-                    <Link href={`/doctor/patients/${b.patientId}`} className="font-semibold text-slate-800 hover:text-brand-800">
+                    <Link href={`${patientBaseHref}/${b.patientId}`} className="font-semibold text-slate-800 hover:text-brand-800">
                       {b.patientName}
                     </Link>
                     <p className="mt-0.5 text-xs text-slate-400">

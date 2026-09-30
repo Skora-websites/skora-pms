@@ -5,12 +5,11 @@ import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, consultations, billings } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
+import { requireWriteScope, ensurePatientInScope, isAdminTierRole } from "@/lib/auth/action-scope";
 import { audit } from "@/lib/security/audit-log";
 import { patientSchema } from "@/lib/validation";
 import { isDupKey, dupKeyConstraint } from "@/lib/db/dup";
@@ -74,8 +73,8 @@ export async function createPatient(
   _prev: PatientActionResult,
   formData: FormData
 ): Promise<PatientActionResult> {
-  const doctorId = await requireDoctorPermission("registrations-create");
-  if (!doctorId) return { error: "You don't have permission to register patients." };
+  const scope = await requireWriteScope("registrations-create");
+  if (!scope) return { error: "You don't have permission to register patients." };
   const now = new Date();
 
   const parsed = patientSchema.safeParse({
@@ -119,7 +118,7 @@ export async function createPatient(
 
   const inserted = await insertPatient({
     role: "patient",
-    referenceRoleId: doctorId,
+    referenceRoleId: scope.anchorDoctorId,
     referredBy: data.referredBy || null,
     name: data.name,
     email,
@@ -141,7 +140,7 @@ export async function createPatient(
   });
   if (!inserted.ok) return { error: inserted.error };
 
-  void audit.patientCreated(doctorId, {
+  void audit.patientCreated(scope.callerId, {
     patientId: inserted.userId,
     registrationId: inserted.registrationId,
     name: data.name,
@@ -149,6 +148,8 @@ export async function createPatient(
   });
 
   revalidatePath("/doctor/patients");
+  revalidatePath("/admin/patients");
+  if (isAdminTierRole(scope.callerRole)) redirect(`/admin/patients`);
   redirect(`/doctor/patients/${inserted.userId}`);
 }
 
@@ -156,12 +157,12 @@ export async function updatePatient(
   _prev: PatientActionResult,
   formData: FormData
 ): Promise<PatientActionResult> {
-  const doctorId = await requireDoctorPermission("registrations-edit");
-  if (!doctorId) return { error: "You don't have permission to edit patients." };
+  const scope = await requireWriteScope("registrations-edit");
+  if (!scope) return { error: "You don't have permission to edit patients." };
   const patientId = Number(formData.get("patient_id"));
 
   if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient." };
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) return { error: "Patient not found." };
+  if (!(await ensurePatientInScope(patientId, scope))) return { error: "Patient not found." };
 
   const parsed = patientSchema.safeParse({
     referredBy: String(formData.get("referred_by") ?? "").trim() || undefined,
@@ -230,7 +231,7 @@ export async function updatePatient(
         profilePhotoPath: photoPath,
         updatedAt: new Date(),
       })
-      .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
+      .where(and(eq(users.id, patientId), inArray(users.referenceRoleId, scope.doctorIds)));
   } catch (err) {
     if (isDupKey(err) && dupKeyConstraint(err) === "users_email_unique") {
       return { error: "A patient with this email already exists." };
@@ -238,7 +239,7 @@ export async function updatePatient(
     throw err;
   }
 
-  void audit.patientUpdated(doctorId, {
+  void audit.patientUpdated(scope.callerId, {
     patientId,
     name: data.name,
     photoChanged: Boolean(photo && photo.size > 0),
@@ -246,15 +247,17 @@ export async function updatePatient(
 
   revalidatePath("/doctor/patients");
   revalidatePath(`/doctor/patients/${patientId}`);
+  revalidatePath("/admin/patients");
+  if (isAdminTierRole(scope.callerRole)) redirect("/admin/patients");
   redirect(`/doctor/patients/${patientId}`);
 }
 
 export async function deletePatient(patientId: number): Promise<PatientActionResult | undefined> {
-  const doctorId = await requireDoctorPermission("registrations-delete");
-  if (!doctorId) return { error: "You don't have permission to delete patients." };
+  const scope = await requireWriteScope("registrations-delete");
+  if (!scope) return { error: "You don't have permission to delete patients." };
   if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient ID." };
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-    return { error: "Patient not found for this doctor." };
+  if (!(await ensurePatientInScope(patientId, scope))) {
+    return { error: "Patient not found for this practice." };
   }
 
   // Business rule / data integrity: a patient with clinical or financial
@@ -267,7 +270,7 @@ export async function deletePatient(patientId: number): Promise<PatientActionRes
       const [clinical] = await tx
         .select({ id: consultations.id })
         .from(consultations)
-        .where(and(eq(consultations.patientId, patientId), eq(consultations.doctorId, doctorId)))
+        .where(and(eq(consultations.patientId, patientId), inArray(consultations.doctorId, scope.doctorIds)))
         .limit(1);
       if (clinical) {
         throw new Error("This patient has consultation records. Deactivate the patient instead of deleting.");
@@ -275,7 +278,7 @@ export async function deletePatient(patientId: number): Promise<PatientActionRes
       const [financial] = await tx
         .select({ id: billings.id })
         .from(billings)
-        .where(and(eq(billings.patientId, patientId), eq(billings.doctorId, doctorId), isNull(billings.deletedAt)))
+        .where(and(eq(billings.patientId, patientId), inArray(billings.doctorId, scope.doctorIds), isNull(billings.deletedAt)))
         .limit(1);
       if (financial) {
         throw new Error("This patient has billing records. Deactivate the patient instead of deleting.");
@@ -288,7 +291,7 @@ export async function deletePatient(patientId: number): Promise<PatientActionRes
       photoPath = patient?.profilePhotoPath ?? null;
 
       // Hard delete only for patients with no clinical/financial history.
-      await tx.delete(users).where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId)));
+      await tx.delete(users).where(and(eq(users.id, patientId), inArray(users.referenceRoleId, scope.doctorIds)));
     });
   } catch (err) {
     if (err instanceof Error && (err.message.includes("consultation records") || err.message.includes("billing records"))) {
@@ -298,7 +301,9 @@ export async function deletePatient(patientId: number): Promise<PatientActionRes
   }
   await deletePhoto(photoPath);
 
-  void audit.patientDeleted(doctorId, { patientId });
+  void audit.patientDeleted(scope.callerId, { patientId });
   revalidatePath("/doctor/patients");
+  revalidatePath("/admin/patients");
+  if (isAdminTierRole(scope.callerRole)) redirect("/admin/patients");
   redirect("/doctor/patients");
 }

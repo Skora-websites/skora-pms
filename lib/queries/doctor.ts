@@ -1151,6 +1151,144 @@ export const getDoctorStats = cache(async (doctorId: number) => {
   };
 });
 
+/**
+ * Practice-wide stats (manager/owner overview): same KPIs as getDoctorStats
+ * but fanned out across the scope's doctor ids. Week/day counts are keyed by
+ * `date` so callers can map them onto local-day labels.
+ */
+export const getPracticeStats = cache(async (doctorIds: number[]) => {
+  if (doctorIds.length === 0) {
+    return {
+      todayAppointments: 0,
+      totalPatients: 0,
+      pendingFollowUps: 0,
+      monthIncome: 0,
+      monthExpense: 0,
+      weekAppointments: [] as { date: string; count: number }[],
+    };
+  }
+  const today = todayStr();
+  const monthStart = todayStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const weekStart = todayStr(new Date(Date.now() - 6 * 86400000));
+
+  const [todayAppts, totalPatients, pendingFollowUps, monthIncome, monthExpense, weekAppts] =
+    await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(appointments)
+        .where(and(inArray(appointments.doctorId, doctorIds), eq(appointments.date, today))),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(and(eq(users.role, "patient"), inArray(users.referenceRoleId, doctorIds))),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(consultations)
+        .where(
+          and(
+            inArray(consultations.doctorId, doctorIds),
+            eq(consultations.followUpStatus, "pending"),
+            gte(consultations.followUpDate, today)
+          )
+        ),
+      db
+        .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
+        .from(transactions)
+        .where(
+          and(
+            inArray(transactions.userId, doctorIds),
+            eq(transactions.type, 1),
+            eq(transactions.status, "approved"),
+            isNull(transactions.deletedAt),
+            gte(transactions.date, monthStart)
+          )
+        ),
+      db
+        .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
+        .from(transactions)
+        .where(
+          and(
+            inArray(transactions.userId, doctorIds),
+            eq(transactions.type, 2),
+            eq(transactions.status, "approved"),
+            isNull(transactions.deletedAt),
+            gte(transactions.date, monthStart)
+          )
+        ),
+      db
+        .select({ date: appointments.date, count: sql<number>`count(*)` })
+        .from(appointments)
+        .where(
+          and(
+            inArray(appointments.doctorId, doctorIds),
+            gte(appointments.date, weekStart),
+            // Upper bound = today so the 7-day "traffic" chart doesn't
+            // silently ingest future-dated bookings.
+            lte(appointments.date, today)
+          )
+        )
+        .groupBy(appointments.date),
+    ]);
+
+  return {
+    todayAppointments: Number(todayAppts[0]?.count ?? 0),
+    totalPatients: Number(totalPatients[0]?.count ?? 0),
+    pendingFollowUps: Number(pendingFollowUps[0]?.count ?? 0),
+    monthIncome: Number(monthIncome[0]?.total ?? 0),
+    monthExpense: Number(monthExpense[0]?.total ?? 0),
+    weekAppointments: weekAppts.map((w) => ({ date: w.date, count: Number(w.count) })),
+  };
+});
+
+/**
+ * Income & expense totals per month for the last N months across a set of
+ * practice/business doctors (manager/owner finance chart).
+ */
+export const getPracticeFinanceTrend = cache(async (doctorIds: number[], months = 6) => {
+  if (doctorIds.length === 0) {
+    return Array.from({ length: months }, (_, i) => {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - (months - 1 - i));
+      return { label: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, income: 0, expense: 0 };
+    });
+  }
+  const rows = await db
+    .select({
+      date: transactions.date,
+      type: transactions.type,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .where(
+      and(
+        inArray(transactions.userId, doctorIds),
+        eq(transactions.status, "approved"),
+        isNull(transactions.deletedAt)
+      )
+    );
+
+  const buckets = new Map<string, { income: number; expense: number }>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    buckets.set(key, { income: 0, expense: 0 });
+  }
+
+  for (const r of rows) {
+    const key = r.date.slice(0, 7);
+    if (buckets.has(key)) {
+      const b = buckets.get(key)!;
+      if (r.type === 1) b.income += Number(r.amount);
+      else if (r.type === 2) b.expense += Number(r.amount);
+    }
+  }
+
+  return [...buckets.entries()].map(([label, { income, expense }]) => ({ label, income, expense }));
+});
+
 /** Income & expense totals per month for the last N months (dashboard chart). */
 export const getDoctorFinanceTrend = cache(async (doctorId: number, months = 6) => {
   const rows = await db

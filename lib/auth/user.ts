@@ -164,13 +164,17 @@ export async function hasAnyPermission(userId: number, names: string[]) {
 export type UserRole =
   | "super_admin"
   | "admin"
+  | "manager"
   | "doctor"
   | "receptionist"
   | "patient";
 
 export const ROLE_HOME: Record<UserRole, string> = {
   super_admin: "/super-admin",
-  admin: "/super-admin",
+  // Admin (business owner) has its own role-adaptive shell at /admin
+  // (Phase 3) — the super-admin layout no longer admits this role.
+  admin: "/admin",
+  manager: "/admin",
   doctor: "/doctor",
   receptionist: "/doctor",
   patient: "/patient",

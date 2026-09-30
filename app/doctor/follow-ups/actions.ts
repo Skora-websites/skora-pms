@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { followUpReminders, consultations, users } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
+import { requireWriteScope } from "@/lib/auth/action-scope";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
 import { todayStr } from "@/lib/utils";
@@ -42,10 +41,10 @@ export async function createFollowUpReminder(
   _prev: FollowUpActionResult,
   formData: FormData
 ): Promise<FollowUpActionResult> {
-  const doctorId = await requireDoctorPermission("follow-up-status-update");
-  if (!doctorId) return { error: "You don't have permission to manage follow-ups." };
-  const caller = await requireDoctorPermission("follow-up-list");
-  if (!caller) return { error: "You don't have permission to manage follow-ups." };
+  const scope = await requireWriteScope("follow-up-status-update");
+  if (!scope) return { error: "You don't have permission to manage follow-ups." };
+  const doctorId = scope.anchorDoctorId;
+  const caller = scope.callerId;
 
   const parsed = createReminderSchema.safeParse({
     patientId: formData.get("patient_id"),
@@ -57,8 +56,13 @@ export async function createFollowUpReminder(
   }
   const { patientId, followUpDate, note } = parsed.data;
 
-  // Ownership: the patient must belong to this practice (referenceRoleId).
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
+  // Ownership: the patient must belong to the caller's scope (referenceRoleId).
+  const [patient] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, patientId), eq(users.role, "patient"), inArray(users.referenceRoleId, scope.doctorIds)))
+    .limit(1);
+  if (!patient) {
     return { error: "Patient not found for this practice." };
   }
   if (followUpDate < todayStr()) {
@@ -100,6 +104,7 @@ export async function createFollowUpReminder(
   }
 
   revalidatePath("/doctor/follow-ups");
+  revalidatePath("/admin/follow-ups");
   return { error: null };
 }
 
@@ -113,13 +118,13 @@ export async function updateFollowUpDetail(
   consultationId: number,
   input: { status?: string; comment?: string; followUpDate?: string }
 ): Promise<FollowUpActionResult> {
-  const doctorId = await requireDoctorPermission("follow-up-status-update");
-  if (!doctorId) return { error: "You don't have permission to update follow-ups." };
+  const scope = await requireWriteScope("follow-up-status-update");
+  if (!scope) return { error: "You don't have permission to update follow-ups." };
 
   const [current] = await db
     .select({ followUpStatus: consultations.followUpStatus })
     .from(consultations)
-    .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)))
+    .where(and(eq(consultations.id, consultationId), inArray(consultations.doctorId, scope.doctorIds)))
     .limit(1);
   if (!current) return { error: "Follow-up not found." };
 
@@ -155,14 +160,15 @@ export async function updateFollowUpDetail(
   await db
     .update(consultations)
     .set(update)
-    .where(and(eq(consultations.id, consultationId), eq(consultations.doctorId, doctorId)));
+    .where(and(eq(consultations.id, consultationId), inArray(consultations.doctorId, scope.doctorIds)));
 
   void auditLog({
-    userId: doctorId,
+    userId: scope.callerId,
     action: "follow_up_status_changed",
     metadata: { consultationId, ...input },
   });
   revalidatePath("/doctor/follow-ups");
+  revalidatePath("/admin/follow-ups");
   return { error: null };
 }
 
@@ -171,14 +177,14 @@ export async function updateReminderStatus(
   reminderId: number,
   status: string
 ): Promise<FollowUpActionResult> {
-  const doctorId = await requireDoctorPermission("follow-up-status-update");
-  if (!doctorId) return { error: "You don't have permission to update follow-ups." };
+  const scope = await requireWriteScope("follow-up-status-update");
+  if (!scope) return { error: "You don't have permission to update follow-ups." };
   if (!isReminderStatus(status)) return { error: "Invalid status." };
 
   const [current] = await db
     .select({ status: followUpReminders.status })
     .from(followUpReminders)
-    .where(and(eq(followUpReminders.id, reminderId), eq(followUpReminders.doctorId, doctorId)))
+    .where(and(eq(followUpReminders.id, reminderId), inArray(followUpReminders.doctorId, scope.doctorIds)))
     .limit(1);
   if (!current) return { error: "Reminder not found." };
 
@@ -191,13 +197,14 @@ export async function updateReminderStatus(
   await db
     .update(followUpReminders)
     .set({ status, updatedAt: new Date() })
-    .where(and(eq(followUpReminders.id, reminderId), eq(followUpReminders.doctorId, doctorId)));
+    .where(and(eq(followUpReminders.id, reminderId), inArray(followUpReminders.doctorId, scope.doctorIds)));
 
   void auditLog({
-    userId: doctorId,
+    userId: scope.callerId,
     action: "follow_up_reminder_status_changed",
     metadata: { reminderId, from, to: status },
   });
   revalidatePath("/doctor/follow-ups");
+  revalidatePath("/admin/follow-ups");
   return { error: null };
 }

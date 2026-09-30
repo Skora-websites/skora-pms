@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Server-only permission guard for the doctor dashboard.
  *
@@ -12,6 +14,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { permissions, modelHasPermissions, modelHasRoles, roles } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole } from "./user";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 
 const USER_MODEL = "App\\Models\\User";
 
@@ -83,9 +86,9 @@ export async function requireDoctorPermission(
 ): Promise<number | null> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     redirect(homePathForRole(user.role));
   }
   if (!(await hasPermission(user.id, permission))) return null;
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  return resolvePracticeDoctorId(user);
 }

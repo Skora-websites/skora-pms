@@ -1,11 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, billings, billingTypes, consultations, transactions } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import { ensurePatientOfDoctor, ensureBillingTypeOfDoctor } from "@/lib/auth/ownership";
+import {
+  requireWriteScope,
+  ensurePatientInScope,
+  ensureBillingTypeInScope,
+  ensureBillInScope,
+  type ActionScope,
+} from "@/lib/auth/action-scope";
 import { audit } from "@/lib/security/audit-log";
 import { billSchema } from "@/lib/validation";
 import { generateBillNumber, todayStr } from "@/lib/utils";
@@ -14,14 +19,20 @@ type ActionResult = { error: string | null };
 
 const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking", "credit"];
 
+/** Bills + linked income transactions always anchor to ONE doctor account. */
+function billAnchor(scope: ActionScope): number {
+  return scope.anchorDoctorId;
+}
+
 // ── Bill CRUD ──────────────────────────────────────────────────────────────
 
 export async function createBill(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-create");
-  if (!doctorId) return { error: "You don't have permission to create bills." };
+  const scope = await requireWriteScope("billing-create");
+  if (!scope) return { error: "You don't have permission to create bills." };
+  const doctorId = billAnchor(scope);
   const now = new Date();
   const patientId = Number(formData.get("patient_id"));
   const billingTypeId = Number(formData.get("billing_type_id"));
@@ -51,10 +62,10 @@ export async function createBill(
   }
   if (!PAYMENT_METHODS.includes(paymentMethod)) return { error: "Invalid payment method." };
 
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-    return { error: "Patient not found for this doctor." };
+  if (!(await ensurePatientInScope(patientId, scope))) {
+    return { error: "Patient not found for this practice." };
   }
-  if (!(await ensureBillingTypeOfDoctor(billingTypeId, doctorId))) {
+  if (!(await ensureBillingTypeInScope(billingTypeId, scope))) {
     return { error: "Billing type not found." };
   }
   // Ownership: linked appointment/consultation must belong to THIS doctor —
@@ -126,18 +137,19 @@ export async function createBill(
     return { billNumber, billingId };
   });
 
-  void audit.billCreated(doctorId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod: isCredit ? "credit" : paymentMethod });
-  if (!isCredit) void audit.transactionCreated(doctorId, { billingId, amount });
+  void audit.billCreated(scope.callerId, { billingId, billNumber, patientId, billingTypeId, amount, paymentMethod: isCredit ? "credit" : paymentMethod });
+  if (!isCredit) void audit.transactionCreated(scope.callerId, { billingId, amount });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
 /** Mark a 48h-credit bill as collected — creates the income transaction. */
 export async function collectCreditPayment(billId: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-approve");
-  if (!doctorId) return { error: "You don't have permission to collect payments." };
+  const scope = await requireWriteScope("billing-approve");
+  if (!scope) return { error: "You don't have permission to collect payments." };
   if (!billId || !Number.isInteger(billId)) return { error: "Invalid bill ID." };
 
   const [bill] = await db
@@ -151,7 +163,7 @@ export async function collectCreditPayment(billId: number): Promise<ActionResult
     })
     .from(billings)
     .where(eq(billings.id, billId));
-  if (!bill || bill.doctorId !== doctorId) return { error: "Bill not found." };
+  if (!bill || !(await ensureBillInScope(billId, scope))) return { error: "Bill not found." };
   if (bill.status === "paid") return { error: "This bill is already paid." };
   if (bill.paymentMethod !== "credit") return { error: "Only credit bills can be collected this way." };
 
@@ -169,9 +181,10 @@ export async function collectCreditPayment(billId: number): Promise<ActionResult
     return { error: "This bill was already collected." };
   }
 
-  // Recognize the income now that it's collected.
+  // Recognize the income under the bill's owning doctor so the ledger lands
+  // on the practice member who issued the bill.
   await db.insert(transactions).values({
-    userId: doctorId,
+    userId: bill.doctorId,
     type: 1,
     billingId: billId,
     amount,
@@ -184,11 +197,12 @@ export async function collectCreditPayment(billId: number): Promise<ActionResult
     updatedAt: now,
   });
 
-  void audit.billCreated(doctorId, { billingId: billId, action: "credit_collected", amount, billNumber: bill.billNumber });
-  void audit.transactionCreated(doctorId, { billingId: billId, amount });
+  void audit.billCreated(scope.callerId, { billingId: billId, action: "credit_collected", amount, billNumber: bill.billNumber });
+  void audit.transactionCreated(scope.callerId, { billingId: billId, amount });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
@@ -196,8 +210,8 @@ export async function updateBill(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-edit");
-  if (!doctorId) return { error: "You don't have permission to edit bills." };
+  const scope = await requireWriteScope("billing-edit");
+  if (!scope) return { error: "You don't have permission to edit bills." };
   const now = new Date();
   const billId = Number(formData.get("bill_id"));
   const patientId = Number(formData.get("patient_id"));
@@ -211,10 +225,10 @@ export async function updateBill(
   if (!patientId || !billingTypeId) return { error: "Patient and billing type are required." };
   if (!PAYMENT_METHODS.includes(paymentMethod)) return { error: "Invalid payment method." };
 
-  if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-    return { error: "Patient not found for this doctor." };
+  if (!(await ensurePatientInScope(patientId, scope))) {
+    return { error: "Patient not found for this practice." };
   }
-  if (!(await ensureBillingTypeOfDoctor(billingTypeId, doctorId))) {
+  if (!(await ensureBillingTypeInScope(billingTypeId, scope))) {
     return { error: "Billing type not found." };
   }
 
@@ -238,6 +252,7 @@ export async function updateBill(
   const [existing] = await db
     .select({
       id: billings.id,
+      doctorId: billings.doctorId,
       appointmentId: billings.appointmentId,
       totalAmount: billings.totalAmount,
       receivedAmount: billings.receivedAmount,
@@ -246,8 +261,9 @@ export async function updateBill(
       status: billings.status,
     })
     .from(billings)
-    .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId)));
+    .where(and(eq(billings.id, billId), inArray(billings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Bill not found." };
+  const doctorId = existing.doctorId;
 
   // Bill + linked income transaction in ONE transaction — no drift between
   // the bill and income records if either write fails.
@@ -300,7 +316,7 @@ export async function updateBill(
     }
   });
 
-  void audit.billCreated(doctorId, {
+  void audit.billCreated(scope.callerId, {
     billId,
     action: "updated",
     patientId,
@@ -320,18 +336,19 @@ export async function updateBill(
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
 export async function deleteBill(billId: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-delete");
-  if (!doctorId) return { error: "You don't have permission to delete bills." };
+  const scope = await requireWriteScope("billing-delete");
+  if (!scope) return { error: "You don't have permission to delete bills." };
   if (!billId || !Number.isInteger(billId)) return { error: "Invalid bill ID." };
 
   const [existing] = await db
     .select({ id: billings.id })
     .from(billings)
-    .where(and(eq(billings.id, billId), eq(billings.doctorId, doctorId)));
+    .where(and(eq(billings.id, billId), inArray(billings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Bill not found." };
 
   // Soft-delete linked transaction(s) + bill atomically.
@@ -347,10 +364,11 @@ export async function deleteBill(billId: number): Promise<ActionResult> {
       .where(eq(billings.id, billId));
   });
 
-  void audit.billCreated(doctorId, { billId, action: "deleted" });
+  void audit.billCreated(scope.callerId, { billId, action: "deleted" });
 
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
@@ -360,8 +378,9 @@ export async function createBillingType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-create");
-  if (!doctorId) return { error: "You don't have permission to create billing types." };
+  const scope = await requireWriteScope("billing-create");
+  if (!scope) return { error: "You don't have permission to create billing types." };
+  const doctorId = scope.anchorDoctorId;
   const name = String(formData.get("name") ?? "").trim();
   const defaultAmount = String(formData.get("default_amount") ?? "0");
 
@@ -386,6 +405,7 @@ export async function createBillingType(
   });
 
   revalidatePath("/doctor/billing");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
@@ -393,8 +413,8 @@ export async function updateBillingType(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-edit");
-  if (!doctorId) return { error: "You don't have permission to edit billing types." };
+  const scope = await requireWriteScope("billing-edit");
+  if (!scope) return { error: "You don't have permission to edit billing types." };
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const defaultAmount = String(formData.get("default_amount") ?? "0");
@@ -407,7 +427,7 @@ export async function updateBillingType(
   const [bt] = await db
     .select({ id: billingTypes.id })
     .from(billingTypes)
-    .where(and(eq(billingTypes.id, id), eq(billingTypes.doctorId, doctorId)));
+    .where(and(eq(billingTypes.id, id), inArray(billingTypes.doctorId, scope.doctorIds)));
   if (!bt) return { error: "Billing type not found." };
 
   await db
@@ -416,18 +436,19 @@ export async function updateBillingType(
     .where(eq(billingTypes.id, id));
 
   revalidatePath("/doctor/billing");
+  revalidatePath("/admin/billing");
   return { error: null };
 }
 
 export async function deleteBillingType(id: number): Promise<ActionResult> {
-  const doctorId = await requireDoctorPermission("billing-delete");
-  if (!doctorId) return { error: "You don't have permission to delete billing types." };
+  const scope = await requireWriteScope("billing-delete");
+  if (!scope) return { error: "You don't have permission to delete billing types." };
   if (!id || !Number.isInteger(id)) return { error: "Invalid billing type ID." };
 
   const [bt] = await db
     .select({ id: billingTypes.id })
     .from(billingTypes)
-    .where(and(eq(billingTypes.id, id), eq(billingTypes.doctorId, doctorId)));
+    .where(and(eq(billingTypes.id, id), inArray(billingTypes.doctorId, scope.doctorIds)));
   if (!bt) return { error: "Billing type not found." };
 
   // Soft-deactivate
@@ -437,5 +458,6 @@ export async function deleteBillingType(id: number): Promise<ActionResult> {
     .where(eq(billingTypes.id, id));
 
   revalidatePath("/doctor/billing");
+  revalidatePath("/admin/billing");
   return { error: null };
 }

@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointmentConsultConsents, appointments } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
 
@@ -25,8 +26,8 @@ const CONTENT_TYPES: Record<string, string> = {
  *  2. `appointment_consult_consents.consent_file` — patient-uploaded or the
  *     auto-generated certificate produced via the consent link.
  *
- * Authenticated + ownership-scoped: only the owning doctor (or their
- * receptionist/admin) can view it. Files live in non-public storage.
+ * Authenticated + ownership-scoped: only the owning doctor or in-scope staff
+ * (receptionist / admin-tier) can view it. Files live in non-public storage.
  */
 export async function GET(
   _req: NextRequest,
@@ -34,10 +35,13 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  const isAdminTier = user.role === "admin" || user.role === "manager";
+  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
     return new Response("Forbidden", { status: 403 });
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const allowedDoctorIds = isAdminTier
+    ? (await getBusinessScope()).doctorIds
+    : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];
 
   const { id: rawId } = await params;
   const appointmentId = Number(rawId);
@@ -52,7 +56,7 @@ export async function GET(
     .where(eq(appointments.id, appointmentId));
 
   if (!appt) return new Response("Not found", { status: 404 });
-  if (appt.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
+  if (!allowedDoctorIds.includes(appt.doctorId)) return new Response("Forbidden", { status: 403 });
 
   let consentFile = appt.consentFile;
   if (!consentFile) {

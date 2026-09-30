@@ -56,12 +56,14 @@ export function ConsultationList({ consultations }: { consultations: C[] }) {
             >
               <FileDown className="h-3.5 w-3.5" /> PDF
             </a>
-            <Link
-              href={`/doctor/consultations/${c.appointmentId ?? "0"}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-800"
-            >
-              View
-            </Link>
+            {c.appointmentId && (
+              <Link
+                href={`/doctor/consultations/${c.appointmentId}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-800"
+              >
+                View
+              </Link>
+            )}
           </div>
         </div>
       ))}

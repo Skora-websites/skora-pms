@@ -18,10 +18,16 @@ export function AppointmentRowActions({
   appointmentId,
   status,
   consentFile,
+  showConsultLink = true,
+  editBaseHref = "/doctor/appointments",
 }: {
   appointmentId: number;
   status: string;
   consentFile?: string | null;
+  /** Consultations are a doctor-facing module — the receptionist panel hides the shortcut. */
+  showConsultLink?: boolean;
+  /** Panel prefix for the edit page (admin tier uses /admin/appointments). */
+  editBaseHref?: string;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -76,7 +82,7 @@ export function AppointmentRowActions({
         </span>
       )}
 
-      {status !== "completed" && status !== "cancelled" && status !== "pending_consent" && (
+      {showConsultLink && status !== "completed" && status !== "cancelled" && status !== "pending_consent" && (
         <Link
           href={`/doctor/consultations/${appointmentId}`}
           title="Start consultation"
@@ -88,7 +94,7 @@ export function AppointmentRowActions({
 
       {status !== "cancelled" && status !== "completed" && (
         <Link
-          href={`/doctor/appointments/${appointmentId}/edit`}
+          href={`${editBaseHref}/${appointmentId}/edit`}
           title="Edit"
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50"
         >

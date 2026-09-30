@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { db } from "@/lib/db";
 import { roles, roleHasPermissions, permissions, users } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { RoleForm } from "./role-form";
 import { RoleCardActions } from "./role-card-actions";
@@ -13,8 +14,8 @@ import { getAllPermissions } from "./actions";
 export const metadata: Metadata = { title: "Roles & Permissions · Doctor" };
 
 export default async function RolesPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
 
   const [rows, receptionists, permissionModules] = await Promise.all([
     db
@@ -37,11 +38,19 @@ export default async function RolesPage() {
     getAllPermissions(),
   ]);
 
-  // Permission names per custom role (for the edit form).
+  // Permission names per custom role (for the edit form). Scoped to the
+  // practice's own role ids — no unfiltered join over every practice's
+  // role-permission rows (F-06).
   const rolePermRows = await db
     .select({ roleId: roleHasPermissions.roleId, name: permissions.name })
     .from(roleHasPermissions)
-    .innerJoin(permissions, eq(permissions.id, roleHasPermissions.permissionId));
+    .innerJoin(permissions, eq(permissions.id, roleHasPermissions.permissionId))
+    .where(
+      inArray(
+        roleHasPermissions.roleId,
+        rows.length > 0 ? rows.map((r) => r.id) : [-1]
+      )
+    );
   const permsByRole = new Map<number, string[]>();
   for (const rp of rolePermRows) {
     const list = permsByRole.get(rp.roleId) ?? [];

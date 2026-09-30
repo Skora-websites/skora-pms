@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { audit } from "@/lib/security/audit-log";
 
 export type RoleActionResult = { error: string | null };
@@ -32,7 +33,8 @@ async function getUserRoles(userId: number): Promise<string[]> {
 async function canViewPermissionData(): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role === "super_admin" || user.role === "admin") return true;
+  if (user.role === "super_admin") return true;
+  // admin (business owner) moved to the /admin tier — no doctor-tier bypass.
   if (user.role !== "doctor" && user.role !== "receptionist") {
     redirect(homePathForRole(user.role));
   }
@@ -233,7 +235,7 @@ export async function getUserPermissionNames(userId: number): Promise<string[]> 
       redirect(homePathForRole(user.role));
     }
     if (!(await hasPermission(user.id, "roles-permissions"))) return [];
-    const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+    const doctorId = resolvePracticeDoctorId(user);
     const [staff] = await db
       .select({ id: users.id })
       .from(users)

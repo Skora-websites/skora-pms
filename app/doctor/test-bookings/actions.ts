@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   testBookings,
@@ -15,7 +15,7 @@ import {
   billingTypes,
   transactions,
 } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { requireWriteScope } from "@/lib/auth/action-scope";
 import { audit } from "@/lib/security/audit-log";
 import { generateBillNumber, todayStr } from "@/lib/utils";
 
@@ -58,7 +58,7 @@ function randomToken(): string {
 
 // ── Test booking CRUD ──────────────────────────────────────────────────────
 
-async function resolvePatient(doctorId: number, registrationId: string, phone: string) {
+async function resolvePatient(doctorIds: number[], registrationId: string, phone: string) {
   const conds = [eq(users.role, "patient")];
   if (registrationId) {
     conds.push(eq(users.registrationId, registrationId));
@@ -75,12 +75,12 @@ async function resolvePatient(doctorId: number, registrationId: string, phone: s
     .where(and(...conds))
     .limit(1);
   if (!patient) return null;
-  // Must be one of this doctor's patients (legacy checked registration_id globally;
-  // we scope it to the doctor's patient list to prevent cross-doctor access).
+  // Must be one of the scope's patients (legacy checked registration_id globally;
+  // we scope it to the practice/business patient list to prevent cross-scope access).
   const [owned] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, patient.id), eq(users.referenceRoleId, doctorId)));
+    .where(and(eq(users.id, patient.id), inArray(users.referenceRoleId, doctorIds)));
   return owned ? patient : null;
 }
 
@@ -223,8 +223,9 @@ export async function createTestBooking(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-create");
-  if (!doctorId) return { error: "You don't have permission to create test bookings." };
+  const scope = await requireWriteScope("test-booking-create");
+  if (!scope) return { error: "You don't have permission to create test bookings." };
+  const doctorId = scope.anchorDoctorId;
   const registrationId = String(formData.get("registration_id") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const vendorId = Number(formData.get("vendor_id"));
@@ -240,21 +241,21 @@ export async function createTestBooking(
   const notes = String(formData.get("notes") ?? "").trim() || null;
 
   if (!registrationId && !phone) return { error: "Patient registration ID or phone is required." };
-  const patient = await resolvePatient(doctorId, registrationId, phone);
-  if (!patient) return { error: "Patient not found for this doctor. Check registration ID / phone." };
+  const patient = await resolvePatient(scope.doctorIds, registrationId, phone);
+  if (!patient) return { error: "Patient not found for this practice. Check registration ID / phone." };
 
   if (!vendorId || !Number.isInteger(vendorId)) return { error: "Vendor is required." };
   const [vendor] = await db
     .select({ id: vendors.id })
     .from(vendors)
-    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
-  if (!vendor) return { error: "Vendor not found for this doctor." };
+    .where(and(eq(vendors.id, vendorId), inArray(vendors.doctorId, scope.doctorIds)));
+  if (!vendor) return { error: "Vendor not found for this practice." };
 
   if (testIds.length === 0) return { error: "Select at least one test." };
   const testRows = await db
     .select({ id: tests.id, name: tests.name, price: tests.price })
     .from(tests)
-    .where(and(eq(tests.doctorId, doctorId)));
+    .where(and(inArray(tests.doctorId, scope.doctorIds)));
   const ownedTests = testRows.filter((t) => testIds.includes(t.id));
   if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
 
@@ -317,11 +318,12 @@ export async function createTestBooking(
     return bookingId;
   });
 
-  void audit.transactionCreated(doctorId, { source: "test_booking", vendorId, patientId: patient.id, totalAmount });
+  void audit.transactionCreated(scope.callerId, { source: "test_booking", vendorId, patientId: patient.id, totalAmount });
 
   revalidatePath("/doctor/test-bookings");
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -329,8 +331,8 @@ export async function updateTestBooking(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-edit");
-  if (!doctorId) return { error: "You don't have permission to edit test bookings." };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { error: "You don't have permission to edit test bookings." };
   const bookingId = Number(formData.get("id"));
   const vendorId = Number(formData.get("vendor_id"));
   const testIds = String(formData.get("test_ids") ?? "")
@@ -348,7 +350,7 @@ export async function updateTestBooking(
   const [existing] = await db
     .select({ id: testBookings.id, status: testBookings.status })
     .from(testBookings)
-    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test booking not found." };
 
   // Terminal states are immutable (same rule as updateTestBookingStatus) —
@@ -360,13 +362,13 @@ export async function updateTestBooking(
   const [vendor] = await db
     .select({ id: vendors.id })
     .from(vendors)
-    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
-  if (!vendor) return { error: "Vendor not found for this doctor." };
+    .where(and(eq(vendors.id, vendorId), inArray(vendors.doctorId, scope.doctorIds)));
+  if (!vendor) return { error: "Vendor not found for this practice." };
 
   const testRows = await db
     .select({ id: tests.id, name: tests.name, price: tests.price })
     .from(tests)
-    .where(eq(tests.doctorId, doctorId));
+    .where(inArray(tests.doctorId, scope.doctorIds));
   const ownedTests = testRows.filter((t) => testIds.includes(t.id));
   if (ownedTests.length !== testIds.length) return { error: "One or more selected tests are not yours." };
 
@@ -453,23 +455,24 @@ export async function updateTestBooking(
     }
   }
 
-  void audit.transactionUpdated(doctorId, { source: "test_booking", bookingId });
+  void audit.transactionUpdated(scope.callerId, { source: "test_booking", bookingId });
 
   revalidatePath("/doctor/test-bookings");
   revalidatePath("/doctor/billing");
   revalidatePath("/doctor/income-expense");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
 export async function deleteTestBooking(bookingId: number): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-delete");
-  if (!doctorId) return { error: "You don't have permission to delete test bookings." };
+  const scope = await requireWriteScope("test-booking-delete");
+  if (!scope) return { error: "You don't have permission to delete test bookings." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
 
   const [existing] = await db
     .select({ id: testBookings.id, uploadedFilePath: testBookings.uploadedFilePath })
     .from(testBookings)
-    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test booking not found." };
 
   // Atomic delete: soft-delete linked bills + income transactions in the
@@ -505,7 +508,7 @@ export async function deleteTestBooking(bookingId: number): Promise<TestBookingA
     }
   }
 
-  void audit.transactionDeleted(doctorId, {
+  void audit.transactionDeleted(scope.callerId, {
     source: "test_booking",
     bookingId,
     linkedBills: linkedBills.length,
@@ -515,6 +518,7 @@ export async function deleteTestBooking(bookingId: number): Promise<TestBookingA
   revalidatePath("/doctor/income-expense");
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -522,15 +526,15 @@ export async function updateTestBookingStatus(
   bookingId: number,
   status: string
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-edit");
-  if (!doctorId) return { error: "You don't have permission to change booking status." };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { error: "You don't have permission to change booking status." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
   if (!(BOOKING_STATUSES as readonly string[]).includes(status)) return { error: "Invalid status." };
 
   const [existing] = await db
     .select({ id: testBookings.id, status: testBookings.status })
     .from(testBookings)
-    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test booking not found." };
 
   // Enforce the business state machine — arbitrary jumps are rejected
@@ -547,21 +551,22 @@ export async function updateTestBookingStatus(
     .set({ status: status as never, updatedAt: new Date() })
     .where(eq(testBookings.id, bookingId));
 
-  void audit.transactionStatusChanged(doctorId, { source: "test_booking", bookingId, status });
+  void audit.transactionStatusChanged(scope.callerId, { source: "test_booking", bookingId, status });
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
 export async function regenerateUploadLink(bookingId: number): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-edit");
-  if (!doctorId) return { error: "You don't have permission to manage upload links." };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { error: "You don't have permission to manage upload links." };
   if (!bookingId || !Number.isInteger(bookingId)) return { error: "Invalid booking ID." };
 
   const [existing] = await db
     .select({ id: testBookings.id })
     .from(testBookings)
-    .where(and(eq(testBookings.id, bookingId), eq(testBookings.doctorId, doctorId)));
+    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test booking not found." };
 
   await db
@@ -570,6 +575,7 @@ export async function regenerateUploadLink(bookingId: number): Promise<TestBooki
     .where(eq(testBookings.id, bookingId));
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -579,8 +585,9 @@ export async function createVendor(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-create");
-  if (!doctorId) return { error: "You don't have permission to add vendors." };
+  const scope = await requireWriteScope("test-booking-create");
+  if (!scope) return { error: "You don't have permission to add vendors." };
+  const doctorId = scope.anchorDoctorId;
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
@@ -606,6 +613,7 @@ export async function createVendor(
   });
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -613,8 +621,8 @@ export async function updateVendor(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-edit");
-  if (!doctorId) return { error: "You don't have permission to edit vendors." };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { error: "You don't have permission to edit vendors." };
   const vendorId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
@@ -627,7 +635,7 @@ export async function updateVendor(
   const [existing] = await db
     .select({ id: vendors.id })
     .from(vendors)
-    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+    .where(and(eq(vendors.id, vendorId), inArray(vendors.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Vendor not found." };
 
   await db
@@ -636,18 +644,19 @@ export async function updateVendor(
     .where(eq(vendors.id, vendorId));
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
 export async function deleteVendor(vendorId: number): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-delete");
-  if (!doctorId) return { error: "You don't have permission to delete vendors." };
+  const scope = await requireWriteScope("test-booking-delete");
+  if (!scope) return { error: "You don't have permission to delete vendors." };
   if (!vendorId || !Number.isInteger(vendorId)) return { error: "Invalid vendor ID." };
 
   const [existing] = await db
     .select({ id: vendors.id })
     .from(vendors)
-    .where(and(eq(vendors.id, vendorId), eq(vendors.doctorId, doctorId)));
+    .where(and(eq(vendors.id, vendorId), inArray(vendors.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Vendor not found." };
 
   // Business rule / data integrity: deleting a vendor cascades to every one
@@ -658,7 +667,7 @@ export async function deleteVendor(vendorId: number): Promise<TestBookingActionR
   const [linkedBooking] = await db
     .select({ id: testBookings.id })
     .from(testBookings)
-    .where(and(eq(testBookings.vendorId, vendorId), eq(testBookings.doctorId, doctorId)))
+    .where(and(eq(testBookings.vendorId, vendorId), inArray(testBookings.doctorId, scope.doctorIds)))
     .limit(1);
   if (linkedBooking) {
     return {
@@ -669,6 +678,7 @@ export async function deleteVendor(vendorId: number): Promise<TestBookingActionR
   await db.delete(vendors).where(eq(vendors.id, vendorId));
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -678,8 +688,9 @@ export async function createTest(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-create");
-  if (!doctorId) return { error: "You don't have permission to add tests." };
+  const scope = await requireWriteScope("test-booking-create");
+  if (!scope) return { error: "You don't have permission to add tests." };
+  const doctorId = scope.anchorDoctorId;
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
   const price = String(formData.get("price") ?? "0");
@@ -692,7 +703,7 @@ export async function createTest(
   const [dup] = await db
     .select({ id: tests.id })
     .from(tests)
-    .where(and(eq(tests.doctorId, doctorId), eq(tests.name, name), eq(tests.status, true)));
+    .where(and(inArray(tests.doctorId, scope.doctorIds), eq(tests.name, name), eq(tests.status, true)));
   if (dup) return { error: "A test with this name already exists." };
 
   await db.insert(tests).values({
@@ -706,6 +717,7 @@ export async function createTest(
   });
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
@@ -713,8 +725,8 @@ export async function updateTest(
   _prev: TestBookingActionResult,
   formData: FormData
 ): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-edit");
-  if (!doctorId) return { error: "You don't have permission to edit tests." };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { error: "You don't have permission to edit tests." };
   const testId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
@@ -728,7 +740,7 @@ export async function updateTest(
   const [existing] = await db
     .select({ id: tests.id })
     .from(tests)
-    .where(and(eq(tests.id, testId), eq(tests.doctorId, doctorId)));
+    .where(and(eq(tests.id, testId), inArray(tests.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test not found." };
 
   await db
@@ -737,22 +749,24 @@ export async function updateTest(
     .where(eq(tests.id, testId));
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }
 
 export async function deleteTest(testId: number): Promise<TestBookingActionResult> {
-  const doctorId = await requireDoctorPermission("test-booking-delete");
-  if (!doctorId) return { error: "You don't have permission to delete tests." };
+  const scope = await requireWriteScope("test-booking-delete");
+  if (!scope) return { error: "You don't have permission to delete tests." };
   if (!testId || !Number.isInteger(testId)) return { error: "Invalid test ID." };
 
   const [existing] = await db
     .select({ id: tests.id })
     .from(tests)
-    .where(and(eq(tests.id, testId), eq(tests.doctorId, doctorId)));
+    .where(and(eq(tests.id, testId), inArray(tests.doctorId, scope.doctorIds)));
   if (!existing) return { error: "Test not found." };
 
   await db.delete(tests).where(eq(tests.id, testId));
 
   revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
   return { error: null };
 }

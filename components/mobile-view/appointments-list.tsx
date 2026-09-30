@@ -20,7 +20,17 @@ type Appt = {
  * Mobile-only appointment list (rendered < sm, hidden ≥ sm).
  * One card per appointment — no horizontal table scroll.
  */
-export function AppointmentList({ appointments }: { appointments: Appt[] }) {
+export function AppointmentList({
+  appointments,
+  showConsultLink = true,
+  editBaseHref = "/doctor/appointments",
+}: {
+  appointments: Appt[];
+  /** Consultations are a doctor-facing module — the receptionist panel hides the shortcut. */
+  showConsultLink?: boolean;
+  /** Panel prefix for the edit page (admin tier uses /admin/appointments). */
+  editBaseHref?: string;
+}) {
   return (
     <div className="space-y-3 sm:hidden">
       {appointments.map((a) => (
@@ -53,6 +63,8 @@ export function AppointmentList({ appointments }: { appointments: Appt[] }) {
               appointmentId={a.id}
               status={a.status}
               consentFile={a.consentFile}
+              showConsultLink={showConsultLink}
+              editBaseHref={editBaseHref}
             />
           </div>
         </div>

@@ -16,10 +16,8 @@ import {
   doctorSchedules,
   users,
 } from "@/lib/db/schema";
-import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import { getCurrentUser } from "@/lib/auth/user";
-import { ensurePatientOfDoctor, ensureAppointmentOfDoctor } from "@/lib/auth/ownership";
-import { isPracticeDoctor, getPracticeDoctorIds, ensureClinicAccess, getClinicsOfDoctor } from "@/lib/queries/clinic";
+import { requireWriteScope, ensureAppointmentInScope, ensurePatientInScope, isAdminTierRole, type ActionScope } from "@/lib/auth/action-scope";
+import { ensureClinicAccess, getClinicsOfDoctor } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
@@ -112,24 +110,23 @@ async function getSchedulesForDay(doctorId: number, date: string, clinicId?: num
 }
 
 /**
- * Resolve the doctor the appointment is FOR. A receptionist/admin may pass
- * doctor_id to book for a practice doctor; doctors always book for self.
- * Returns null when the target doctor is outside the caller's practice.
+ * Resolve the doctor the appointment is FOR. Staff tiers (receptionist /
+ * admin / manager) may pass doctor_id to book for any doctor in their write
+ * scope; doctors always book for self.
+ * Returns null when the target doctor is outside the caller's scope.
  */
 async function resolveTargetDoctor(
-  callerDoctorId: number,
-  callerRole: string,
+  scope: ActionScope,
   formData: FormData
 ): Promise<number | null | "unauthorized"> {
   const raw = String(formData.get("doctor_id") ?? "").trim();
-  if (!raw) return callerDoctorId;
+  if (!raw) return scope.anchorDoctorId;
   const targetId = Number(raw);
   if (!Number.isInteger(targetId) || targetId <= 0) return null;
   // Doctors can only ever book for themselves — an injected doctor_id from a
   // doctor-role user must not silently retarget the booking.
-  if (callerRole === "doctor") return targetId === callerDoctorId ? callerDoctorId : "unauthorized";
-  if (!(await isPracticeDoctor(callerDoctorId, targetId))) return "unauthorized";
-  return targetId;
+  if (scope.strict) return targetId === scope.anchorDoctorId ? scope.anchorDoctorId : "unauthorized";
+  return scope.doctorIds.includes(targetId) ? targetId : "unauthorized";
 }
 
 /**
@@ -139,15 +136,19 @@ async function resolveTargetDoctor(
  * the receptionist's practice actually knows, not the target's unrelated own
  * clinic), else the target's first active clinic.
  */
-async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, callerDoctorId: number) {
+async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, callerScope: ActionScope) {
   const clinicId = Number(clinicIdRaw);
   if (clinicId && Number.isInteger(clinicId) && (await ensureClinicAccess(clinicId, effectiveDoctorId))) {
     return clinicId;
   }
   const targetClinics = await getActiveClinics(effectiveDoctorId);
-  if (effectiveDoctorId !== callerDoctorId) {
-    const practiceClinics = await getClinicsOfDoctor(callerDoctorId);
-    const shared = targetClinics.find((c) => practiceClinics.includes(c.id));
+  if (effectiveDoctorId !== callerScope.anchorDoctorId) {
+    // Prefer a clinic the CALLER's scope also knows (practice-shared), so
+    // front-desk/business bookings don't land on an unrelated own clinic.
+    const callerClinics = (
+      await Promise.all(callerScope.doctorIds.map((id) => getClinicsOfDoctor(id)))
+    ).flat();
+    const shared = targetClinics.find((c) => callerClinics.includes(c.id));
     if (shared) return shared.id;
   }
   return targetClinics[0]?.id ?? null;
@@ -194,14 +195,12 @@ export async function createAppointment(
   _prev: AppointmentActionResult,
   formData: FormData
 ): Promise<AppointmentActionResult> {
-  const doctorId = await requireDoctorPermission("appointments-create");
-  if (!doctorId) return { error: "You don't have permission to book appointments." };
-  const caller = await getCurrentUser();
-  const callerRole = caller?.role ?? "doctor";
+  const scope = await requireWriteScope("appointments-create");
+  if (!scope) return { error: "You don't have permission to book appointments." };
   const now = new Date();
 
-  // Receptionist may book for any practice doctor; doctors book for self.
-  const target = await resolveTargetDoctor(doctorId, callerRole, formData);
+  // Staff tiers may book for any in-scope doctor; doctors book for self.
+  const target = await resolveTargetDoctor(scope, formData);
   if (target === "unauthorized") return { error: "Selected doctor is not part of this practice." };
   if (target === null) return { error: "Invalid doctor." };
   const effectiveDoctorId = target;
@@ -276,8 +275,8 @@ export async function createAppointment(
   if (patientIdRaw) {
     patientId = Number(patientIdRaw);
     if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient." };
-    if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-      return { error: "Patient not found for this doctor." };
+    if (!(await ensurePatientInScope(patientId, scope))) {
+      return { error: "Patient not found for this practice." };
     }
   }
   if (!patientId && !patientString) return { error: "Select a patient or add a walk-in name." };
@@ -293,7 +292,7 @@ export async function createAppointment(
 
   // ── Schedule containment (mirrors legacy store) — per SELECTED doctor ──
   const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
-  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, doctorId);
+  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
   const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));
@@ -372,11 +371,11 @@ export async function createAppointment(
 
   let consentLink: string | null = null;
   if ((consentType === "consent" || consentType === "email") && appointmentId && patientId) {
-    const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"; // dev fallback — set NEXT_PUBLIC_APP_URL in prod
     consentLink = `${base}/my-consent/${await slugFromAppointmentId(appointmentId)}`;
   }
 
-  void audit.appointmentCreated(doctorId, {
+  void audit.appointmentCreated(scope.callerId, {
     appointmentId,
     patientId: patientId ?? null,
     patientString: patientString || null,
@@ -420,7 +419,9 @@ export async function createAppointment(
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 
+  if (isAdminTierRole(scope.callerRole)) redirect(`/admin/appointments?created=${appointmentId ?? ""}`);
   redirect(`/doctor/appointments?created=${appointmentId ?? ""}`);
 }
 
@@ -430,10 +431,8 @@ export async function updateAppointment(
   _prev: AppointmentActionResult,
   formData: FormData
 ): Promise<AppointmentActionResult> {
-  const doctorId = await requireDoctorPermission("appointments-edit");
-  if (!doctorId) return { error: "You don't have permission to edit appointments." };
-  const caller = await getCurrentUser();
-  const callerRole = caller?.role ?? "doctor";
+  const scope = await requireWriteScope("appointments-edit");
+  if (!scope) return { error: "You don't have permission to edit appointments." };
   const now = new Date();
 
   const appointmentIdRaw = String(formData.get("appointment_id") ?? "").trim();
@@ -454,19 +453,10 @@ export async function updateAppointment(
     return { error: "Invalid appointment ID." };
   }
 
-  // Practice-aware ownership: receptionists may edit any practice doctor's
-  // appointment; doctors only their own.
-  if (callerRole === "doctor") {
-    if (!(await ensureAppointmentOfDoctor(appointmentId, doctorId))) {
-      return { error: "Appointment not found." };
-    }
-  } else {
-    const practiceIds = await getPracticeDoctorIds(doctorId);
-    const [owned] = await db
-      .select({ id: appointments.id })
-      .from(appointments)
-      .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
-    if (!owned) return { error: "Appointment not found." };
+  // Scope-aware ownership: staff tiers may edit any in-scope doctor's
+  // appointment; doctors strictly their own.
+  if (!(await ensureAppointmentInScope(appointmentId, scope))) {
+    return { error: "Appointment not found." };
   }
 
   // Business rule: completed and cancelled appointments are immutable —
@@ -523,19 +513,19 @@ export async function updateAppointment(
   if (patientIdRaw) {
     patientId = Number(patientIdRaw);
     if (!Number.isInteger(patientId) || patientId <= 0) return { error: "Invalid patient." };
-    if (!(await ensurePatientOfDoctor(doctorId, patientId))) {
-      return { error: "Patient not found for this doctor." };
+    if (!(await ensurePatientInScope(patientId, scope))) {
+      return { error: "Patient not found for this practice." };
     }
   }
   if (!patientId && !patientString) return { error: "Select a patient or add a walk-in name." };
 
-  // Receptionist may reassign the appointment to another practice doctor.
+  // Staff tiers may reassign the appointment to another in-scope doctor.
   // No doctor_id in the form = keep the appointment's current doctor (never
   // silently reassign to the owner).
   const hasDoctorField = formData.get("doctor_id") !== null;
   let effectiveDoctorId: number;
   if (hasDoctorField) {
-    const target = await resolveTargetDoctor(doctorId, callerRole, formData);
+    const target = await resolveTargetDoctor(scope, formData);
     if (target === "unauthorized") return { error: "Selected doctor is not part of this practice." };
     if (target === null) return { error: "Invalid doctor." };
     effectiveDoctorId = target;
@@ -565,7 +555,7 @@ export async function updateAppointment(
 
   // ── Schedule containment — per (possibly reassigned) doctor ──
   const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
-  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, doctorId);
+  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
   const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));
@@ -597,7 +587,7 @@ export async function updateAppointment(
     })
     .where(eq(appointments.id, appointmentId));
 
-  void audit.appointmentUpdated(doctorId, {
+  void audit.appointmentUpdated(scope.callerId, {
     appointmentId,
     patientId,
     patientString: patientString || null,
@@ -607,7 +597,7 @@ export async function updateAppointment(
   });
 
   void notifyUser({
-    userId: doctorId,
+    userId: effectiveDoctorId,
     title: "Appointment updated",
     message: `${patientString || `Patient #${patientId ?? "—"}`} — ${date} at ${time}`,
     type: "info",
@@ -616,39 +606,32 @@ export async function updateAppointment(
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 
+  if (isAdminTierRole(scope.callerRole)) redirect(`/admin/appointments?updated=true`);
   redirect("/doctor/appointments?updated=true");
 }
 
 // ── Cancel ────────────────────────────────────────────────────────────────
 
-/** Practice-aware ownership for receptionists; strict single-doctor for doctors. */
+/** Scope-aware ownership for staff tiers; strict single-doctor for doctors. */
 async function ensureAppointmentAccessible(
   appointmentId: number,
-  doctorId: number,
-  callerRole: string
+  scope: ActionScope
 ): Promise<boolean> {
-  if (callerRole === "doctor") return ensureAppointmentOfDoctor(appointmentId, doctorId);
-  const practiceIds = await getPracticeDoctorIds(doctorId);
-  const [owned] = await db
-    .select({ id: appointments.id })
-    .from(appointments)
-    .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
-  return !!owned;
+  return ensureAppointmentInScope(appointmentId, scope);
 }
 
 export async function cancelAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await requireDoctorPermission("appointments-cancel");
-  if (!doctorId) return { error: "You don't have permission to cancel appointments." };
-  const caller = await getCurrentUser();
-  const callerRole = caller?.role ?? "doctor";
+  const scope = await requireWriteScope("appointments-cancel");
+  if (!scope) return { error: "You don't have permission to cancel appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, scope))) {
     return { error: "Appointment not found." };
   }
 
@@ -656,6 +639,7 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
   const [appt] = await db
     .select({
       id: appointments.id,
+      doctorId: appointments.doctorId,
       date: appointments.date,
       time: appointments.time,
       status: appointments.status,
@@ -698,7 +682,7 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
       )
     );
 
-  void audit.appointmentCancelled(doctorId, {
+  void audit.appointmentCancelled(scope.callerId, {
     appointmentId,
     patientId: appt.patientId,
     patientString: appt.patientString,
@@ -707,7 +691,7 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
   });
 
   void notifyUser({
-    userId: doctorId,
+    userId: appt.doctorId,
     title: "Appointment cancelled",
     message: `${appt.patientString || `Patient #${appt.patientId ?? "—"}`} — ${appt.date} at ${appt.time}`,
     type: "warning",
@@ -750,6 +734,7 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 
   return { error: null };
 }
@@ -757,17 +742,15 @@ export async function cancelAppointment(appointmentId: number): Promise<Appointm
 // ── Complete ──────────────────────────────────────────────────────────────
 
 export async function completeAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await requireDoctorPermission("appointments-complete");
-  if (!doctorId) return { error: "You don't have permission to complete appointments." };
-  const caller = await getCurrentUser();
-  const callerRole = caller?.role ?? "doctor";
+  const scope = await requireWriteScope("appointments-complete");
+  if (!scope) return { error: "You don't have permission to complete appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, scope))) {
     return { error: "Appointment not found." };
   }
 
@@ -788,7 +771,7 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
     .set({ status: "completed", updatedAt: now })
     .where(eq(appointments.id, appointmentId));
 
-  void audit.appointmentUpdated(doctorId, {
+  void audit.appointmentUpdated(scope.callerId, {
     appointmentId,
     status: "completed",
   });
@@ -829,6 +812,7 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 
   return { error: null };
 }
@@ -836,17 +820,15 @@ export async function completeAppointment(appointmentId: number): Promise<Appoin
 // ── Delete ────────────────────────────────────────────────────────────────
 
 export async function deleteAppointment(appointmentId: number): Promise<AppointmentActionResult> {
-  const doctorId = await requireDoctorPermission("appointments-delete");
-  if (!doctorId) return { error: "You don't have permission to delete appointments." };
-  const caller = await getCurrentUser();
-  const callerRole = caller?.role ?? "doctor";
+  const scope = await requireWriteScope("appointments-delete");
+  if (!scope) return { error: "You don't have permission to delete appointments." };
   const now = new Date();
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return { error: "Invalid appointment ID." };
   }
 
-  if (!(await ensureAppointmentAccessible(appointmentId, doctorId, callerRole))) {
+  if (!(await ensureAppointmentAccessible(appointmentId, scope))) {
     return { error: "Appointment not found." };
   }
 
@@ -914,7 +896,7 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
   // Hard delete the appointment
   await db.delete(appointments).where(eq(appointments.id, appointmentId));
 
-  void audit.appointmentUpdated(doctorId, {
+  void audit.appointmentUpdated(scope.callerId, {
     appointmentId,
     action: "deleted",
     date: appt.date,
@@ -924,6 +906,7 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
 
   return { error: null };
 }

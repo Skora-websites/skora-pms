@@ -3,6 +3,7 @@ import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/user";
 import { isPracticeDoctor } from "@/lib/queries/clinic";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
 
@@ -12,17 +13,22 @@ export const runtime = "nodejs";
  * Mirrors legacy AppointmentController@getBookedTimes:
  *  - returns all non-cancelled appointment times for the doctor on the given date
  *  - returns active DoctorSchedule rows for the weekday (optionally filtered by clinic)
- *  - `doctor_id` lets a receptionist query a practice doctor's slots (validated
- *    against the caller's practice — no cross-practice probing)
+ *  - `doctor_id` lets staff (receptionist / admin-tier) query an in-scope
+ *    doctor's slots (validated against the caller's scope — no cross-scope probing)
  *  - `exclude_id` lets the edit form ignore the appointment being edited
  */
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  const isAdminTier = user.role === "admin" || user.role === "manager";
+  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const resolvedDoctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  // Admin tier: resolve the practice/business scope (in-scope doctor ids);
+  // doctor/receptionist keep the practice-anchor semantics.
+  const scopeDoctorIds = isAdminTier ? (await getBusinessScope()).doctorIds : null;
+  const resolvedDoctorId =
+    user.role === "receptionist" ? (user.doctorId ?? user.id) : isAdminTier ? (scopeDoctorIds?.[0] ?? user.id) : user.id;
 
   const { searchParams } = request.nextUrl;
   const date = searchParams.get("date") ?? "";
@@ -40,10 +46,10 @@ export async function GET(request: NextRequest) {
     if (!Number.isInteger(requested) || requested <= 0) {
       return NextResponse.json({ error: "Invalid doctor_id" }, { status: 400 });
     }
-    if (
-      requested !== resolvedDoctorId &&
-      !(await isPracticeDoctor(resolvedDoctorId, requested))
-    ) {
+    const inScope = isAdminTier
+      ? (scopeDoctorIds?.includes(requested) ?? false)
+      : requested === resolvedDoctorId || (await isPracticeDoctor(resolvedDoctorId, requested));
+    if (!inScope) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     doctorId = requested;
