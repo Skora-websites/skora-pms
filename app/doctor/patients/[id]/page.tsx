@@ -78,7 +78,7 @@ export default async function PatientDetailPage({
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Link>
               <DeletePatientButton patientId={patient.id} patientName={patient.name} />
-              <Link href="/doctor/appointments/book" className="btn-primary !py-2 text-xs">
+              <Link href={`/doctor/appointments/book?patient=${patient.id}`} className="btn-primary !py-2 text-xs">
                 <CalendarPlus className="h-3.5 w-3.5" /> Book
               </Link>
             </div>

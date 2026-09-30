@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CalendarPlus } from "lucide-react";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -72,6 +73,9 @@ export default async function AdminPatientDetailPage({
           </p>
         </div>
         <StatusBadge status={patient.status ?? "active"} />
+        <Link href={`/admin/appointments/book?patient=${patient.id}`} className="btn-primary !py-2 text-xs">
+          <CalendarPlus className="h-3.5 w-3.5" /> Book
+        </Link>
         <Link href="/admin/patients" className="btn-secondary !py-2 text-xs">
           Back to list
         </Link>

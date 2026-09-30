@@ -23,9 +23,12 @@ type ConsentMode = "upload" | "generate";
 export function BookAppointmentForm({
   patients,
   doctors = [],
+  preselectedPatientId = null,
 }: {
   patients: Patient[];
   doctors?: DoctorOption[];
+  /** Patient pre-chosen by the "Book" button on the patient's page (?patient=). */
+  preselectedPatientId?: number | null;
 }) {
   const [state, formAction, pending] = useActionState(createAppointment, initialState);
   // Flow: the consent popup (Upload / Generate new) opens first, then the
@@ -82,7 +85,12 @@ export function BookAppointmentForm({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="patient_id" className="label">Patient</label>
-            <select id="patient_id" name="patient_id" className="input" defaultValue="">
+            <select
+              id="patient_id"
+              name="patient_id"
+              className="input"
+              defaultValue={preselectedPatientId != null ? String(preselectedPatientId) : ""}
+            >
               <option value="" disabled>Select patient...</option>
               {patients.map((p) => (
                 <option key={p.id} value={p.id}>
