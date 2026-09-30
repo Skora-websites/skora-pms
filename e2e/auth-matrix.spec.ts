@@ -157,6 +157,41 @@ test("patient-role user blocked from admin tier pages (server-side redirect)", a
   await ctx.close();
 });
 
+// Regression (audit NV-1): the /api/super-admin route handlers used to admit
+// the "admin" (business-owner) role from a stale ["super_admin","admin"] list,
+// exposing platform-wide reads (support-ticket export) to a tenant principal.
+// The pages were fixed long before the APIs were — assert the API gates too.
+const SUPER_ADMIN_APIS = [
+  "/api/super-admin/support/export",
+  "/api/super-admin/masters/medicines/export",
+  "/api/super-admin/file/x.png",
+];
+
+test("business-owner role gets 403 on every super-admin API (role-list regression)", async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: "e2e/.auth/owner.json" });
+  for (const url of SUPER_ADMIN_APIS) {
+    const res = await ctx.request.get(url, { maxRedirects: 0 });
+    // Exactly 403: the authenticated tenant must be forbidden outright —
+    // not 200 (the old bug), not a login redirect.
+    expect(res.status(), `owner on ${url} -> ${res.status()}`).toBe(403);
+  }
+  await ctx.close();
+});
+
+test("super_admin role still passes super-admin API gates (positive control)", async ({ browser }) => {
+  // admin.json stores the seeded super-admin session. The platform operator
+  // must NOT be locked out by the fix: exports return 200; the file route
+  // passes the gate and reaches its own path validation (404 for a bad path).
+  const ctx = await browser.newContext({ storageState: "e2e/.auth/admin.json" });
+  const support = await ctx.request.get("/api/super-admin/support/export", { maxRedirects: 0 });
+  expect(support.status(), "super_admin support export").toBe(200);
+  const masters = await ctx.request.get("/api/super-admin/masters/medicines/export", { maxRedirects: 0 });
+  expect(masters.status(), "super_admin masters export").toBe(200);
+  const file = await ctx.request.get("/api/super-admin/file/x.png", { maxRedirects: 0 });
+  expect(file.status(), "super_admin file route passes role gate").toBe(404);
+  await ctx.close();
+});
+
 test("manager-role user is admitted to /admin and bounced from owner-only modules", async ({ browser }) => {
   // Manager session: log in on the fly (seed data assigns manager1 to the
   // primary clinic with the full clinic-ops module set).

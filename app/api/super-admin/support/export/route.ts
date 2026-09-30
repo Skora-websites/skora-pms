@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["super_admin", "admin"].includes(user.role)) {
+  // Platform-operator only: "admin" is the business owner (a tenant principal).
+  // Admitting it here let a tenant export every ticket platform-wide.
+  if (user.role !== "super_admin") {
     return new Response("Forbidden", { status: 403 });
   }
 

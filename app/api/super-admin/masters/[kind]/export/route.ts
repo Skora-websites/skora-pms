@@ -30,7 +30,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ kind: string }> }
 ) {
-  await requireRole(["super_admin", "admin"]);
+  // Platform-operator only: "admin" is the business owner (a tenant principal).
+  await requireRole(["super_admin"]);
 
   const { kind } = await params;
   const table = TABLES[kind as Kind];
