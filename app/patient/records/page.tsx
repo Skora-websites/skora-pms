@@ -6,6 +6,7 @@ import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Health Records · Patient" };
+export const dynamic = "force-dynamic";
 
 export default async function PatientRecordsPage() {
   const user = await requireRole(["patient"]);

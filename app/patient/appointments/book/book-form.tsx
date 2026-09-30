@@ -242,9 +242,18 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                   {slotMessage}
                 </p>
               ) : slots.length === 0 ? (
-                <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm text-slate-400">
-                  No available slots for this date.
-                </p>
+                <div className="rounded-xl bg-slate-50 px-4 py-3 text-center">
+                  <p className="text-sm text-slate-400">No available slots for this date.</p>
+                  {/* Slot data can go stale between fetch and booking (another
+                      patient may have taken the slot) — offer a quick retry. */}
+                  <button
+                    type="button"
+                    onClick={() => setFetchedKey("")}
+                    className="mt-1 text-xs font-semibold text-brand-700 hover:text-brand-600"
+                  >
+                    Refresh slots
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {slots.map((slot) => {

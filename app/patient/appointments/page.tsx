@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, CalendarPlus } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2 } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
@@ -8,10 +8,19 @@ import { formatDate } from "@/lib/utils";
 import { CancelAppointmentButton } from "./cancel-appointment-button";
 
 export const metadata: Metadata = { title: "Appointments · Patient" };
+export const dynamic = "force-dynamic";
 
-export default async function PatientAppointmentsPage() {
+export default async function PatientAppointmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
   const user = await requireRole(["patient"]);
-  const appointments = await getPatientAppointments(user.id);
+  const [appointments, params] = await Promise.all([
+    getPatientAppointments(user.id),
+    searchParams,
+  ]);
+  const justCreated = params.created === "1";
 
   return (
     <div>
@@ -25,6 +34,16 @@ export default async function PatientAppointmentsPage() {
           </Link>
         }
       />
+
+      {justCreated && (
+        <div
+          role="status"
+          className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Appointment booked successfully. A confirmation email is on its way.
+        </div>
+      )}
 
       {appointments.length === 0 ? (
         <EmptyState

@@ -1,5 +1,6 @@
 // Auth workflows: wrong password, deactivated account, logout, session persistence, refresh, rate limit.
 import { test, expect, type Page } from "@playwright/test";
+import { ACCOUNTS, SEED_PASSWORD } from "./test-env";
 
 // Relative URL — resolves against the config baseURL (E2E_BASE_URL override).
 const LOGIN = "/login";
@@ -13,7 +14,7 @@ async function login(page: Page, email: string, password: string) {
 
 test("wrong password shows error, no session cookie set", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "WrongPass1!");
+  await login(page, ACCOUNTS.doctor, "WrongPass1!");
   await expect(page.getByText("Invalid email or password.")).toBeVisible({ timeout: 15000 });
   expect((await page.context().cookies()).filter((c) => c.name === "skora_session")).toHaveLength(0);
   await page.close();
@@ -29,7 +30,7 @@ test("nonexistent email shows same generic error (no user enumeration)", async (
 test("empty email blocked — HTML required attr stops submit, stays on form", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
   await page.goto(LOGIN);
-  await page.getByLabel("Password").fill("Admin@123");
+  await page.getByLabel("Password").fill(SEED_PASSWORD);
   await page.getByRole("button", { name: /Sign in/i }).click();
   // HTML5 validation: no navigation, no error text, still on /login
   await page.waitForTimeout(1000);
@@ -40,14 +41,14 @@ test("empty email blocked — HTML required attr stops submit, stays on form", a
 
 test("short password rejected by zod with clear message", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "nope");
+  await login(page, ACCOUNTS.doctor, "nope");
   await expect(page.getByText("Password must be at least 6 characters")).toBeVisible({ timeout: 15000 });
   await page.close();
 });
 
 test("successful login sets httpOnly session cookie + lands on role home", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   const cookie = (await page.context().cookies()).find((c) => c.name === "skora_session");
   expect(cookie).toBeTruthy();
@@ -57,7 +58,7 @@ test("successful login sets httpOnly session cookie + lands on role home", async
 
 test("session cookie persists ~30 days (not a browser-session cookie)", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   const cookie = (await page.context().cookies()).find((c) => c.name === "skora_session");
   expect(cookie).toBeTruthy();
@@ -72,7 +73,7 @@ test("session cookie persists ~30 days (not a browser-session cookie)", async ({
 
 test("session survives page refresh", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   await page.reload();
   await expect(page).toHaveURL(/\/doctor(\/|$)/); // still authed after reload
@@ -81,7 +82,7 @@ test("session survives page refresh", async ({ browser }) => {
 
 test("logout destroys session — doctor page redirects to /login after", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   await page.locator("header button", { hasText: "Doctor" }).first().click(); // open profile dropdown
   await page.getByRole("button", { name: "Log out" }).first().click();
@@ -94,11 +95,11 @@ test("logout destroys session — doctor page redirects to /login after", async 
 
 test("login page while authenticated: form submits → bounce to role home, no double session", async ({ browser }) => {
   const page = await browser.newPage({ storageState: { cookies: [], origins: [] } });
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   // second login submit while authed: loginAction sees existing session → redirect home
   await page.goto(LOGIN);
-  await login(page, "doctor@gmail.com", "Admin@123");
+  await login(page, ACCOUNTS.doctor, SEED_PASSWORD);
   await page.waitForURL(/\/doctor(\/|$)/, { timeout: 30000 });
   const cookiesNow = (await page.context().cookies()).filter((c) => c.name === "skora_session");
   expect(cookiesNow.length).toBeLessThanOrEqual(1);

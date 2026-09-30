@@ -35,10 +35,11 @@ test.describe("P4.2 Test Bookings", () => {
     await page.locator(".fixed.inset-0", { hasText: "Lab tests" }).click({ position: { x: 10, y: 10 } });
     await expect(page.getByRole("button", { name: /New booking/i })).toBeVisible();
 
-    // ── Create booking for patient 3 (PAT8702578) ────────────────────────────
+    // ── Create booking for the first demo patient (Rohit Malhotra, phone
+    // 9876501234 — seeded with legacy-parity registration ID PAT8702578) ──
     await page.getByRole("button", { name: /New booking/i }).click();
     const search = page.getByPlaceholder(/Search by mobile number or name/);
-    await search.fill("77777");
+    await search.fill("9876501234");
     await expect(page.locator("button", { hasText: "PAT8702578" }).first()).toBeVisible({ timeout: 10_000 });
     await page.locator("button", { hasText: "PAT8702578" }).first().click();
 

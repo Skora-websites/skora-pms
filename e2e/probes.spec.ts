@@ -1,4 +1,5 @@
 import { chromium } from '@playwright/test';
+import { BASE_URL } from './test-env';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -17,7 +18,7 @@ import { chromium } from '@playwright/test';
   console.log('\n========== PROBE 1: Push API + Periodic Background Sync + Geo in SW ==========');
   const page1 = await context.newPage();
   page1.on('console', (msg) => console.log(`[P1-${msg.type()}] ${msg.text()}`));
-  await page1.goto('http://localhost:3000/probes/probe1-push-sync.html');
+  await page1.goto(`${BASE_URL}/probes/probe1-push-sync.html`);
   await page1.waitForLoadState('domcontentloaded');
   await page1.waitForTimeout(1000);
 
@@ -56,7 +57,7 @@ import { chromium } from '@playwright/test';
   console.log('\n========== PROBE 2: Visibility API + Wake Lock + sendBeacon ==========');
   const page2 = await context.newPage();
   page2.on('console', (msg) => console.log(`[P2-${msg.type()}] ${msg.text()}`));
-  await page2.goto('http://localhost:3000/probes/probe2-visibility-wakelock.html');
+  await page2.goto(`${BASE_URL}/probes/probe2-visibility-wakelock.html`);
   await page2.waitForLoadState('domcontentloaded');
   await page2.waitForTimeout(1000);
 
@@ -102,12 +103,12 @@ import { chromium } from '@playwright/test';
   // ============================
   console.log('\n========== PROBE 3: Capacitor Sidecar (documented analysis) ==========');
   const page3 = await context.newPage();
-  await page3.goto('http://localhost:3000/probes/probe3-capacitor.md');
+  await page3.goto(`${BASE_URL}/probes/probe3-capacitor.md`);
   await page3.waitForLoadState('domcontentloaded');
   console.log('3a. Capacitor probe doc loaded: ' + (page3.url().endsWith('.md') ? 'YES (raw markdown served)' : 'YES (rendered)'));
 
   // Quick check: is the file accessible as raw text?
-  const response = await page3.request.get('http://localhost:3000/probes/probe3-capacitor.md');
+  const response = await page3.request.get(`${BASE_URL}/probes/probe3-capacitor.md`);
   const isAccessible = response.ok();
   console.log(`3b. Probe3 doc HTTP accessible: ${isAccessible} (${response.status()})`);
   console.log('3c. Bundle size estimate: ~3-5MB (Capacitor core + geolocation + background-task)');

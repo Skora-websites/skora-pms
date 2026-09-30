@@ -28,7 +28,7 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return new Response("Forbidden", { status: 403 });
   }
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;

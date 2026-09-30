@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarPlus, Phone, Mail, MapPin, Stethoscope, Pencil } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getPatientById, getPatientPhotoPath } from "@/lib/queries/doctor";
+import { getPatientById, getPatientPhotoPath, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
 import { DeletePatientButton } from "./delete-button";
@@ -22,8 +22,8 @@ export default async function PatientDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const { id } = await params;
   const data = await getPatientById(doctorId, Number(id));
   if (!data) notFound();

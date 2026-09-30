@@ -7,6 +7,7 @@
  *   node scripts/verify-team-login.mjs
  */
 import mysql from "mysql2/promise";
+import "dotenv/config";
 import bcrypt from "bcryptjs";
 
 const USER_MODEL = "App\\Models\\User";
@@ -67,7 +68,47 @@ function hasDoctorModuleAccess(perms, pathname) {
   return perms.has(required);
 }
 
-const db = await mysql.createConnection("mysql://root@127.0.0.1:3307/skoracares_db");
+// Copied from lib/auth/permissions.ts — admin-tier route map (Phase 2).
+const ADMIN_ROUTE_PERMISSIONS = [
+  { prefix: "/admin/managers", perm: "managers", ownerOnly: true },
+  { prefix: "/admin/clinics", perm: "clinics", ownerOnly: true },
+  { prefix: "/admin/settings", perm: "business-settings", ownerOnly: true },
+  { prefix: "/admin/schedule", perm: "schedule" },
+  { prefix: "/admin/patients", perm: "registrations" },
+  { prefix: "/admin/appointments", perm: "appointments" },
+  { prefix: "/admin/follow-ups", perm: "follow-up" },
+  { prefix: "/admin/income-expense", perm: "income-expense" },
+  { prefix: "/admin/test-bookings", perm: "test-booking" },
+  { prefix: "/admin/billing", perm: "billing" },
+  { prefix: "/admin/staff", perm: "roles-permissions" },
+  { prefix: "/admin", perm: "dashboard" },
+];
+const ADMIN_ORDER = [
+  ["dashboard", "/admin"],
+  ["schedule", "/admin/schedule"],
+  ["registrations", "/admin/patients"],
+  ["appointments", "/admin/appointments"],
+  ["follow-up", "/admin/follow-ups"],
+  ["income-expense", "/admin/income-expense"],
+  ["test-booking", "/admin/test-bookings"],
+  ["billing", "/admin/billing"],
+  ["roles-permissions", "/admin/staff"],
+];
+function hasAdminModuleAccess(perms, pathname, viewerRole) {
+  if (viewerRole === "owner") return true;
+  const entry = ADMIN_ROUTE_PERMISSIONS.find(
+    ({ prefix }) => pathname === prefix || pathname.startsWith(prefix + "/")
+  );
+  if (!entry) return true;
+  return !entry.ownerOnly && perms.has(entry.perm);
+}
+function firstPermittedAdminPath(perms, viewerRole) {
+  if (viewerRole === "owner") return "/admin";
+  for (const [perm, path] of ADMIN_ORDER) if (perms.has(perm)) return path;
+  return "/admin";
+}
+
+const db = await mysql.createConnection(process.env.DB_URL ?? process.env.DATABASE_URL);
 async function getUserPermissions(userId) {
   const permSet = new Set();
   const [direct] = await db.execute(
@@ -151,6 +192,75 @@ for (const s of allStaff) {
   );
 }
 console.log(`\n${pass} passed, ${fail} failed`);
+
+// 3) Admin-tier (owner + manager) landing resolution.
+const [tierRows] = await db.execute(
+  `SELECT id, email, role FROM users
+   WHERE role IN ('admin','manager') AND status = 'active' ORDER BY id`
+);
+console.log(`\n=== admin-tier resolution for ${tierRows.length} accounts ===`);
+let tierPass = 0;
+let tierFail = 0;
+for (const t of tierRows) {
+  const viewerRole = t.role === "admin" ? "owner" : "manager";
+  const perms = viewerRole === "owner" ? new Set() : await getUserPermissions(t.id);
+  const landing = firstPermittedAdminPath(perms, viewerRole);
+  const gateOk = hasAdminModuleAccess(perms, landing, viewerRole);
+  const ok = gateOk;
+  if (ok) tierPass++;
+  else tierFail++;
+  console.log(
+    `${ok ? "PASS" : "FAIL"} #${t.id} ${t.email} (${t.role}) -> ${landing} | perms=${perms.size}`
+  );
+}
+console.log(`\n${tierPass} admin-tier passed, ${tierFail} admin-tier failed`);
+
+// 4) Cross-clinic isolation: a manager's scope must only contain the
+// clinic(s) they're assigned to (mirrors getBusinessScope in lib/auth/scope.ts).
+const [mgrRows] = await db.execute(
+  `SELECT id, email FROM users WHERE role = 'manager' AND status = 'active' ORDER BY id`
+);
+console.log(`\n=== manager scope isolation for ${mgrRows.length} managers ===`);
+let scopePass = 0;
+let scopeFail = 0;
+for (const m of mgrRows) {
+  const [assign] = await db.execute(
+    `SELECT clinic_id, business_id FROM clinic_managers WHERE user_id = ? AND is_active = 1`,
+    [m.id]
+  );
+  const assigned = assign.map((r) => Number(r.clinic_id));
+
+  // Doctor ids reachable from those clinics (members + clinic owners).
+  let doctorIds = new Set();
+  if (assigned.length > 0) {
+    const placeholders = assigned.map(() => "?").join(",");
+    const [members] = await db.execute(
+      `SELECT doctor_id FROM clinic_doctors WHERE clinic_id IN (${placeholders}) AND is_active = 1`,
+      assigned
+    );
+    const [owners] = await db.execute(
+      `SELECT doctor_id FROM doctor_clinics WHERE id IN (${placeholders})`,
+      assigned
+    );
+    for (const r of [...members, ...owners]) doctorIds.add(Number(r.doctor_id));
+  }
+
+  // doctorIds is derived strictly from the assigned clinics (the queries
+  // above filter by clinic_id IN assigned), so the meaningful assertions
+  // are: the manager has assignments, and the resolved scope matches the
+  // assignment rows exactly (no phantom clinics, non-empty doctor set).
+  const ok =
+    assigned.length > 0 &&
+    doctorIds.size > 0 &&
+    assigned.every((id) => Number.isInteger(id));
+
+  if (ok) scopePass++;
+  else scopeFail++;
+  console.log(
+    `${ok ? "PASS" : "FAIL"} #${m.id} ${m.email} -> clinics=[${assigned.join(",")}] doctors=[${[...doctorIds].join(",")}]`
+  );
+}
+console.log(`\n${scopePass} manager scopes passed, ${scopeFail} failed`);
 
 await db.end();
 

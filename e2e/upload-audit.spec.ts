@@ -2,9 +2,9 @@ import { test, expect } from "@playwright/test";
 import m from "mysql2/promise";
 import fs from "node:fs";
 import { unique, tinyPdf } from "./helpers";
+import { DB, BASE_URL, SEED_PASSWORD, type DbRow } from "./test-env";
 
-const DB = { host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db" };
-type Row<T> = [T, unknown];
+type Row<T> = DbRow<T>;
 async function query<T>(sql: string, params: unknown[]): Promise<T[]> {
   const conn = await m.createConnection(DB);
   try {
@@ -50,7 +50,9 @@ async function freshBooking(page: import("@playwright/test").Page): Promise<stri
 
   await page.getByRole("button", { name: /New booking/i }).click();
   const search = page.getByPlaceholder(/Search by mobile number or name/);
-  await search.fill("77777");
+  // Rohit Malhotra's phone — seeded demo patient (registration ID
+  // PAT8702578). Name/phone search; the old "77777" fragment matched nothing.
+  await search.fill("9876501234");
   await page.locator("button", { hasText: "PAT8702578" }).first().waitFor({ timeout: 10_000 });
   await page.locator("button", { hasText: "PAT8702578" }).first().click();
   await page.getByLabel("Vendor").selectOption({ label: vendorName });
@@ -71,7 +73,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
   test("wrong type rejected, retry with valid pdf works, doctor report fetch auth-scoped", async ({ page, context, browser }) => {
     // Grant clipboard for the origin the suite actually runs on (E2E_BASE_URL
     // overrides the default :3100 dev-server port).
-    const origin = new URL(process.env.E2E_BASE_URL ?? "http://localhost:3100").origin;
+    const origin = new URL(BASE_URL).origin;
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
     const link = await freshBooking(page);
 
@@ -128,8 +130,8 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await expect(otpMsg).toBeVisible({ timeout: 15_000 });
     const otp = (await otpMsg.textContent())!.match(/(\d{6})/)![1];
     await otherPage.locator('input[name="otp"]').fill(otp);
-    await otherPage.getByLabel("Password", { exact: true }).fill("Admin@123");
-    await otherPage.getByLabel("Confirm password").fill("Admin@123");
+    await otherPage.getByLabel("Password", { exact: true }).fill(SEED_PASSWORD);
+    await otherPage.getByLabel("Confirm password").fill(SEED_PASSWORD);
     await otherPage.getByRole("button", { name: /Create account/i }).click();
     await otherPage.waitForURL(/\/doctor(\/|$)/, { timeout: 30_000 });
     const crossRes = await otherCtx.request.get(`/api/doctor/test-bookings/${post[0].id}/report`);

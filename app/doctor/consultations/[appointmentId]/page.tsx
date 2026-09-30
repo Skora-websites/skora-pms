@@ -7,6 +7,7 @@ import {
   getAppointmentById,
   getConsultationIdByAppointment,
   getBillingTypes,
+  resolvePracticeDoctorId,
 } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { ConsultationForm } from "./consultation-form";
@@ -27,8 +28,8 @@ export default async function ConsultationPage({
 }: {
   params: Promise<{ appointmentId: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const { appointmentId } = await params;
   const appointment = await getAppointmentById(doctorId, Number(appointmentId));
   if (!appointment) notFound();

@@ -26,7 +26,7 @@ export type DutyActionResult = { error: string | null };
 export async function setDutyMode(mode: DutyMode): Promise<DutyActionResult> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return { error: "Only doctors can change duty status." };
   }
   // Receptionists/admins act on behalf of their linked doctor.

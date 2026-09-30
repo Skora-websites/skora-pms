@@ -4,17 +4,16 @@ import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
+import { SESSION_MAX_AGE_S } from "@/lib/config";
 
 export const SESSION_COOKIE = "skora_session";
 
 /**
- * Session lifetime: 30 days. The user stays logged in for a month unless
- * they explicitly sign out (or the session is revoked server-side via
- * logout-all / password change / admin kick).
- * Single source of truth — the cookie maxAge and the JWT expiry are both
- * derived from it so they can never drift apart.
+ * Session lifetime in seconds — env-driven via lib/config (SESSION_MAX_AGE,
+ * default 30 days). Single source of truth: the cookie maxAge and the JWT
+ * expiry are both derived from it so they can never drift apart.
  */
-export const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+export const SESSION_MAX_AGE = SESSION_MAX_AGE_S;
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;

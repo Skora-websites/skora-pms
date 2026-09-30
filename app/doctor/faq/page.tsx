@@ -8,7 +8,7 @@ import { FaqAccordion } from "./faq-accordion";
 export const metadata: Metadata = { title: "FAQ · Doctor" };
 
 export default async function DoctorFaqPage() {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  await requireRole(["doctor", "receptionist"]);
   const landing = await getLandingData();
   const faqSection = landing.get("faq");
   const items = faqSection?.items ?? [];

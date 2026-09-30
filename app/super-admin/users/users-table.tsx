@@ -10,7 +10,7 @@ import { formatDate, initials } from "@/lib/utils";
 
 const initialState = { error: null as string | null };
 
-const ROLES = ["doctor", "patient", "receptionist", "admin", "super_admin"] as const;
+const ROLES = ["doctor", "patient", "receptionist", "manager", "admin", "super_admin"] as const;
 
 type UserRow = {
   id: number;

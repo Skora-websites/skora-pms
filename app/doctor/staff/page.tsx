@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Users } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { db } from "@/lib/db";
 import { users, roles, modelHasRoles } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { initials, formatDate } from "@/lib/utils";
 import { StaffForm } from "./staff-form";
@@ -15,8 +16,8 @@ export const metadata: Metadata = { title: "My Staff · Doctor" };
 const USER_MODEL = "App\\Models\\User";
 
 export default async function StaffPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
 
   const [staff, practiceRoles] = await Promise.all([
     db
@@ -35,11 +36,20 @@ export default async function StaffPage() {
     db.select({ id: roles.id, name: roles.name }).from(roles).where(eq(roles.doctorId, doctorId)),
   ]);
 
-  // Role name per staff member (first practice role assigned).
+  // Role name per staff member (first practice role assigned). Scoped to
+  // this practice's role ids — no global table scan (F-06).
   const roleRows = await db
     .select({ modelId: modelHasRoles.modelId, roleId: modelHasRoles.roleId })
     .from(modelHasRoles)
-    .where(eq(modelHasRoles.modelType, USER_MODEL));
+    .where(
+      and(
+        eq(modelHasRoles.modelType, USER_MODEL),
+        inArray(
+          modelHasRoles.roleId,
+          practiceRoles.length > 0 ? practiceRoles.map((r) => r.id) : [-1]
+        )
+      )
+    );
   const roleNameById = new Map(practiceRoles.map((r) => [r.id, r.name]));
   const roleOfStaff = new Map<number, string>();
   for (const rr of roleRows) {

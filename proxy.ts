@@ -1,9 +1,16 @@
 /**
- * Security headers middleware.
+ * Proxy (Next.js 16 middleware — Node.js runtime) — the outer security net.
  *
- * Sets security-related HTTP headers on every response:
- *   - CSP, HSTS, X-Frame-Options, X-Content-Type-Options,
- *     Referrer-Policy, Permissions-Policy, Cache-Control
+ * 1. Session gate: every dashboard prefix (/doctor, /patient, /admin,
+ *    /super-admin, /receptionist) requires a valid session cookie JWT
+ *    (signature + expiry verified here; revocation checked in the layouts
+ *    against the sessions table). Unauthenticated requests are redirected
+ *    to /login before any page code runs. API routes verify their own auth
+ *    (session or bearer token) inside each handler — see the Next.js
+ *    guidance: proxy is a second net, never the only one.
+ * 2. Receptionist URL-space rewrite (/receptionist/* → /doctor/*).
+ * 3. Security headers: CSP, HSTS, X-Frame-Options, X-Content-Type-Options,
+ *    Referrer-Policy, Permissions-Policy, Cache-Control.
  *
  * NOTE: CSP is intentionally relaxed for dev (inline styles/scripts
  * needed by Next.js React Refresh). Tighten for production builds.
@@ -13,6 +20,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
 // ── CSP directives ──────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV === "development";
@@ -49,12 +57,44 @@ const cspDirectives = [
   `form-action 'self'`,
 ].filter(Boolean).join("; ");
 
-// ── Middleware ───────────────────────────────────────────────────────
-export function proxy(request: NextRequest) {
+// ── Session gate ──────────────────────────────────────────────────────
+// Dashboard URL prefixes that require an authenticated session.
+const PROTECTED_PREFIXES = ["/doctor", "/patient", "/admin", "/super-admin", "/receptionist"];
+
+function isProtectedPath(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
+}
+
+async function hasValidSessionJwt(request: NextRequest): Promise<boolean> {
+  const token = request.cookies.get("skora_session")?.value;
+  if (!token) return false;
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return false;
+  try {
+    await jwtVerify(token, new TextEncoder().encode(secret));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Proxy ────────────────────────────────────────────────────────────
+export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Second net: bounce unauthenticated dashboard requests to /login before
+  // any layout/page code runs. The layouts + server actions remain the
+  // primary authz layer (role checks, revocation, ownership scoping).
+  if (isProtectedPath(pathname) && !(await hasValidSessionJwt(request))) {
+    const loginUrl = new URL("/login", request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
   // Expose the pathname to server components. Layouts can't call
   // usePathname(), so this header lets the doctor layout enforce
   // permissions server-side (redirect before restricted pages fetch data).
-  const pathname = request.nextUrl.pathname;
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
 

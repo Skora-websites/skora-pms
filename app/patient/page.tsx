@@ -12,17 +12,18 @@ import {
   FileText,
 } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getPatientStats, getPatientAppointments, getPatientConsultations } from "@/lib/queries/patient";
+import { getPatientStats, getUpcomingPatientAppointments, getPatientConsultations } from "@/lib/queries/patient";
 import { StatCard, PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate, formatINR } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard · Patient" };
+export const dynamic = "force-dynamic";
 
 export default async function PatientDashboardPage() {
   const user = await requireRole(["patient"]);
-  const [stats, appointments, consultations] = await Promise.all([
+  const [stats, upcomingAppointments, consultations] = await Promise.all([
     getPatientStats(user.id),
-    getPatientAppointments(user.id),
+    getUpcomingPatientAppointments(user.id),
     getPatientConsultations(user.id),
   ]);
 
@@ -30,7 +31,7 @@ export default async function PatientDashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle={`${appointments.length} appointment${appointments.length === 1 ? "" : "s"} · ${consultations.length} consultation${consultations.length === 1 ? "" : "s"}`}
+        subtitle={`${upcomingAppointments.length} upcoming appointment${upcomingAppointments.length === 1 ? "" : "s"} · ${consultations.length} consultation${consultations.length === 1 ? "" : "s"}`}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -49,15 +50,15 @@ export default async function PatientDashboardPage() {
               View all <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          {appointments.length === 0 ? (
+          {upcomingAppointments.length === 0 ? (
             <EmptyState
               icon={CalendarDays}
-              title="No appointments yet"
-              description="Your doctor's clinic can book appointments for you, or contact the front desk."
+              title="No upcoming appointments"
+              description="Book a visit with your doctor, or contact the front desk to schedule one."
             />
           ) : (
             <div className="space-y-3">
-              {appointments.slice(0, 5).map((a) => (
+              {upcomingAppointments.slice(0, 5).map((a) => (
                 <div key={a.id} className="card card-hover p-4">
                   <div className="flex items-center gap-4">
                     <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-navy-950 text-accent-400">

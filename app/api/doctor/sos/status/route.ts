@@ -16,7 +16,7 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!user || !["doctor", "receptionist"].includes(user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const doctorId = resolveDoctorId(user);

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { unique } from "./helpers";
+import { ACCOUNTS, SEED_PASSWORD } from "./test-env";
 
 test.describe.configure({ mode: "serial" });
 test.use({ storageState: "e2e/.auth/admin.json" });
@@ -13,7 +14,7 @@ test("super-admin: user CRUD + status toggle", async ({ page }) => {
   await page.getByRole("button", { name: "New user" }).click();
   await page.getByLabel("Full name").fill(name);
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel(/Password/).fill("Admin@123");
+  await page.getByLabel(/Password/).fill(SEED_PASSWORD);
   await page.getByLabel("Role").selectOption("patient");
   await page.getByRole("button", { name: "Create user" }).click();
 
@@ -87,10 +88,10 @@ test("super-admin: clinic CRUD", async ({ page }) => {
 
 test("super-admin: sync doctor permissions", async ({ page }) => {
   await page.goto("/super-admin/doctors");
-  await page.getByPlaceholder(/Search by name/).fill("doctor@gmail.com");
+  await page.getByPlaceholder(/Search by name/).fill(ACCOUNTS.doctor);
   await page.getByRole("button", { name: "Search" }).click();
 
-  const card = page.locator(".card", { hasText: "doctor@gmail.com" }).first();
+  const card = page.locator(".card", { hasText: ACCOUNTS.doctor }).first();
   await card.getByRole("button", { name: "Permissions" }).click();
 
   const scheduleCheckbox = page.getByRole("checkbox", { name: "schedule" });

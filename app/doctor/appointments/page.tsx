@@ -21,6 +21,7 @@ export default async function AppointmentsPage({
   searchParams: Promise<{ status?: string; date?: string; page?: string }>;
 }) {
   const user = await requireRole(["doctor", "receptionist"]);
+  const isReceptionist = user.role === "receptionist";
   const doctorId = resolvePracticeDoctorId(user);
   const params = await searchParams;
   const filter = { status: params.status ?? "all", date: params.date };
@@ -110,7 +111,7 @@ export default async function AppointmentsPage({
       ) : (
         <>
           {/* Mobile: card list (no table scroll) */}
-          <AppointmentList appointments={appointments} />
+          <AppointmentList appointments={appointments} showConsultLink={!isReceptionist} />
           {/* Desktop: full table */}
           <div className="hidden sm:block">
             <div className="table-shell">
@@ -141,6 +142,7 @@ export default async function AppointmentsPage({
                           appointmentId={a.id}
                           status={a.status}
                           consentFile={a.consentFile}
+                          showConsultLink={!isReceptionist}
                         />
                       </td>
                     </tr>

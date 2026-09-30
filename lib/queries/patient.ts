@@ -28,6 +28,23 @@ export const getPatientBills = cache(async (patientId: number) => {
   return rows;
 });
 
+/** All medications for the given consultations, in one grouped query. */
+async function medicationsByConsultation(consultationIds: number[]) {
+  const map = new Map<number, (typeof consultationMedications.$inferSelect)[]>();
+  if (consultationIds.length === 0) return map;
+  const meds = await db
+    .select()
+    .from(consultationMedications)
+    .where(inArray(consultationMedications.consultationId, consultationIds))
+    .orderBy(consultationMedications.order);
+  for (const m of meds) {
+    const list = map.get(m.consultationId) ?? [];
+    list.push(m);
+    map.set(m.consultationId, list);
+  }
+  return map;
+}
+
 /** Patient's prescriptions (consultations) with doctor name. */
 export const getPatientPrescriptions = cache(async (patientId: number) => {
   const rows = await db
@@ -46,17 +63,8 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
     .where(eq(consultations.patientId, patientId))
     .orderBy(desc(consultations.consultationDate));
 
-  const withMeds = await Promise.all(
-    rows.map(async (c) => {
-      const meds = await db
-        .select()
-        .from(consultationMedications)
-        .where(eq(consultationMedications.consultationId, c.id))
-        .orderBy(consultationMedications.order);
-      return { ...c, medications: meds };
-    })
-  );
-  return withMeds;
+  const medMap = await medicationsByConsultation(rows.map((c) => c.id));
+  return rows.map((c) => ({ ...c, medications: medMap.get(c.id) ?? [] }));
 });
 
 /** Patient's test bookings (reports) with vendor name + uploaded file status. */
@@ -114,40 +122,55 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
     .from(users)
     .where(eq(users.role, "doctor"))
     .orderBy(asc(users.name));
+  if (doctors.length === 0) return [];
+
+  const doctorIds = doctors.map((d) => d.id);
+
+  // Grouped fetch (avoids N+1): all active clinics for these doctors, then all
+  // active schedules for those clinics — two queries total.
+  const allClinics = await db
+    .select({
+      id: doctorClinics.id,
+      doctorId: doctorClinics.doctorId,
+      clinicName: doctorClinics.clinicName,
+      address: doctorClinics.address,
+      consultationFee: doctorClinics.consultationFee,
+    })
+    .from(doctorClinics)
+    .where(and(inArray(doctorClinics.doctorId, doctorIds), eq(doctorClinics.isActive, true)))
+    .orderBy(asc(doctorClinics.id));
+
+  const clinicsByDoctor = new Map<number, typeof allClinics>();
+  for (const c of allClinics) {
+    const list = clinicsByDoctor.get(c.doctorId) ?? [];
+    list.push(c);
+    clinicsByDoctor.set(c.doctorId, list);
+  }
+
+  const clinicIds = allClinics.map((c) => c.id);
+  // Clinic IDs that have at least one active schedule.
+  const scheduledClinicIds = new Set(
+    clinicIds.length === 0
+      ? []
+      : (
+          await db
+            .selectDistinct({ doctorClinicId: doctorSchedules.doctorClinicId })
+            .from(doctorSchedules)
+            .where(and(inArray(doctorSchedules.doctorClinicId, clinicIds), eq(doctorSchedules.isActive, true)))
+        ).map((r) => r.doctorClinicId)
+  );
 
   const available: AvailableDoctor[] = [];
   for (const d of doctors) {
     // Any active clinic with at least one active schedule makes the doctor
     // bookable. Checking ALL clinics (not just the first) avoids hiding a
     // doctor whose earliest clinic has no schedules but a later one does.
-    const clinics = await db
-      .select({
-        id: doctorClinics.id,
-        clinicName: doctorClinics.clinicName,
-        address: doctorClinics.address,
-        consultationFee: doctorClinics.consultationFee,
-      })
-      .from(doctorClinics)
-      .where(and(eq(doctorClinics.doctorId, d.id), eq(doctorClinics.isActive, true)))
-      .orderBy(asc(doctorClinics.id));
-    if (clinics.length === 0) continue;
-
-    const clinicIds = clinics.map((c) => c.id);
-    const scheduleRows = await db
-      .select({ id: doctorSchedules.id, doctorClinicId: doctorSchedules.doctorClinicId })
-      .from(doctorSchedules)
-      .where(
-        and(inArray(doctorSchedules.doctorClinicId, clinicIds), eq(doctorSchedules.isActive, true))
-      )
-      .limit(1);
-    if (scheduleRows.length === 0) continue;
+    const clinics = clinicsByDoctor.get(d.id) ?? [];
+    const scheduled = clinics.filter((c) => scheduledClinicIds.has(c.id));
+    if (scheduled.length === 0) continue;
 
     // Use the first clinic that actually has a schedule for display.
-    const scheduledClinicId = scheduleRows[0].doctorClinicId;
-    const clinic =
-      clinics.find((c) => c.id === scheduledClinicId) ??
-      clinics.find((c) => c.id === clinics[0].id) ??
-      clinics[0];
+    const clinic = scheduled[0];
     available.push({
       id: d.id,
       name: d.name,
@@ -165,8 +188,33 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
   return available;
 });
 
+/** Parse a legacy "h:mm AM/PM" (or "HH:MM") time string to minutes since midnight. */
+function timeToMinutes(t: string): number {
+  const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return 0;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const meridiem = m[3]?.toUpperCase();
+  if (meridiem) {
+    if (meridiem === "PM" && h !== 12) h += 12;
+    if (meridiem === "AM" && h === 12) h = 0;
+  }
+  return h * 60 + min;
+}
+
+/** Chronological (appointment date, then time-of-day) ordering for appointment rows. */
+function byAppointmentDateTime<
+  T extends { date: string; time: string }
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const byDate = a.date.localeCompare(b.date);
+    if (byDate !== 0) return byDate;
+    return timeToMinutes(a.time) - timeToMinutes(b.time);
+  });
+}
+
 export const getPatientAppointments = cache(async (patientId: number) => {
-  return db
+  const rows = await db
     .select({
       id: appointments.id,
       date: appointments.date,
@@ -180,8 +228,37 @@ export const getPatientAppointments = cache(async (patientId: number) => {
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
     .where(eq(appointments.patientId, patientId))
-    // Newest bookings first (new > old), then by upcoming date.
-    .orderBy(desc(appointments.createdAt), desc(appointments.id));
+    // DB can't sort the legacy "h:mm AM/PM" time strings chronologically,
+    // so order by date in SQL and finish the time-of-day sort in JS.
+    .orderBy(asc(appointments.date), desc(appointments.createdAt));
+  return byAppointmentDateTime(rows);
+});
+
+/** Patient's UPCOMING appointments (not cancelled/completed, today or later),
+    earliest first — matches the "Upcoming visits" dashboard stat card. */
+export const getUpcomingPatientAppointments = cache(async (patientId: number) => {
+  const rows = await db
+    .select({
+      id: appointments.id,
+      date: appointments.date,
+      time: appointments.time,
+      caseType: appointments.caseType,
+      status: appointments.status,
+      doctorId: appointments.doctorId,
+      doctorName: users.name,
+      doctorQualification: users.qualification,
+    })
+    .from(appointments)
+    .innerJoin(users, eq(users.id, appointments.doctorId))
+    .where(
+      and(
+        eq(appointments.patientId, patientId),
+        gte(appointments.date, todayStr()),
+        sql`${appointments.status} NOT IN ('cancelled','completed')`
+      )
+    )
+    .orderBy(asc(appointments.date), desc(appointments.createdAt));
+  return byAppointmentDateTime(rows);
 });
 
 export const getPatientStats = cache(async (patientId: number) => {
@@ -238,16 +315,6 @@ export const getPatientConsultations = cache(async (patientId: number) => {
     .where(eq(consultations.patientId, patientId))
     .orderBy(desc(consultations.consultationDate));
 
-  const withMeds = await Promise.all(
-    rows.map(async (c) => {
-      const meds = await db
-        .select()
-        .from(consultationMedications)
-        .where(eq(consultationMedications.consultationId, c.id))
-        .orderBy(consultationMedications.order);
-      return { ...c, medications: meds };
-    })
-  );
-
-  return withMeds;
+  const medMap = await medicationsByConsultation(rows.map((c) => c.id));
+  return rows.map((c) => ({ ...c, medications: medMap.get(c.id) ?? [] }));
 });

@@ -126,6 +126,19 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
     };
   }, [requestId]);
 
+  // Request dispatched but the first status poll hasn't returned yet — show a
+  // neutral pending state instead of falling back to the idle SOS button
+  // (which would let the patient fire a second SOS while one is active).
+  if (requestId && !status) {
+    return (
+      <div className="rounded-3xl border-2 border-red-200 bg-white p-6 text-center shadow-lg">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-400" />
+        <p className="mt-2 font-semibold text-slate-700">Checking your SOS request…</p>
+        <p className="mt-1 text-sm text-slate-500">Hang tight — we're confirming the request status.</p>
+      </div>
+    );
+  }
+
   // Live map view while waiting / accepted.
   if (requestId && status) {
     const pLat = Number(status.patientLatitude);

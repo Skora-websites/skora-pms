@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./lib/db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "mysql://root@127.0.0.1:3306/skoracare",
+    url: process.env.DATABASE_URL ?? "mysql://root@127.0.0.1:3306/skoracares_db",
   },
   verbose: true,
   strict: true,

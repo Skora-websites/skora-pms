@@ -10,7 +10,7 @@ import { SignatureUpload } from "./signature-upload";
 export const metadata: Metadata = { title: "Profile · Doctor" };
 
 export default async function ProfilePage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
 
   return (
     <div className="mx-auto max-w-3xl">

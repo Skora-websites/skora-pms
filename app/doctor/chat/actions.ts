@@ -8,6 +8,7 @@ import { chatRooms, messages, favorites, userChatSettings, users } from "@/lib/d
 import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { isDupKey } from "@/lib/db/dup";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 
 async function getChatRoomId(): Promise<number> {
   const [room] = await db.select().from(chatRooms).where(eq(chatRooms.name, "Doctors Group"));
@@ -30,7 +31,7 @@ async function getChatRoomId(): Promise<number> {
 async function authedUser() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     redirect(homePathForRole(user.role));
   }
   return user;
@@ -61,7 +62,7 @@ export async function sendChatMessage(
   await db.insert(messages).values({
     chatRoomId: roomId,
     senderId: user.id,
-    doctorId: user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id,
+    doctorId: resolvePracticeDoctorId(user),
     content,
     timestamp: new Date(),
     createdAt: new Date(),

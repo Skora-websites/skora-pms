@@ -1,12 +1,15 @@
+import "server-only";
+
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { MAX_CONSENT_FILE_BYTES } from "@/lib/config";
 
 // Uploaded consent files live outside public/ (PHI-safe), served via
 // authenticated API routes only.
 const CONSENT_FILES_DIR = path.join(process.cwd(), "storage", "uploads", "consent-files");
 
-export const MAX_CONSENT_FILE_BYTES = 5 * 1024 * 1024;
+export { MAX_CONSENT_FILE_BYTES };
 
 /** Magic-byte check — only real JPG/PNG/PDF files pass (spoofed extensions rejected). */
 function sniffConsentFile(bytes: Buffer): "jpg" | "png" | "pdf" | null {

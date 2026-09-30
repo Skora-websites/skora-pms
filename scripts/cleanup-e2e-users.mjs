@@ -1,7 +1,8 @@
 import mysql from "mysql2/promise";
+import { DB, ACCOUNTS } from "./env.mjs";
 (async () => {
-  const c = await mysql.createConnection({ host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db", multipleStatements: true });
-  const q = (s) => c.query(s);
+  const c = await mysql.createConnection({ ...DB, multipleStatements: true });
+  const q = (s, p) => c.query(s, p);
   await q("SET FOREIGN_KEY_CHECKS=0");
   await q("CREATE TEMPORARY TABLE tmp_del_users (id INT PRIMARY KEY)");
   await q(`INSERT INTO tmp_del_users (id)
@@ -15,8 +16,9 @@ import mysql from "mysql2/promise";
   const [cnts] = await q("SELECT COUNT(*) n FROM tmp_del_users");
   console.log("test users to delete:", cnts[0].n);
   const [guard] = await q(`SELECT COUNT(*) n FROM tmp_del_users t JOIN users u ON u.id=t.id
-    WHERE u.email IN ('doctor@gmail.com','admin@gmail.com')
-       OR (u.role='doctor' AND u.name NOT LIKE 'E2E %')`);
+    WHERE u.email IN (?,?)
+       OR (u.role='doctor' AND u.name NOT LIKE 'E2E %')`,
+    [ACCOUNTS.doctor, ACCOUNTS.superAdmin]);
   if (guard[0].n > 0) { console.error("GUARD TRIPPED — real account matched, aborting"); process.exit(1); }
 
   const del = async (label, sql) => { const [r] = await q(sql); console.log(label + ":", r.affectedRows); };

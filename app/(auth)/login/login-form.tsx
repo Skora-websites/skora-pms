@@ -6,6 +6,20 @@ import { loginAction } from "./actions";
 
 const initialState = { error: null as string | null };
 
+/**
+ * Dev-only demo-credentials hint. Nothing is hardcoded: emails/password come
+ * from NEXT_PUBLIC_DEMO_HINT_* (set them in .env to show the box in dev).
+ * NEXT_PUBLIC_ vars are inlined at build time, so the box reflects whatever
+ * the build was configured with — and ships nothing when unset.
+ */
+const SHOW_DEMO_HINT =
+  process.env.NODE_ENV === "development" &&
+  Boolean(process.env.NEXT_PUBLIC_DEMO_HINT_EMAIL);
+const DEMO_HINT_EMAIL = process.env.NEXT_PUBLIC_DEMO_HINT_EMAIL ?? "";
+const DEMO_HINT_EXTRA =
+  process.env.NEXT_PUBLIC_DEMO_HINT_EXTRA_EMAILS ?? "";
+const DEMO_HINT_PASSWORD = process.env.NEXT_PUBLIC_DEMO_HINT_PASSWORD ?? "";
+
 export function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
   // Dismissal state + the last error seen. When the server returns a NEW
@@ -77,11 +91,14 @@ export function LoginForm() {
         {!pending && <LogIn className="h-4 w-4" />}
       </button>
 
-      {process.env.NODE_ENV === "development" && (
+      {SHOW_DEMO_HINT && (
         <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-xs text-brand-800">
           <p className="font-semibold">Demo accounts</p>
-          <p className="mt-1">doctor@gmail.com · patient@gmail.com · admin@gmail.com</p>
-          <p>Password: Admin@123</p>
+          <p className="mt-1 break-all">
+            {DEMO_HINT_EMAIL}
+            {DEMO_HINT_EXTRA ? ` · ${DEMO_HINT_EXTRA}` : ""}
+          </p>
+          {DEMO_HINT_PASSWORD && <p>Password: {DEMO_HINT_PASSWORD}</p>}
         </div>
       )}
     </form>

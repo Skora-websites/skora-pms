@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   if (targetId === viewer.id) {
     photoPath = viewer.profilePhotoPath;
   } else if (
-    (viewer.role === "doctor" || viewer.role === "receptionist" || viewer.role === "admin") &&
+    (viewer.role === "doctor" || viewer.role === "receptionist") &&
     (await isPracticeDoctor(viewerDoctorId, targetId))
   ) {
     const [row] = await db

@@ -3,8 +3,7 @@
  * Provision an API token for external consumers of /api/* endpoints (Shule).
  *
  *   node scripts/provision-api-token.mjs <user-email> [name]
- *
- * - Creates a 64-char random token, stores its SHA-256 hash in
+ * * - Creates a 64-char random token, stores its SHA-256 hash in
  *   `personal_access_tokens` (Laravel Sanctum-compatible format, so the same
  *   token also authenticates against the legacy backend).
  * - Prints the plaintext token ONCE — store it in Shule's env/config now.
@@ -13,6 +12,7 @@
  * (currently /api/shule/doctors). It never grants web-session access.
  */
 import { createHash, randomBytes } from "node:crypto";
+import "dotenv/config";
 import mysql from "mysql2/promise";
 
 const USER_MODEL = "App\\Models\\User";
@@ -23,7 +23,7 @@ if (!email) {
   process.exit(1);
 }
 
-const db = await mysql.createConnection("mysql://root@127.0.0.1:3307/skoracares_db");
+const db = await mysql.createConnection(process.env.DB_URL ?? process.env.DATABASE_URL);
 
 const [users] = await db.execute("SELECT id, name, role, status FROM users WHERE email = ? LIMIT 1", [email]);
 const user = users[0];
@@ -59,6 +59,6 @@ console.log(`\nToken created for ${user.name} <${email}> (role: ${user.role}, id
 console.log(`Name: ${tokenName}`);
 console.log(`\nPlaintext token (shown ONCE — copy it now):\n`);
 console.log(plaintext);
-console.log(`\nShule should call:\n  curl -H "Authorization: Bearer ${plaintext}" http://localhost:3100/api/shule/doctors\n`);
+console.log(`\nShule should call:\n  curl -H "Authorization: Bearer ${plaintext}" ${process.env.E2E_BASE_URL ?? "http://localhost:3000"}/api/shule/doctors\n`);
 
 await db.end();

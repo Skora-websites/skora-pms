@@ -9,6 +9,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorConsultPdfs } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission } from "@/lib/auth/user";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { MAX_UPLOAD_BYTES } from "@/lib/config";
 
 export type ConsultPdfActionResult = { error: string | null };
 
@@ -21,17 +23,17 @@ export async function uploadConsultPdf(
 ): Promise<ConsultPdfActionResult> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return { error: "Not authorized." };
   }
   if (!(await hasPermission(user.id, "dashboard"))) {
     return { error: "You don't have permission to upload consultation PDFs." };
   }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   const file = formData.get("pdf") as File | null;
   if (!file || file.size === 0) return { error: "Please choose a PDF file." };
-  if (file.size > 10 * 1024 * 1024) return { error: "File must be under 10 MB." };
+  if (file.size > MAX_UPLOAD_BYTES) return { error: `File must be under ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.` };
 
   const bytes = Buffer.from(await file.arrayBuffer());
 

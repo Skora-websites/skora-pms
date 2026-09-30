@@ -8,7 +8,7 @@ import { UsersTable } from "./users-table";
 
 export const metadata: Metadata = { title: "Manage Users · Super Admin" };
 
-const ROLES = ["all", "super_admin", "admin", "doctor", "receptionist", "patient"];
+const ROLES = ["all", "super_admin", "admin", "manager", "doctor", "receptionist", "patient"];
 const PAGE_SIZE = 25;
 
 export default async function UsersPage({
@@ -16,7 +16,7 @@ export default async function UsersPage({
 }: {
   searchParams: Promise<{ role?: string; q?: string; page?: string }>;
 }) {
-  const me = await requireRole(["super_admin", "admin"]);
+  const me = await requireRole(["super_admin"]);
   const { role = "all", q, page } = await searchParams;
   const currentPage = Math.max(1, Number(page) || 1);
   const offset = (currentPage - 1) * PAGE_SIZE;

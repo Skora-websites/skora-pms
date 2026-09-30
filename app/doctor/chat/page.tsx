@@ -8,7 +8,7 @@ import { ChatRoom } from "./chat-room";
 export const metadata: Metadata = { title: "Chat · Doctor" };
 
 export default async function ChatPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
   const data = await getChatData(user.id);
 
   return (

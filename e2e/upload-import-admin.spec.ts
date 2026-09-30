@@ -2,9 +2,9 @@ import { test, expect } from "@playwright/test";
 import { unique, tinyPdf } from "./helpers";
 import mysql from "mysql2/promise";
 import fs from "node:fs";
+import { DB, type DbRow } from "./test-env";
 
-const DB = { host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db" };
-type Row<T> = [T, unknown];
+type Row<T> = DbRow<T>;
 async function query<T>(sql: string, params: unknown[]): Promise<T[]> {
   const conn = await mysql.createConnection(DB);
   try {

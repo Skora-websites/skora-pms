@@ -6,7 +6,7 @@ import { PatientForm } from "./patient-form";
 export const metadata: Metadata = { title: "Register Patient · Doctor" };
 
 export default async function NewPatientPage() {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  await requireRole(["doctor", "receptionist"]);
 
   return (
     <div className="mx-auto max-w-2xl">

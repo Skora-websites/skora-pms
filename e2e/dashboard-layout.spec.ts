@@ -7,7 +7,7 @@ const WIDTHS = [1920, 1440, 1280, 1024, 768, 390];
 test("dashboards have no horizontal overflow at any viewport width", async ({ page }) => {
   test.setTimeout(240_000);
   for (const width of WIDTHS) {
-    for (const path of ["/super-admin", "/doctor"]) {
+    for (const path of ["/super-admin", "/doctor", "/admin"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(path, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(300);
@@ -21,7 +21,7 @@ test("dashboards have no horizontal overflow at any viewport width", async ({ pa
 
 test("desktop header starts after the sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/super-admin", { waitUntil: "domcontentloaded" });
+  await page.goto("/admin", { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(300);
   const rects = await page.evaluate(() => {
     const aside = document.querySelector("aside")!.getBoundingClientRect();

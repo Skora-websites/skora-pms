@@ -10,13 +10,23 @@
  * Run with: npx tsx scripts/seed.ts
  */
 import "dotenv/config";
-import { db } from "../lib/db";
+import mysql from "mysql2/promise";
+// The seed runs under plain Node (tsx), outside Next.js — so it builds its
+// own pool from DATABASE_URL instead of importing lib/db (whose `server-only`
+// guard is a build-time contract for the Next.js runtime).
+import { drizzle } from "drizzle-orm/mysql2";
+import * as schema from "../lib/db/schema";
 import {
   users,
   roles,
   permissions,
   modelHasRoles,
   roleHasPermissions,
+  modelHasPermissions,
+  businesses,
+  businessClinics,
+  clinicManagers,
+  clinicDoctors,
   landingSections,
   landingItems,
   symptoms,
@@ -52,6 +62,8 @@ const daysFromNow = (n: number) => {
 };
 
 async function main() {
+  const connection = mysql.createPool({ uri: process.env.DATABASE_URL, connectionLimit: 5 });
+  const db = drizzle(connection, { schema, mode: "default" });
   console.log("🌱 Seeding SkoraCares…");
 
   // ── Roles & Permissions ────────────────────────────────────────────────
@@ -172,13 +184,37 @@ async function main() {
     if (p) await db.insert(roleHasPermissions).values({ permissionId: p.id, roleId: Number(receptionistRole.insertId) });
   }
 
+  // Manager template (admin tier): full clinic ops without finance or staff
+  // administration — mirrors the "full clinic ops" manager default.
+  const managerTemplatePerms = [
+    "dashboard", "dashboard-view",
+    "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
+    "registrations", "registrations-list", "registrations-create", "registrations-edit", "registrations-delete",
+    "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
+    "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
+    "follow-up", "follow-up-list", "follow-up-status-update",
+  ];
+
   // ── Users ──────────────────────────────────────────────────────────────
-  const adminPassword = await hashPassword("Admin@123");
+  // Account emails + shared password are env-configurable so the seed,
+  // verification scripts and e2e suite always agree (SEED_* vars — see
+  // scripts/env.mjs). Defaults keep the historical demo values.
+  const SEED_PASSWORD_RAW = process.env.SEED_PASSWORD ?? "Admin@123";
+  const emails = {
+    superAdmin: process.env.SEED_SUPER_ADMIN_EMAIL ?? "admin@gmail.com",
+    doctor: process.env.SEED_DOCTOR_EMAIL ?? "doctor@gmail.com",
+    patient: process.env.SEED_PATIENT_EMAIL ?? "patient@gmail.com",
+    receptionist: process.env.SEED_RECEPTIONIST_EMAIL ?? "receptionist@gmail.com",
+    owner: process.env.SEED_OWNER_EMAIL ?? "owner@gmail.com",
+    manager1: process.env.SEED_MANAGER1_EMAIL ?? "manager1@gmail.com",
+    manager2: process.env.SEED_MANAGER2_EMAIL ?? "manager2@gmail.com",
+  };
+  const adminPassword = await hashPassword(SEED_PASSWORD_RAW);
   const [admin] = await db
     .insert(users)
     .values({
       name: "Super Admin",
-      email: "admin@gmail.com",
+      email: emails.superAdmin,
       password: adminPassword,
       role: "super_admin",
       status: "active",
@@ -192,7 +228,7 @@ async function main() {
     .insert(users)
     .values({
       name: "Dr. Aarav Sharma",
-      email: "doctor@gmail.com",
+      email: emails.doctor,
       password: adminPassword,
       role: "doctor",
       status: "active",
@@ -209,7 +245,7 @@ async function main() {
     .insert(users)
     .values({
       name: "Priya Verma",
-      email: "patient@gmail.com",
+      email: emails.patient,
       password: adminPassword,
       role: "patient",
       status: "active",
@@ -218,6 +254,9 @@ async function main() {
       dob: "1992-04-18",
       city: "Delhi",
       state: "Delhi",
+      // Ownership semantic parity with createPatient: patients belong to
+      // their doctor via reference_role_id (users.doctor_id is for staff).
+      referenceRoleId: doctorId,
       emailVerifiedAt: now(),
       createdAt: now(),
       updatedAt: now(),
@@ -228,7 +267,7 @@ async function main() {
     .insert(users)
     .values({
       name: "Reception Desk",
-      email: "receptionist@gmail.com",
+      email: emails.receptionist,
       password: adminPassword,
       role: "receptionist",
       status: "active",
@@ -239,6 +278,52 @@ async function main() {
     });
   const receptionistId = Number(receptionist.insertId);
 
+  // ── Admin tier (Phase 2 hierarchy demo) ────────────────────────────
+  // Owner of a multi-clinic business + two clinic managers. The owner keeps
+  // the existing doctor clinic as clinic #1; adds a second clinic so the
+  // cross-clinic views have data to compare.
+  const [owner] = await db
+    .insert(users)
+    .values({
+      name: "Rohan Malhotra",
+      email: emails.owner,
+      password: adminPassword,
+      role: "admin",
+      status: "active",
+      emailVerifiedAt: now(),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  const ownerId = Number(owner.insertId);
+
+  const [managerOne] = await db
+    .insert(users)
+    .values({
+      name: "Kavita Singh",
+      email: emails.manager1,
+      password: adminPassword,
+      role: "manager",
+      status: "active",
+      emailVerifiedAt: now(),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  const managerOneId = Number(managerOne.insertId);
+
+  const [managerTwo] = await db
+    .insert(users)
+    .values({
+      name: "Dev Patel",
+      email: emails.manager2,
+      password: adminPassword,
+      role: "manager",
+      status: "active",
+      emailVerifiedAt: now(),
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  const managerTwoId = Number(managerTwo.insertId);
+
   // Extra patients for demo
   const demoPatients = [
     { name: "Rohit Malhotra", phone: "9876501234", gender: "male", dob: "1985-09-12", city: "Delhi", state: "Delhi" },
@@ -247,10 +332,14 @@ async function main() {
     { name: "Meera Nair", phone: "9876503456", gender: "female", dob: "2001-07-08", city: "Delhi", state: "Delhi" },
   ];
   const patientIds: number[] = [patientId];
+  // Legacy-parity registration IDs (PAT+7digit) — some e2e specs key on the
+  // third demo patient's ID, so assign them deterministically here.
+  const patientRegIds = ["PAT8702578", "PAT8702579", "PAT8702580", "PAT8702581"];
+  let regIdx = 0;
   for (const p of demoPatients) {
     const [r] = await db
       .insert(users)
-      .values({ ...p, password: adminPassword, role: "patient", status: "active", doctorId, createdAt: now(), updatedAt: now() });
+      .values({ ...p, password: adminPassword, role: "patient", status: "active", referenceRoleId: doctorId, registrationId: patientRegIds[regIdx++] ?? null, createdAt: now(), updatedAt: now() });
     patientIds.push(Number(r.insertId));
   }
 
@@ -260,16 +349,16 @@ async function main() {
     { roleId: Number(receptionistRole.insertId), modelType: "App\\Models\\User", modelId: receptionistId },
   ]);
 
-  // Grant the Doctor role every module-level permission (demo convenience).
+  // Grant the Doctor role every permission — parents AND their action
+  // children. Server actions check child perms ("registrations-create",
+  // "billing-create", …) while getUserPermissions only expands child→parent,
+  // so a parent-only grant would leave the doctor unable to write anything.
   const doctorPerms = await db
     .select({ id: permissions.id, name: permissions.name })
     .from(permissions);
-  const doctorModulePermIds = doctorPerms
-    .filter((p) => Object.keys(modules).includes(p.name))
-    .map((p) => p.id);
   await db.insert(roleHasPermissions).values(
-    doctorModulePermIds.map((permissionId) => ({
-      permissionId,
+    doctorPerms.map((p) => ({
+      permissionId: p.id,
       roleId: Number(doctorRole.insertId),
     }))
   );
@@ -436,6 +525,18 @@ async function main() {
   });
   const clinicId = Number(clinic.insertId);
 
+  // Invariant from migration 0004: the clinic OWNER always holds a member
+  // row, so "doctors of a clinic" is one query with no owner special case.
+  // (Migration 0004 backfilled existing clinics; the seed must uphold it
+  // for the rows it creates.)
+  await db.insert(clinicDoctors).values({
+    clinicId,
+    doctorId,
+    isActive: true,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
   const daySeeds: [string, string, string, string][] = [
     ["monday", "09:00", "14:00", "morning"],
     ["monday", "16:00", "20:00", "evening"],
@@ -558,10 +659,95 @@ async function main() {
   await db.insert(vendors).values({ doctorId, name: "PathLab Diagnostics", mobile: "9811122233", email: "info@pathlab.example", address: "Connaught Place, New Delhi", status: true, createdAt: now(), updatedAt: now() });
   await db.insert(tests).values({ doctorId, name: "Complete Blood Count", description: "CBC with ESR", price: "450", status: true, createdAt: now(), updatedAt: now() });
 
+  // ── Business hierarchy (admin tier) ─────────────────────────────────
+  // One business owning both clinics. Clinic #1 is the doctor's seeded
+  // clinic; clinic #2 is a second location owned by the same doctor so its
+  // schedules/membership work with the existing doctor-scoped queries.
+  const [business] = await db
+    .insert(businesses)
+    .values({
+      ownerId,
+      name: "Malhotra Health Group",
+      slug: "malhotra-health-group",
+      email: "ops@malhotrahealth.example",
+      phone: "+91 9810000000",
+      address: "Green Park, New Delhi",
+      isActive: true,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  const businessId = Number(business.insertId);
+
+  const [clinicTwo] = await db
+    .insert(doctorClinics)
+    .values({
+      doctorId,
+      clinicName: "Malhotra Health — Dwarka Branch",
+      addressType: "manual" as never,
+      address: "Sector 12, Dwarka, New Delhi",
+      phone: "011-46190001",
+      consultationFee: "600",
+      isActive: true,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  const clinicTwoId = Number(clinicTwo.insertId);
+
+  await db.insert(clinicDoctors).values({
+    clinicId: clinicTwoId,
+    doctorId,
+    isActive: true,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  await db.insert(doctorSchedules).values({
+    doctorClinicId: clinicTwoId,
+    doctorId,
+    dayOfWeek: "monday" as never,
+    startTime: "10:00",
+    endTime: "13:00",
+    sessionType: "morning" as never,
+    maxPatients: 8,
+    slotDuration: 15,
+    gapDuration: 5,
+    isActive: true,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
+  await db.insert(businessClinics).values([
+    { businessId, clinicId, isPrimary: true, createdAt: now(), updatedAt: now() },
+    { businessId, clinicId: clinicTwoId, isPrimary: false, createdAt: now(), updatedAt: now() },
+  ]);
+
+  // Manager #1 runs the primary clinic; manager #2 runs the Dwarka branch.
+  await db.insert(clinicManagers).values([
+    { businessId, clinicId, userId: managerOneId, isActive: true, createdAt: now(), updatedAt: now() },
+    { businessId, clinicId: clinicTwoId, userId: managerTwoId, isActive: true, createdAt: now(), updatedAt: now() },
+  ]);
+
+  // Direct module perms per manager (model_has_permissions — the same set
+  // getUserPermissions() expands, so /admin module guards resolve).
+  for (const managerId of [managerOneId, managerTwoId]) {
+    for (const name of managerTemplatePerms) {
+      const p = await findPerm(name);
+      if (p) {
+        await db.insert(modelHasPermissions).values({
+          permissionId: p.id,
+          modelType: "App\\Models\\User",
+          modelId: managerId,
+        });
+      }
+    }
+  }
+
   console.log("✅ Seed complete.");
-  console.log("   admin@gmail.com / Admin@123  → /super-admin");
-  console.log("   doctor@gmail.com / Admin@123 → /doctor");
-  console.log("   patient@gmail.com / Admin@123 → /patient");
+  console.log(`   ${emails.superAdmin} / ${SEED_PASSWORD_RAW}  → /super-admin`);
+  console.log(`   ${emails.owner} / ${SEED_PASSWORD_RAW}      → /admin (business owner)`);
+  console.log(`   ${emails.manager1} / ${SEED_PASSWORD_RAW}   → /admin (manager, primary clinic)`);
+  console.log(`   ${emails.manager2} / ${SEED_PASSWORD_RAW}   → /admin (manager, Dwarka branch)`);
+  console.log(`   ${emails.doctor} / ${SEED_PASSWORD_RAW}     → /doctor`);
+  console.log(`   ${emails.patient} / ${SEED_PASSWORD_RAW}    → /patient`);
   process.exit(0);
 }
 

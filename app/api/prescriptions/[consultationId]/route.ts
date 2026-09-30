@@ -22,7 +22,7 @@ export async function GET(
 
   // Doctors/office staff may download their own consultations; patients only their own.
   let doctorId: number;
-  if (["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (["doctor", "receptionist"].includes(user.role)) {
     doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
   } else if (user.role === "patient") {
     const [c] = await db

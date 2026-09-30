@@ -6,6 +6,7 @@ const NAV: NavItem[] = [
   { label: "Dashboard", href: "/super-admin", icon: "layout-dashboard", exact: true },
   { label: "Manage Doctors", href: "/super-admin/doctors", icon: "user-cog" },
   { label: "Manage Clinics", href: "/super-admin/clinics", icon: "building-2" },
+  { label: "Businesses", href: "/super-admin/businesses", icon: "briefcase" },
   { label: "Manage Users", href: "/super-admin/users", icon: "users" },
   { label: "Package Payments", href: "/super-admin/payments", icon: "credit-card" },
   { label: "Consult Masters", href: "/super-admin/masters", icon: "clipboard-list" },
@@ -22,7 +23,7 @@ export default async function SuperAdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireRole(["super_admin", "admin"]);
+  const user = await requireRole(["super_admin"]);
 
   return (
     <DashboardShell

@@ -1,6 +1,7 @@
 // Search, filtering, pagination, sorting — driven through real UI with DB verification.
 import { test, expect } from "@playwright/test";
 import { unique } from "./helpers";
+import { ACCOUNTS } from "./test-env";
 
 test("patients: search by exact name filters list, empty state on garbage term", async ({ page }) => {
   const name = unique("SearchPat");
@@ -58,11 +59,11 @@ test("super-admin users: role filter + search + pagination all work", async ({ b
   await expect(page.getByText(/accounts in the platform/i)).toBeVisible();
 
   // search
-  await page.locator("input[name=q]").fill("doctor@gmail.com");
+  await page.locator("input[name=q]").fill(ACCOUNTS.doctor);
   await page.getByRole("button", { name: "Go", exact: true }).click();
   await page.waitForURL(/q=doctor/, { timeout: 15000 });
   // scope to the table row — the sidebar also shows the current admin email
-  await expect(page.locator("main table").getByText("doctor@gmail.com").first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator("main table").getByText(ACCOUNTS.doctor).first()).toBeVisible({ timeout: 15000 });
 
   // pagination: go to page 1 vs 2 if pagination controls exist
   const page2 = page.locator("a[href*='page=2']").first();

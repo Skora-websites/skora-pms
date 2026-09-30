@@ -63,24 +63,17 @@ export async function loginAction(
     return { error: "This account has been deactivated. Contact support." };
   }
 
-  // Already logged in? Redirect to the right home instead of double login.
-  // If the existing session belongs to a deactivated account, clear it and
-  // let the login attempt proceed (it will be rejected below).
+  // Stale-session hygiene: the credentials just submitted are authoritative.
+  // A leftover session still in the cookie jar (e.g. the business-owner or
+  // receptionist account from a previous login) must NOT decide where this
+  // login lands — it used to: submitting doctor credentials while an owner
+  // session was active bounced the doctor to /admin (or a receptionist
+  // session sent them to /receptionist). Revoke whatever session exists,
+  // then issue a fresh one; the redirects below are derived purely from the
+  // account that was just authenticated. (Only reached after successful
+  // verification, so a failed attempt never destroys an active session.)
   const existing = await getSessionUserId();
-  if (existing) {
-    const [me] = await db.select({ role: users.role, status: users.status }).from(users).where(eq(users.id, existing));
-    if (me?.status === "active") {
-      // Same one-hop rule as fresh login below — avoid the layout-redirect
-      // loop for restricted staff landing on /doctor.
-      if (me.role === "doctor" || me.role === "receptionist") {
-        const perms = await getUserPermissions(existing);
-        const target = firstPermittedDoctorPath(perms);
-        redirect(me.role === "receptionist" ? doctorPathToReceptionist(target) : target);
-      }
-      redirect(homePathForRole(me.role ?? "patient"));
-    }
-    await destroySession();
-  }
+  if (existing) await destroySession();
 
   await setSessionCookie(user.id);
   // Successful login clears the failure counter — a legitimate user who
@@ -98,6 +91,11 @@ export async function loginAction(
     const perms = me ? await getUserPermissions(user.id) : new Set<string>();
     const target = firstPermittedDoctorPath(perms);
     redirect(user.role === "receptionist" ? doctorPathToReceptionist(target) : target);
+  }
+  // Admin tier: land on /admin directly — ROLE_HOME would bounce through the
+  // layout guard (same Next 16 redirect-in-layout hazard as above).
+  if (user.role === "admin" || user.role === "manager") {
+    redirect("/admin");
   }
   redirect(homePathForRole(user.role));
 }

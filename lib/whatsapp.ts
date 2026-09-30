@@ -10,7 +10,13 @@
  * (legacy `config/services.php` reads the same names).
  */
 
-const WHATSAPP_API_URL = "https://whatsapp.rajatmarketingss.online/api/create-message";
+import "server-only";
+
+const WHATSAPP_API_URL =
+  process.env.WHATSAPP_API_URL ??
+  // Legacy provider endpoint — override with WHATSAPP_API_URL when the
+  // gateway moves (documented in .env.example).
+  "https://whatsapp.rajatmarketingss.online/api/create-message";
 
 /**
  * Normalize an Indian mobile number for the WhatsApp API:

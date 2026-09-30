@@ -2,12 +2,10 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { CalendarClock, MapPin, Clock, Phone, Wallet, CalendarRange } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getClinicsWithSchedules } from "@/lib/queries/doctor";
+import { getClinicsWithSchedules, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import {
   getClinicsOfDoctor,
-  getClinicDoctors,
-  getClinicSchedulesOfDoctor,
-  ensureClinicOwner,
+  getClinicMembersWithSchedules,
 } from "@/lib/queries/clinic";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { AddClinicForm } from "./add-clinic-form";
@@ -19,27 +17,18 @@ import { MemberManager } from "./member-manager";
 export const metadata: Metadata = { title: "Schedule · Doctor" };
 
 export default async function SchedulePage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const clinics = await getClinicsWithSchedules(doctorId);
-  const clinicIds = await getClinicsOfDoctor(doctorId);
-  type MemberWithSchedules = Awaited<ReturnType<typeof getClinicDoctors>>[number] & {
-    schedules: Awaited<ReturnType<typeof getClinicSchedulesOfDoctor>>;
-  };
-  const membersByClinic = new Map<number, MemberWithSchedules[]>();
-  const ownerByClinic = new Map<number, boolean>();
-  for (const id of clinicIds) {
-    const members = await getClinicDoctors(id);
-    // Attach each member's own OPD slots at this clinic (profile cards).
-    const withSchedules = await Promise.all(
-      members.map(async (m) => ({
-        ...m,
-        schedules: await getClinicSchedulesOfDoctor(id, m.id),
-      }))
-    );
-    membersByClinic.set(id, withSchedules);
-    ownerByClinic.set(id, await ensureClinicOwner(id, doctorId));
-  }
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
+  const [clinics, clinicIds] = await Promise.all([
+    getClinicsWithSchedules(doctorId),
+    getClinicsOfDoctor(doctorId),
+  ]);
+  // Members + schedules + owner flags in a constant number of set-based
+  // queries (F-05) instead of a sequential per-clinic loop.
+  const { membersByClinic, ownerByClinic } = await getClinicMembersWithSchedules(
+    clinicIds,
+    doctorId
+  );
 
   const weekSummary = (() => {
     const byDay = new Map<string, { count: number; minutes: number }>();

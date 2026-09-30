@@ -36,7 +36,7 @@ async function requirePatient() {
 async function requireDoctor() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/doctor");
+  if (!["doctor", "receptionist"].includes(user.role)) redirect("/doctor");
   return user;
 }
 
@@ -61,6 +61,25 @@ export async function triggerSos(
 
   const { allowed } = authRateLimit.emergency(user.id);
   if (!allowed) return { error: "Too many SOS requests. Please wait a minute." };
+
+  // Server-side re-trigger guard: if the patient already has an active
+  // (pending) request, reject instead of stacking a second one. Stale
+  // pending requests past the TTL are expired first so the guard can't
+  // permanently lock the patient out after a dead poll.
+  const [active] = await db
+    .select({ id: sosRequests.id, createdAt: sosRequests.createdAt })
+    .from(sosRequests)
+    .where(and(eq(sosRequests.patientId, user.id), eq(sosRequests.status, "pending")))
+    .orderBy(desc(sosRequests.createdAt))
+    .limit(1);
+  if (active) {
+    const expired = await expireStalePendingRequest(active.id);
+    if (!expired) {
+      return {
+        error: "You already have an active SOS request. Cancel it before triggering a new one.",
+      };
+    }
+  }
 
   const lat = parsed.data.latitude;
   const lng = parsed.data.longitude;

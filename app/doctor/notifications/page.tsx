@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/utils";
 export const metadata: Metadata = { title: "Notifications · Doctor" };
 
 export default async function NotificationsPage() {
-  await requireRole(["doctor", "receptionist", "admin"]);
+  await requireRole(["doctor", "receptionist"]);
   const notifications = await getNotifications();
   const unread = notifications.filter((n) => !n.read).length;
 

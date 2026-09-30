@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/guard";
-import { getPatientById } from "@/lib/queries/doctor";
+import { getPatientById, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { EditPatientForm } from "./edit-form";
 
@@ -21,8 +21,8 @@ export default async function EditPatientPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const { id } = await params;
   const numericId = Number(id);
   if (!Number.isInteger(numericId) || numericId <= 0) notFound();

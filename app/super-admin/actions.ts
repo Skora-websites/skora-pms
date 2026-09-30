@@ -56,7 +56,7 @@ const SYSTEM_ROLE_BY_ROLE: Record<string, string> = {
   receptionist: "Receptionist",
   super_admin: "Super Admin",
 };
-const VALID_ROLES = ["super_admin", "admin", "doctor", "receptionist", "patient"];
+const VALID_ROLES = ["super_admin", "admin", "manager", "doctor", "receptionist", "patient"];
 const VALID_STATUSES = ["active", "inactive"];
 const UPLOAD_ROOT = path.join(process.cwd(), "storage", "uploads");
 const DATE_SAFE = /^[a-zA-Z0-9._/-]+$/;
@@ -64,7 +64,9 @@ const DATE_SAFE = /^[a-zA-Z0-9._/-]+$/;
 async function requireAdmin() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["super_admin", "admin"].includes(user.role)) redirect("/login");
+  // Admin (business owner) moved to the /admin tier in Phase 3 — the
+  // super-admin surface is super_admin-only now (layout + actions agree).
+  if (user.role !== "super_admin") redirect("/login");
   return user;
 }
 

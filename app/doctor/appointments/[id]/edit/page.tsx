@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/guard";
-import { getAppointmentById, getDoctorPatients } from "@/lib/queries/doctor";
+import { getAppointmentById, getDoctorPatients, resolvePracticeDoctorId, isPracticeWideUser } from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { db } from "@/lib/db";
 import { appointments } from "@/lib/db/schema";
@@ -29,9 +29,9 @@ export default async function EditAppointmentPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-  const isReceptionist = user.role === "receptionist" || user.role === "admin";
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
+  const isReceptionist = isPracticeWideUser(user.role);
   const { id } = await params;
 
   const appointmentId = Number(id);

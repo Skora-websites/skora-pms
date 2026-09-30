@@ -6,7 +6,7 @@ import { SettingsTabs } from "./settings-tabs";
 export const metadata: Metadata = { title: "Settings · Doctor" };
 
 export default async function SettingsPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
 
   return (
     <div>

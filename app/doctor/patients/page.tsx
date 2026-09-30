@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Users, ArrowUpRight, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getDoctorPatients } from "@/lib/queries/doctor";
+import { getDoctorPatients, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
 import { ExportPatientsButton } from "./export-button";
@@ -14,8 +14,8 @@ export default async function PatientsPage({
 }: {
   searchParams: Promise<{ q?: string; start_date?: string; end_date?: string }>;
 }) {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const { q, start_date, end_date } = await searchParams;
   const patients = await getDoctorPatients(doctorId, q, start_date, end_date);
 

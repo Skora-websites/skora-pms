@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Minimal SMTP client used for transactional mail. Avoids a heavy dependency
  * by speaking SMTP directly over node:net/node:tls.
@@ -33,7 +35,7 @@ async function loadSmtpConfig(): Promise<SmtpConfig | null> {
     secure: (mail.encryption ?? "").toLowerCase() === "ssl",
     user: mail.username ?? "",
     pass: decryptSecret(mail.password),
-    from: mail.fromAddress ?? company?.companyEmail1 ?? "no-reply@localhost",
+    from: mail.fromAddress ?? company?.companyEmail1 ?? process.env.SMTP_FROM_ADDRESS ?? "no-reply@localhost",
     fromName: mail.fromName ?? company?.companyName ?? "SkoraCare",
   };
 }

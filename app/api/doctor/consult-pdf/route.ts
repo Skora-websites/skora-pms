@@ -11,7 +11,7 @@ const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!["doctor", "receptionist"].includes(user.role)) {
     return new Response("Forbidden", { status: 403 });
   }
 

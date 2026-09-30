@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import mysql from "mysql2/promise";
+import { DB, SEED_PASSWORD, type DbRow } from "./test-env";
 
 // Business-fix verification (audit round 2):
 // F1  — doctor signup grants default module permissions → dashboard reachable
@@ -8,9 +9,8 @@ import mysql from "mysql2/promise";
 //       consultation/completion entry points while consent outstanding)
 // F12 — consent accept/reject syncs appointment status + notifies doctor
 
-const DB = { host: "127.0.0.1", port: 3307, user: "root", password: "", database: "skoracares_db" };
 
-type Row<T> = [T, unknown]; // mysql2 returns [rows, fields]
+type Row<T> = DbRow<T>; // mysql2 returns [rows, fields]
 async function query<T>(sql: string, params: unknown[]): Promise<T[]> {
   const conn = await mysql.createConnection(DB);
   try {
@@ -43,8 +43,8 @@ test.describe("Business-fix verification", () => {
     const otp = (await otpMsg.textContent())!.match(/(\d{6})/)![1];
     await page.locator('input[name="otp"]').fill(otp);
 
-    await page.getByLabel("Password", { exact: true }).fill("Admin@123");
-    await page.getByLabel("Confirm password").fill("Admin@123");
+    await page.getByLabel("Password", { exact: true }).fill(SEED_PASSWORD);
+    await page.getByLabel("Confirm password").fill(SEED_PASSWORD);
     await page.getByRole("button", { name: /Create account/i }).click();
 
     // New doctor must reach /doctor dashboard — previously locked out (no perms).

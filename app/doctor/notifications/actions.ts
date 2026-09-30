@@ -6,6 +6,7 @@ import { and, eq, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notifications } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission } from "@/lib/auth/user";
+import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 
 export type NotifState = { error: string | null };
 
@@ -21,9 +22,9 @@ export type NotifRow = {
 async function getDoctorId(): Promise<number | null> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist", "admin"].includes(user.role)) redirect("/login");
+  if (!["doctor", "receptionist"].includes(user.role)) redirect("/login");
   if (!(await hasPermission(user.id, "dashboard"))) return null;
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  return resolvePracticeDoctorId(user);
 }
 
 export async function getNotifications(): Promise<NotifRow[]> {

@@ -10,7 +10,7 @@ import { timeAgo } from "@/lib/utils";
 export const metadata: Metadata = { title: "Support · Doctor" };
 
 export default async function SupportPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
+  const user = await requireRole(["doctor", "receptionist"]);
   const tickets = await getSupportTickets(user.id);
 
   return (

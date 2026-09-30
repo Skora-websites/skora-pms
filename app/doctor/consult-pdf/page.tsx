@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { FileText, FileDown, ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getDoctorConsultPdf } from "@/lib/queries/doctor";
+import { getDoctorConsultPdf, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { ConsultPdfForm } from "./consult-pdf-form";
 
 export const metadata: Metadata = { title: "Consultation PDF · Doctor" };
 
 export default async function ConsultPdfPage() {
-  const user = await requireRole(["doctor", "receptionist", "admin"]);
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const user = await requireRole(["doctor", "receptionist"]);
+  const doctorId = resolvePracticeDoctorId(user);
   const consultPdf = await getDoctorConsultPdf(doctorId);
 
   return (

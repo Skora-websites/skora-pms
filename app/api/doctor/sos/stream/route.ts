@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist", "admin"].includes(user.role)) {
+  if (!user || !["doctor", "receptionist"].includes(user.role)) {
     return new Response("Unauthorized", { status: 401 });
   }
   const doctorId = resolveDoctorId(user);
