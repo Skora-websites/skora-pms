@@ -92,11 +92,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Expose the pathname to server components. Layouts can't call
-  // usePathname(), so this header lets the doctor layout enforce
-  // permissions server-side (redirect before restricted pages fetch data).
+  // Expose the path (and query) to server components. Layouts can't call
+  // usePathname(), so this header lets the doctor/admin layouts enforce
+  // permissions server-side and rebuild redirects without losing
+  // query strings (e.g. the booking page's ?patient=<id> preselect).
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-pathname", pathname);
+  requestHeaders.set("x-pathname", pathname + request.nextUrl.search);
 
   // Receptionist panel URL-space: /receptionist/* renders the /doctor/*
   // routes (the app internals stay on /doctor; the doctor layout bounces

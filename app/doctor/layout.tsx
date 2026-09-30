@@ -30,13 +30,18 @@ export default async function DoctorLayout({
   // URL-space split: receptionists browse under /receptionist/* (the proxy
   // rewrites it onto these /doctor routes); doctors keep /doctor only. Bounce
   // each role out of the other's prefix before any page data is fetched.
-  const rawPathname = (await headers()).get("x-pathname") ?? "/doctor";
+  // x-pathname now carries "path?query"; split it so the module-permission
+  // match keeps seeing the bare pathname while redirects preserve queries.
+  const [rawPathname, rawSearch = ""] = (
+    (await headers()).get("x-pathname") ?? "/doctor"
+  ).split("?");
+  const keepSearch = (p: string) => (rawSearch ? `${p}?${rawSearch}` : p);
   const pathname = receptionistPathToDoctor(rawPathname);
   if (user.role === "receptionist" && !rawPathname.startsWith("/receptionist")) {
-    redirect(doctorPathToReceptionist(rawPathname));
+    redirect(keepSearch(doctorPathToReceptionist(rawPathname)));
   }
   if (user.role !== "receptionist" && rawPathname.startsWith("/receptionist")) {
-    redirect(receptionistPathToDoctor(rawPathname));
+    redirect(keepSearch(receptionistPathToDoctor(rawPathname)));
   }
 
   // Server-side page guard: redirect before the page component runs, so a

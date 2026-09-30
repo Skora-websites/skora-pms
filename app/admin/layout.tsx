@@ -13,8 +13,9 @@ export default async function AdminLayout({
 }) {
   // requireAdminTier validates the session + role and enforces the per-route
   // module map server-side (redirect before page data is fetched) — same
-  // x-pathname pattern as the doctor layout.
-  const rawPathname = (await headers()).get("x-pathname") ?? "/admin";
+  // x-pathname pattern as the doctor layout. x-pathname now carries
+  // "path?query"; the permission matcher wants the bare pathname.
+  const [rawPathname] = ((await headers()).get("x-pathname") ?? "/admin").split("?");
   const { user, viewerRole } = await requireAdminTier(rawPathname);
 
   const scope = await getBusinessScope();
