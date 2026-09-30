@@ -51,3 +51,10 @@ next-env.d.ts
 *.log
 tmp-shot-*.png
 .playwright-mcp/
+
+# local machine artifacts (DB dumps, large archive, scratch output)
+/skoracare_old.zip
+/tsc-baseline.txt
+/qpid.mjs
+/.claude/
+/backups/
