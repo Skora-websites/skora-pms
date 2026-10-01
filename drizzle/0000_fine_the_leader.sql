@@ -80,6 +80,7 @@ CREATE TABLE `billings` (
 	`status` enum('pending','partial','paid') DEFAULT 'pending',
 	`notes` text,
 	`bill_date` date NOT NULL,
+	`test_booking_id` bigint,
 	`deleted_at` timestamp,
 	`created_at` timestamp,
 	`updated_at` timestamp,
@@ -433,17 +434,19 @@ CREATE TABLE `landing_items` (
 	CONSTRAINT `landing_items_id` PRIMARY KEY(`id`)
 );
 --> statement-breakpoint
-CREATE TABLE `landing_sections` (
+CREATE TABLE	`landing_sections` (
 	`id` bigint AUTO_INCREMENT NOT NULL,
 	`key` varchar(255) NOT NULL,
 	`name` varchar(255) NOT NULL,
+	-- unique: landing_items.section_key targets this column via FK
 	`title` varchar(255),
 	`subtitle` text,
 	`is_active` boolean DEFAULT true,
 	`metadata` json,
 	`created_at` timestamp,
 	`updated_at` timestamp,
-	CONSTRAINT `landing_sections_id` PRIMARY KEY(`id`)
+	CONSTRAINT `landing_sections_id` PRIMARY KEY(`id`),
+	CONSTRAINT `landing_sections_key_unique` UNIQUE(`key`)
 );
 --> statement-breakpoint
 CREATE TABLE `mail_settings` (
@@ -711,6 +714,7 @@ CREATE TABLE `users` (
 	`registration_number` varchar(255),
 	`registration_id` varchar(255),
 	`role` enum('admin','super_admin','doctor','patient','receptionist') NOT NULL DEFAULT 'patient',
+	`on_duty` boolean DEFAULT false,
 	`email` varchar(255),
 	`password` varchar(255) NOT NULL,
 	`phone` varchar(255),
@@ -742,6 +746,17 @@ CREATE TABLE `users` (
 	CONSTRAINT `users_registration_id_unique` UNIQUE(`registration_id`)
 );
 --> statement-breakpoint
+-- OTP signup verification (0007 later renames `phone` to `email`)
+CREATE TABLE `registration_otps` (
+	`id` bigint AUTO_INCREMENT NOT NULL,
+	`phone` varchar(255) NOT NULL,
+	`otp` varchar(10) NOT NULL,
+	`expires_at` timestamp NOT NULL,
+	`used` boolean DEFAULT false,
+	`created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+	CONSTRAINT `registration_otps_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
 CREATE TABLE `vendors` (
 	`id` bigint AUTO_INCREMENT NOT NULL,
 	`doctor_id` bigint NOT NULL,
@@ -764,6 +779,7 @@ ALTER TABLE `billing_types` ADD CONSTRAINT `billing_types_doctor_id_users_id_fk`
 ALTER TABLE `billings` ADD CONSTRAINT `billings_patient_id_users_id_fk` FOREIGN KEY (`patient_id`) REFERENCES `users`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `billings` ADD CONSTRAINT `billings_doctor_id_users_id_fk` FOREIGN KEY (`doctor_id`) REFERENCES `users`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `billings` ADD CONSTRAINT `billings_billing_type_id_billing_types_id_fk` FOREIGN KEY (`billing_type_id`) REFERENCES `billing_types`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE `billings` ADD CONSTRAINT `billings_test_booking_id_foreign` FOREIGN KEY (`test_booking_id`) REFERENCES `test_bookings`(`id`) ON DELETE set null;--> statement-breakpoint
 ALTER TABLE `blog_images` ADD CONSTRAINT `blog_images_blog_id_blogs_id_fk` FOREIGN KEY (`blog_id`) REFERENCES `blogs`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `blogs` ADD CONSTRAINT `blogs_category_id_categories_id_fk` FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `consultation_diagnoses` ADD CONSTRAINT `consultation_diagnoses_consultation_id_consultations_id_fk` FOREIGN KEY (`consultation_id`) REFERENCES `consultations`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

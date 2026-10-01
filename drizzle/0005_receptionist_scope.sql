@@ -12,13 +12,16 @@ JOIN users u ON u.id = mhp.model_id AND mhp.model_type = 'App\\Models\\User'
 LEFT JOIN permissions p ON p.id = mhp.permission_id
   AND (p.id IN (1, 9, 14, 19, 38, 58) OR p.parent_id IN (1, 9, 14, 19, 38, 58))
 WHERE u.role = 'receptionist' AND p.id IS NULL;
+--> statement-breakpoint
 
 DELETE rhp FROM role_has_permissions rhp
 JOIN roles r ON r.id = rhp.role_id AND r.doctor_id IS NULL AND r.name = 'Receptionist'
 LEFT JOIN permissions p ON p.id = rhp.permission_id
   AND (p.id IN (1, 9, 14, 19, 38, 58) OR p.parent_id IN (1, 9, 14, 19, 38, 58))
 WHERE p.id IS NULL;
+--> statement-breakpoint
 
 INSERT IGNORE INTO role_has_permissions (permission_id, role_id)
-SELECT p.id, 3 FROM permissions p
+SELECT p.id, r.id FROM permissions p
+JOIN roles r ON r.doctor_id IS NULL AND r.name = 'Receptionist'
 WHERE (p.id IN (1, 9, 14, 19, 38, 58) OR p.parent_id IN (1, 9, 14, 19, 38, 58));

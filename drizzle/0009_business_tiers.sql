@@ -9,8 +9,8 @@
 --      practices keep working unchanged (additive migration).
 
 CREATE TABLE `businesses` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `owner_id` BIGINT UNSIGNED NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `owner_id` bigint NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `slug` VARCHAR(255) NOT NULL,
   `email` VARCHAR(255) NULL,
@@ -29,9 +29,9 @@ CREATE TABLE `businesses` (
 --> statement-breakpoint
 
 CREATE TABLE `business_clinics` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `business_id` BIGINT UNSIGNED NOT NULL,
-  `clinic_id` BIGINT UNSIGNED NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `business_id` bigint NOT NULL,
+  `clinic_id` bigint NOT NULL,
   `is_primary` BOOLEAN DEFAULT FALSE,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
@@ -45,10 +45,10 @@ CREATE TABLE `business_clinics` (
 --> statement-breakpoint
 
 CREATE TABLE `clinic_managers` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `business_id` BIGINT UNSIGNED NOT NULL,
-  `clinic_id` BIGINT UNSIGNED NOT NULL,
-  `user_id` BIGINT UNSIGNED NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `business_id` bigint NOT NULL,
+  `clinic_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
   `is_active` BOOLEAN DEFAULT TRUE,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,

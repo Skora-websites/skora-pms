@@ -51,8 +51,10 @@ import {
   expenseTypes,
   vendors,
   tests,
+  receptionistClinics,
 } from "../lib/db/schema";
 import { hashPassword } from "../lib/auth/password";
+import { eq } from "drizzle-orm";
 
 const now = () => new Date();
 const daysFromNow = (n: number) => {
@@ -737,6 +739,29 @@ async function main() {
           modelType: "App\\Models\\User",
           modelId: managerId,
         });
+      }
+    }
+  }
+
+  // Receptionist clinic assignments (role model G4): anchor every seeded
+  // receptionist to every clinic of their anchoring doctor — the same
+  // backfill 0011 runs for pre-existing receptions during migration.
+  {
+    const receptionists = await db
+      .select({ id: users.id, doctorId: users.doctorId })
+      .from(users)
+      .where(eq(users.role, "receptionist"));
+    for (const r of receptionists) {
+      if (r.doctorId == null) continue;
+      const clinics = await db
+        .select({ id: doctorClinics.id })
+        .from(doctorClinics)
+        .where(eq(doctorClinics.doctorId, r.doctorId));
+      for (const c of clinics) {
+        await db
+          .insert(receptionistClinics)
+          .values({ receptionistId: r.id, clinicId: c.id, isActive: true })
+          .onDuplicateKeyUpdate({ set: { isActive: true } });
       }
     }
   }

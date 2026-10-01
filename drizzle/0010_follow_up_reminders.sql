@@ -4,12 +4,12 @@
 -- Follow-ups page (e.g. receptionist schedules a call for a patient).
 CREATE TABLE `follow_up_reminders` (
 	`id` bigint AUTO_INCREMENT NOT NULL,
-	`doctor_id` bigint unsigned NOT NULL,
-	`patient_id` bigint unsigned NOT NULL,
+	`doctor_id` bigint NOT NULL,
+	`patient_id` bigint NOT NULL,
 	`follow_up_date` date NOT NULL,
 	`note` text,
 	`status` varchar(255) DEFAULT 'pending',
-	`created_by` bigint unsigned NOT NULL,
+	`created_by` bigint NOT NULL,
 	`created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
 	`updated_at` timestamp,
 	CONSTRAINT `follow_up_reminders_id` PRIMARY KEY(`id`),

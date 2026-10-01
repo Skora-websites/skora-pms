@@ -1787,6 +1787,36 @@ export const clinicManagers = mysqlTable(
   ]
 );
 
+/**
+ * Receptionist per-clinic assignment (role model G4): which clinics a
+ * receptionist operates. A receptionist stays anchored to their practice
+ * -owner doctor for record anchoring, but the clinic list here decides what
+ * they can see — mirroring clinic_managers for the manager tier.
+ */
+export const receptionistClinics = mysqlTable(
+  "receptionist_clinics",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    receptionistId: bigint("receptionist_id", { mode: "number" }).notNull(),
+    clinicId: bigint("clinic_id", { mode: "number" }).notNull(),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("receptionist_clinics_pair_unique").on(t.receptionistId, t.clinicId),
+    index("receptionist_clinics_clinic_idx").on(t.clinicId),
+    foreignKey({
+      columns: [t.receptionistId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.clinicId],
+      foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+  ]
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────

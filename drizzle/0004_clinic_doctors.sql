@@ -5,9 +5,9 @@
 --      (legacy rows backfilled to the clinic owner)
 
 CREATE TABLE `clinic_doctors` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `clinic_id` BIGINT UNSIGNED NOT NULL,
-  `doctor_id` BIGINT UNSIGNED NOT NULL,
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `clinic_id` bigint NOT NULL,
+  `doctor_id` bigint NOT NULL,
   `is_active` BOOLEAN DEFAULT TRUE,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
@@ -17,22 +17,25 @@ CREATE TABLE `clinic_doctors` (
   CONSTRAINT `clinic_doctors_clinic_id_foreign` FOREIGN KEY (`clinic_id`) REFERENCES `doctor_clinics`(`id`) ON DELETE CASCADE,
   CONSTRAINT `clinic_doctors_doctor_id_foreign` FOREIGN KEY (`doctor_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 );
+--> statement-breakpoint
 
 -- Backfill: every existing clinic's owner becomes its first member.
 INSERT INTO `clinic_doctors` (`clinic_id`, `doctor_id`, `is_active`, `created_at`)
 SELECT `id`, `doctor_id`, TRUE, NOW() FROM `doctor_clinics`;
+--> statement-breakpoint
 
 -- Add nullable first, backfill, then enforce NOT NULL + FK (a NOT NULL column
 -- would default to 0 and violate the FK before the backfill runs).
 ALTER TABLE `doctor_schedules`
-  ADD COLUMN `doctor_id` BIGINT UNSIGNED NULL AFTER `doctor_clinic_id`;
+  ADD COLUMN `doctor_id` bigint NULL AFTER `doctor_clinic_id`;
+--> statement-breakpoint
 
 -- Backfill: legacy schedule slots belonged to the clinic owner.
 UPDATE `doctor_schedules` `ds`
   JOIN `doctor_clinics` `dc` ON `dc`.`id` = `ds`.`doctor_clinic_id`
   SET `ds`.`doctor_id` = `dc`.`doctor_id`;
+--> statement-breakpoint
 
 ALTER TABLE `doctor_schedules`
-  MODIFY COLUMN `doctor_id` BIGINT UNSIGNED NOT NULL,
-  ADD INDEX `doctor_schedules_doctor_id_index`(`doctor_id`),
+  MODIFY COLUMN `doctor_id` bigint NOT NULL,
   ADD CONSTRAINT `doctor_schedules_doctor_id_foreign` FOREIGN KEY (`doctor_id`) REFERENCES `users`(`id`) ON DELETE CASCADE;

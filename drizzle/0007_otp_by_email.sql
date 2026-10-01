@@ -3,5 +3,6 @@
 --   2. Rows keyed by phone are meaningless after the switch — clear them.
 ALTER TABLE `registration_otps`
   CHANGE COLUMN `phone` `email` varchar(255) NOT NULL;
+--> statement-breakpoint
 
 DELETE FROM `registration_otps`;
