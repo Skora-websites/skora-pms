@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { unique } from "./helpers";
+import { awaitHydration, unique } from "./helpers";
 import { ACCOUNTS, SEED_PASSWORD } from "./test-env";
 
 test.describe.configure({ mode: "serial" });
@@ -7,6 +7,7 @@ test.use({ storageState: "e2e/.auth/admin.json" });
 
 test("super-admin: user CRUD + status toggle", async ({ page }) => {
   await page.goto("/super-admin/users");
+  await awaitHydration(page);
 
   const name = unique("QA User");
   const email = `${unique("qa")}@example.com`;
@@ -37,6 +38,7 @@ test("super-admin: user CRUD + status toggle", async ({ page }) => {
 
 test("super-admin: master data CRUD (medicines)", async ({ page }) => {
   await page.goto("/super-admin/masters");
+  await awaitHydration(page);
 
   const name = unique("Med");
   await page.getByRole("button", { name: "Add", exact: true }).click();
@@ -61,6 +63,7 @@ test("super-admin: master data CRUD (medicines)", async ({ page }) => {
 
 test("super-admin: clinic CRUD", async ({ page }) => {
   await page.goto("/super-admin/clinics");
+  await awaitHydration(page);
 
   const clinicName = unique("QA Clinic");
   await page.getByRole("button", { name: "New clinic" }).click();
@@ -88,6 +91,7 @@ test("super-admin: clinic CRUD", async ({ page }) => {
 
 test("super-admin: sync doctor permissions", async ({ page }) => {
   await page.goto("/super-admin/doctors");
+  await awaitHydration(page);
   await page.getByPlaceholder(/Search by name/).fill(ACCOUNTS.doctor);
   await page.getByRole("button", { name: "Search" }).click();
 
@@ -105,6 +109,7 @@ test("super-admin: sync doctor permissions", async ({ page }) => {
 
 test("super-admin: blog + category CRUD", async ({ page }) => {
   await page.goto("/super-admin/blogs");
+  await awaitHydration(page);
 
   const category = unique("Cat");
   await page.getByRole("button", { name: "New category" }).click();
