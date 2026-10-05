@@ -186,8 +186,10 @@ async function main() {
     if (p) await db.insert(roleHasPermissions).values({ permissionId: p.id, roleId: Number(receptionistRole.insertId) });
   }
 
-  // Manager template (admin tier): full clinic ops without finance or staff
-  // administration — mirrors the "full clinic ops" manager default.
+  // Manager template (admin tier): full clinic operations INCLUDING finance
+  // (D2) — billing + income & expense — without staff administration or the
+  // owner-only modules. The owner can trim any manager via the manager
+  // permissions editor (app/admin/managers).
   const managerTemplatePerms = [
     "dashboard", "dashboard-view",
     "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
@@ -195,6 +197,8 @@ async function main() {
     "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
     "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
     "follow-up", "follow-up-list", "follow-up-status-update",
+    "billing", "billing-list", "billing-create", "billing-edit", "billing-delete", "billing-print",
+    "income-expense", "income-expense-list", "income-expense-create", "income-expense-edit", "income-expense-delete", "income-expense-export",
   ];
 
   // ── Users ──────────────────────────────────────────────────────────────

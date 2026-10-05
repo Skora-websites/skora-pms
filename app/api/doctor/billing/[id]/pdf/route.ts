@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth/guard";
+import { requireApiRole } from "@/lib/auth/guard";
 import { getBillById } from "@/lib/queries/doctor";
 import { audit } from "@/lib/security/audit-log";
 import { getBusinessScope } from "@/lib/auth/scope";
@@ -20,7 +20,9 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireRole(["doctor", "receptionist", "admin", "manager"]);
+  // API routes answer 401/403 outright — never redirect (307 hides the denial).
+  const user = await requireApiRole(["doctor", "receptionist", "admin", "manager"]);
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const billId = Number(id);

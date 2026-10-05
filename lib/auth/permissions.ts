@@ -79,6 +79,12 @@ export type AdminNavPerm =
   | "income-expense"
   | "test-booking"
   | "billing"
+  | "home-visit"
+  | "chat"
+  | "shop"
+  | "support"
+  | "consultations"
+  | "online-consultations"
   | "roles-permissions"
   | "managers"
   | "clinics"
@@ -98,6 +104,14 @@ export const ADMIN_ROUTE_PERMISSIONS: { prefix: string; perm: AdminNavPerm; owne
   { prefix: "/admin/income-expense", perm: "income-expense" },
   { prefix: "/admin/test-bookings", perm: "test-booking" },
   { prefix: "/admin/billing", perm: "billing" },
+  // Owner-parity modules (D1): the /doctor modules the Business Owner gets
+  // too — Emergency stays doctor-only. Managers can be granted these.
+  { prefix: "/admin/home-visits", perm: "home-visit" },
+  { prefix: "/admin/chat", perm: "chat" },
+  { prefix: "/admin/shop", perm: "shop" },
+  { prefix: "/admin/support", perm: "support" },
+  { prefix: "/admin/consultations", perm: "consultations" },
+  { prefix: "/admin/online-consultations", perm: "online-consultations" },
   { prefix: "/admin/staff", perm: "roles-permissions" },
   { prefix: "/admin", perm: "dashboard" },
 ];
@@ -145,6 +159,12 @@ export function firstPermittedAdminPath(
     { perm: "income-expense", path: "/admin/income-expense" },
     { perm: "test-booking", path: "/admin/test-bookings" },
     { perm: "billing", path: "/admin/billing" },
+    { perm: "home-visit", path: "/admin/home-visits" },
+    { perm: "chat", path: "/admin/chat" },
+    { perm: "shop", path: "/admin/shop" },
+    { perm: "support", path: "/admin/support" },
+    { perm: "consultations", path: "/admin/consultations" },
+    { perm: "online-consultations", path: "/admin/online-consultations" },
     { perm: "roles-permissions", path: "/admin/staff" },
   ];
   for (const { perm, path } of order) {

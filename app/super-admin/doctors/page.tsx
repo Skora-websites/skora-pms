@@ -15,7 +15,7 @@ export default async function DoctorsPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const { q } = await searchParams;
   const doctors = await getDoctors(q);
 

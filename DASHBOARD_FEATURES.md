@@ -90,9 +90,9 @@
 | **Overview** (`/admin`) | **Owners:** cross-clinic KPIs (appointments today, MTD revenue, active staff, total patients) | ✅ |
 | | Owners: revenue by clinic, upcoming appointments feed (clinic-tenancy scoping w/ legacy fallback) | ✅ |
 | | **Managers:** full "Clinic OS" overview — KPI row (patients this week, appointments today + pending follow-ups, monthly billing, registered patients), Weekly OPD occupancy chart, Next Appointment widget, Clinical Queue, Recent Appointments table, 6-month Income & Expense trend (business-scoped via getPracticeStats/getPracticeFinanceTrend, all CTAs on `/admin/*`) | ✅ |
-| **Clinics** (owner only) | Clinic list with revenue per clinic | ✅ view |
+| **Clinics** (owner only) | Clinic list with revenue per clinic; create / edit / deactivate (soft delete) clinics | ✅ full CRUD |
 | **Managers** (owner only) | Create manager, assign / unassign manager to clinics | ✅ full CRUD |
-| **Business Settings** (owner only) | Business settings page | ✅ |
+| **Business Settings** (owner only) | Editable business profile (name, slug, contact, address, active toggle) + linked clinics | ✅ full CRUD |
 | **Schedule** | Clinic schedule view | ✅ view |
 | **Registrations** | Patient list + search (scoped by business) | ✅ view |
 | **Appointments** | Appointment list (scoped) | ✅ view |
@@ -100,7 +100,7 @@
 | **Test Bookings** | Booking list (scoped) | ✅ view |
 | **Billing** | Bill list + totals (total / received / pending) | ✅ view |
 | **Income & Expense** | Transaction list + totals (+ scoped export API) | ✅ view |
-| **Clinic Staff** | Staff / manager roster | ✅ view |
+| **Clinic Staff** (owner writes; managers view per roles-permissions) | Doctor roster per clinic (add doctor to clinic, remove non-owner members) + receptionist account CRUD (create / edit / password reset / delete) | ✅ full CRUD |
 | **Full clinic-ops CRUD** | Appointments (book / edit / confirm / cancel / complete / delete), Registrations (create / edit / delete), Billing (bill CRUD + credit collection + billing types), Income & Expense (transaction + category CRUD), Test Bookings (booking / vendor / test CRUD + status + upload links), Follow-ups (new reminder, status transitions) | ✅ owners full · managers per-permission |
 | Empty / error states | No-business empty state, error boundary, loading states | ✅ |
 

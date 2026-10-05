@@ -15,7 +15,7 @@ export default async function DoctorDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const { id } = await params;
   const doctorId = Number(id);
   if (!doctorId || !Number.isInteger(doctorId)) notFound();

@@ -20,8 +20,7 @@ export function AdminEmptyState({ isOwner }: { isOwner: boolean }) {
         </p>
         {isOwner ? (
           <p className="mt-4 text-xs text-slate-400">
-            Business setup ships with the managers module (Phase 4). Contact support if you
-            believe this is an error.
+            Contact support if you believe this is an error.
           </p>
         ) : (
           <Link href="/" className="mt-6 inline-block btn-primary">

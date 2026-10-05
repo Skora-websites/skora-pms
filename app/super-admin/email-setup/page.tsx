@@ -9,7 +9,7 @@ import { MailSettingsForm } from "./mail-settings-form";
 export const metadata: Metadata = { title: "Email Setup · Super Admin" };
 
 export default async function EmailSetupPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [mail] = await db.select().from(mailSettings).limit(1);
   const [company] = await db.select().from(companySettings).limit(1);
 

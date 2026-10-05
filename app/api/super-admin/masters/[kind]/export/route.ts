@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { symptoms, examinations, diagnoses, labTests, medicines } from "@/lib/db/schema";
-import { requireRole } from "@/lib/auth/guard";
+import { requireApiRole } from "@/lib/auth/guard";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -31,7 +31,9 @@ export async function GET(
   { params }: { params: Promise<{ kind: string }> }
 ) {
   // Platform-operator only: "admin" is the business owner (a tenant principal).
-  await requireRole(["super_admin"]);
+  // API routes answer 401/403 outright — never redirect (307 hides the denial).
+  const user = await requireApiRole(["super_admin"]);
+  if (user instanceof Response) return user;
 
   const { kind } = await params;
   const table = TABLES[kind as Kind];

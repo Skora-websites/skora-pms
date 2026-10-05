@@ -7,7 +7,7 @@ import { ClinicsPanel } from "./clinics-panel";
 export const metadata: Metadata = { title: "Manage Clinics · Super Admin" };
 
 export default async function ClinicsPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [clinics, doctors] = await Promise.all([getClinics(), getDoctorOptions()]);
 
   const rows = clinics.map((c) => ({

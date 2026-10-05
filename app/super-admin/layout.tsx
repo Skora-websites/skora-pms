@@ -30,7 +30,8 @@ export default async function SuperAdminLayout({
       navItems={NAV}
       user={{
         name: user.name,
-        role: user.role,
+        // Platform-operator label (role model: super admin = PMS Admin).
+        role: "PMS Admin",
         email: user.email,
         profilePhotoPath: user.profilePhotoPath,
       }}

@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorClinics } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,12 @@ const CONTENT_TYPES: Record<string, string> = {
 /**
  * Serve a clinic logo. Logos are not PHI but are stored outside public/
  * for consistency — only authenticated staff can view them.
+ *
+ * Gate per dashboard tier (lib/auth/permissions.ts semantics):
+ *   - doctor / receptionist → the clinic's owning doctor (or their practice);
+ *   - admin tier (business owner / clinic manager) → clinics inside the
+ *     viewer's business scope (owner sees all, manager only assigned ones);
+ *   - everyone else → 403.
  */
 export async function GET(
   _req: NextRequest,
@@ -28,10 +35,6 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return new Response("Forbidden", { status: 403 });
-  }
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const { id } = await params;
   const clinicId = Number(id);
@@ -41,9 +44,17 @@ export async function GET(
     .select({ clinicLogo: doctorClinics.clinicLogo, doctorId: doctorClinics.doctorId })
     .from(doctorClinics)
     .where(eq(doctorClinics.id, clinicId));
-
   if (!clinic?.clinicLogo) return new Response("Not found", { status: 404 });
-  if (clinic.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
+
+  if (user.role === "doctor" || user.role === "receptionist") {
+    const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+    if (clinic.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
+  } else if (user.role === "admin" || user.role === "manager") {
+    const scope = await getBusinessScope();
+    if (!scope.clinicIds.includes(clinicId)) return new Response("Forbidden", { status: 403 });
+  } else {
+    return new Response("Forbidden", { status: 403 });
+  }
 
   // Legacy rows store "uploads/clinic/x.jpg" (old public/uploads layout);
   // new rows store "clinic/x.jpg". Strip the stale prefix so both resolve

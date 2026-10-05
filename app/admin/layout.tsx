@@ -53,6 +53,12 @@ export default async function AdminLayout({
     { perm: "test-booking", label: "Test Bookings", href: "/admin/test-bookings", icon: "test-tube", section: "Clinic operations" },
     { perm: "billing", label: "Billing", href: "/admin/billing", icon: "calculator", section: "Finance" },
     { perm: "income-expense", label: "Income & Expense", href: "/admin/income-expense", icon: "wallet", section: "Finance" },
+    { perm: "home-visit", label: "Home Visits", href: "/admin/home-visits", icon: "home", section: "Clinic operations" },
+    { perm: "consultations", label: "Consultations", href: "/admin/consultations", icon: "stethoscope", section: "Clinic operations" },
+    { perm: "online-consultations", label: "Online Consultations", href: "/admin/online-consultations", icon: "video", section: "Clinic operations" },
+    { perm: "shop", label: "Shop", href: "/admin/shop", icon: "shopping-cart", section: "Clinic operations" },
+    { perm: "chat", label: "Chat", href: "/admin/chat", icon: "messages-square", section: "General" },
+    { perm: "support", label: "Support", href: "/admin/support", icon: "headset", section: "General" },
     { perm: "roles-permissions", label: "Clinic Staff", href: "/admin/staff", icon: "users", section: "Administration" },
   ];
 

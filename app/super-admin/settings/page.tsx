@@ -8,7 +8,7 @@ import { CompanySettingsForm } from "./company-settings-form";
 export const metadata: Metadata = { title: "Settings · Super Admin" };
 
 export default async function SettingsPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [company] = await db.select().from(companySettings).limit(1);
 
   return (

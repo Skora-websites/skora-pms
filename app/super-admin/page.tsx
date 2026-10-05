@@ -27,7 +27,7 @@ import { formatDate, formatINR } from "@/lib/utils";
 export const metadata: Metadata = { title: "Dashboard · Super Admin" };
 
 export default async function SuperAdminDashboardPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [stats, doctors, doctorGrowth, patientGrowth, topClinics, recentTickets] =
     await Promise.all([
       getSuperAdminStats(),

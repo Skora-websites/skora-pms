@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/utils";
 export const metadata: Metadata = { title: "Package Payments · Super Admin" };
 
 export default async function PackagePaymentsPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const payments = await getRecentPackagePayments(100);
 
   const paid = payments.filter((p) => p.status === "paid");

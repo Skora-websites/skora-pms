@@ -17,7 +17,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { requireWriteScope, ensureAppointmentInScope, ensurePatientInScope, isAdminTierRole, type ActionScope } from "@/lib/auth/action-scope";
-import { ensureClinicAccess, getClinicsOfDoctor } from "@/lib/queries/clinic";
+import { ensureClinicAccess, getClinicsOfDoctor, getReceptionistClinicIds } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
@@ -139,6 +139,13 @@ async function resolveTargetDoctor(
 async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, callerScope: ActionScope) {
   const clinicId = Number(clinicIdRaw);
   if (clinicId && Number.isInteger(clinicId) && (await ensureClinicAccess(clinicId, effectiveDoctorId))) {
+    // Receptionist tier: the clinic must also be one the receptionist is
+    // assigned to operate (role model G4) — a per-clinic front desk can't
+    // book at a clinic outside their assignment.
+    if (callerScope.callerRole === "receptionist") {
+      const assigned = await getReceptionistClinicIds(callerScope.callerId, { fallbackToPractice: true });
+      if (!assigned.includes(clinicId)) return null;
+    }
     return clinicId;
   }
   const targetClinics = await getActiveClinics(effectiveDoctorId);

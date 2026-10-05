@@ -14,6 +14,23 @@ export async function requireRole(roles: string[]) {
   return user;
 }
 
+/**
+ * API-route variant of requireRole: returns the user on success, or a ready
+ * Response (401/403) for the handler to return. Route handlers must never
+ * use the redirect() guards — next/navigation's redirect degrades to an
+ * opaque 307 there, sending authenticated tenants chasing an HTML page
+ * instead of answering with a machine-readable status (the NV-1 regression
+ * class: an owner must get exactly 403 on /api/super-admin/*).
+ */
+export async function requireApiRole(
+  roles: string[]
+): Promise<CurrentUser | Response> {
+  const user = await getCurrentUser();
+  if (!user) return new Response("Unauthorized", { status: 401 });
+  if (!roles.includes(user.role)) return new Response("Forbidden", { status: 403 });
+  return user;
+}
+
 /** Same as requireRole but also requires a permission name. */
 export async function requireRoleWithPermission(roles: string[], permission: string) {
   const user = await requireRole(roles);

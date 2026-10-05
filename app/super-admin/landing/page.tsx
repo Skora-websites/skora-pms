@@ -9,7 +9,7 @@ import { LandingEditor } from "./landing-editor";
 export const metadata: Metadata = { title: "Landing Page · Super Admin" };
 
 export default async function LandingPageAdmin() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const sections = await getLandingSectionsAdmin();
 
   const rows = sections.map((s) => ({

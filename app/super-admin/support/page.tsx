@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Support · Super Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function SuperAdminSupportPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [tickets, videos] = await Promise.all([getAllSupportTickets(), getSupportVideos()]);
   const open = tickets.filter((t) => t.status === "open");
 

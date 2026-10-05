@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { assignManager, createManager, unassignManager, type ActionResult } from "./actions";
+import { ManagerPermissionsEditor, type ManagerModuleCatalog } from "./permissions-editor";
 
 const initial: ActionResult = { error: null };
 
@@ -88,15 +89,20 @@ export function ManagerForm({
 
 export function ManagerList({
   assignments,
+  catalog,
+  permsByManagerId,
 }: {
   assignments: {
     id: number;
+    managerId: number;
     managerName: string;
     managerEmail: string | null;
     clinicName: string;
     isActive: boolean;
     createdAt: Date | null;
   }[];
+  catalog: ManagerModuleCatalog;
+  permsByManagerId: Map<number, Set<string>>;
 }) {
   const [, unassignAction, unassignPending] = useActionState(unassignManager, initial);
 
@@ -124,16 +130,24 @@ export function ManagerList({
               </p>
             </div>
             {a.isActive && (
-              <form action={unassignAction}>
-                <input type="hidden" name="assignmentId" value={a.id} />
-                <button
-                  type="submit"
-                  disabled={unassignPending}
-                  className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              </form>
+              <div className="flex items-center gap-2">
+                <ManagerPermissionsEditor
+                  managerId={a.managerId}
+                  managerName={a.managerName}
+                  catalog={catalog}
+                  granted={permsByManagerId.get(a.managerId) ?? new Set<string>()}
+                />
+                <form action={unassignAction}>
+                  <input type="hidden" name="assignmentId" value={a.id} />
+                  <button
+                    type="submit"
+                    disabled={unassignPending}
+                    className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </form>
+              </div>
             )}
           </div>
         ))}

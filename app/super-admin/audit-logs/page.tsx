@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 type Props = { searchParams: Promise<{ action?: string; page?: string }> };
 
 export default async function AuditLogsPage({ searchParams }: Props) {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const { action, page } = await searchParams;
   const currentPage = Math.max(1, Number(page) || 1);
   const limit = 50;

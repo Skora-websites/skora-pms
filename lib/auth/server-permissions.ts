@@ -20,24 +20,19 @@ const USER_MODEL = "App\\Models\\User";
 
 /**
  * Default module permissions a brand-new doctor gets so the dashboard is
- * usable out of the box (legacy Doctor role shipped with zero permissions
- * and every doctor 403'd until an admin assigned them). Super-admin can
- * still narrow them per doctor via the permissions dialog.
+ * usable out of the box — the clinical core (D3): dashboard (also covers the
+ * consultations entry, which is nav-mapped to the dashboard module),
+ * appointments, schedule (own slots), follow-ups and support. Finance,
+ * registrations, inventory and team-administration modules stay
+ * owner/staff-tier concerns; super-admin can widen a doctor via the
+ * permissions dialog.
  */
 export const DEFAULT_DOCTOR_MODULE_PERMS = [
   "dashboard",
-  "schedule",
-  "registrations",
   "appointments",
+  "schedule",
   "follow-up",
-  "income-expense",
-  "test-booking",
-  "billing",
-  "home-visit",
-  "chat",
-  "shop",
   "support",
-  "roles-permissions",
 ] as const;
 
 /** Grant a user direct model permissions by name (no-ops when unknown). */

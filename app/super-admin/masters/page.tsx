@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Consult Masters · Super Admin" };
 const KINDS: MasterKind[] = ["symptoms", "examinations", "diagnoses", "lab-tests", "medicines"];
 
 export default async function MastersPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [counts, ...datasets] = await Promise.all([getMasterCounts(), ...KINDS.map((k) => getMasterData(k))]);
   const data = Object.fromEntries(KINDS.map((k, i) => [k, datasets[i]])) as Record<MasterKind, typeof datasets[number]>;
 

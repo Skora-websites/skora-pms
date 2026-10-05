@@ -7,7 +7,7 @@ import { BlogManager } from "./blog-manager";
 export const metadata: Metadata = { title: "Blogs · Super Admin" };
 
 export default async function BlogsPage() {
-  await requireRole(["super_admin", "admin"]);
+  await requireRole(["super_admin"]);
   const [posts, categories] = await Promise.all([getAllBlogs(), getCategoriesWithCounts()]);
 
   const rows = posts.map((p) => ({

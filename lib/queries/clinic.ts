@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { clinicDoctors, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
+import { clinicDoctors, doctorClinics, doctorSchedules, receptionistClinics, users } from "@/lib/db/schema";
 
 /**
  * Multi-doctor clinic helpers.
@@ -310,4 +310,58 @@ export async function ensureClinicOwner(clinicId: number, doctorId: number): Pro
     .from(doctorClinics)
     .where(and(eq(doctorClinics.id, clinicId), eq(doctorClinics.doctorId, doctorId)));
   return !!owned;
+}
+
+/**
+ * Clinics a receptionist is assigned to operate (role model G4). An empty
+ * result means "no assignment yet" → the receptionist sees no clinic data
+ * (mirrors a manager with zero clinic_managers rows). Callers that need the
+ * legacy practice-wide behavior pass `fallbackToPractice: true`, which
+ * resolves the anchoring doctor's clinics — used only where the assignment
+ * table hasn't been populated.
+ */
+export const getReceptionistClinicIds = cache(
+  async (
+    receptionistId: number,
+    opts: { fallbackToPractice?: boolean } = {}
+  ): Promise<number[]> => {
+    const rows = await db
+      .select({ clinicId: receptionistClinics.clinicId })
+      .from(receptionistClinics)
+      .where(
+        and(
+          eq(receptionistClinics.receptionistId, receptionistId),
+          eq(receptionistClinics.isActive, true)
+        )
+      );
+    if (rows.length > 0 || !opts.fallbackToPractice) {
+      return [...new Set(rows.map((r) => r.clinicId))];
+    }
+    // Legacy fallback: anchoring doctor's owned + joined clinics.
+    const anchorId = rows.length === 0 ? receptionistId : receptionistId;
+    const owned = await db
+      .select({ id: doctorClinics.id })
+      .from(doctorClinics)
+      .where(eq(doctorClinics.doctorId, anchorId));
+    return [...new Set(owned.map((c) => c.id))];
+  }
+);
+
+/** True when the receptionist may operate the given clinic. */
+export async function ensureReceptionistClinic(
+  receptionistId: number,
+  clinicId: number
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: receptionistClinics.id })
+    .from(receptionistClinics)
+    .where(
+      and(
+        eq(receptionistClinics.receptionistId, receptionistId),
+        eq(receptionistClinics.clinicId, clinicId),
+        eq(receptionistClinics.isActive, true)
+      )
+    )
+    .limit(1);
+  return !!row;
 }

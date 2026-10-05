@@ -12,7 +12,10 @@ export async function adminReplyToTicket(
   message: string
 ): Promise<AdminReplyState> {
   const user = await getCurrentUser();
-  if (!user || !["super_admin", "admin"].includes(user.role)) {
+  // Platform-operator surface only — the stale ["super_admin", "admin"]
+  // admission let a tenant principal (business owner) post admin replies
+  // (same role-list regression the APIs fixed as NV-1).
+  if (!user || user.role !== "super_admin") {
     return { error: "Not authorized." };
   }
   const text = message.trim();
