@@ -17,6 +17,7 @@ import {
   getPracticeTodaysAppointments,
   getPracticeRecentAppointments,
 } from "@/lib/queries/doctor";
+import { getRates } from "@/lib/queries/analytics";
 import { formatINR, formatDate, cn } from "@/lib/utils";
 
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -33,6 +34,7 @@ function tierOf(count: number, max: number): "low" | "moderate" | "peak" | "heav
 
 type ClinicOsProps = {
   doctorIds: number[];
+  clinicIds: number[];
   businessName: string;
   clinicCount: number;
 };
@@ -43,12 +45,13 @@ type ClinicOsProps = {
  * recent appointments, finance trend) scoped to the manager's business
  * via getBusinessScope(). All CTAs point at /admin/* routes.
  */
-export async function ClinicOsDashboard({ doctorIds, businessName, clinicCount }: ClinicOsProps) {
-  const [stats, todays, recent, financeTrend] = await Promise.all([
+export async function ClinicOsDashboard({ doctorIds, clinicIds, businessName, clinicCount }: ClinicOsProps) {
+  const [stats, todays, recent, financeTrend, rates] = await Promise.all([
     getPracticeStats(doctorIds),
     getPracticeTodaysAppointments(doctorIds),
     getPracticeRecentAppointments(doctorIds, 6),
     getPracticeFinanceTrend(doctorIds, 6),
+    getRates({ doctorIds, clinicIds }),
   ]);
   const maxFinance = Math.max(...financeTrend.map((m) => Math.max(m.income, m.expense)), 1);
 
@@ -103,6 +106,21 @@ export async function ClinicOsDashboard({ doctorIds, businessName, clinicCount }
         <StatCard icon={CalendarDays} tone="accent" label="Appointments today" value={stats.todayAppointments} hint={`${stats.pendingFollowUps} follow-ups pending`} />
         <StatCard icon={Wallet} tone="amber" label="Monthly billing" value={formatINR(stats.monthIncome)} hint="Integrated billing & I/E synced" />
         <StatCard icon={Users} tone="rose" label="Registered patients" value={stats.totalPatients} hint={`Expenses ${formatINR(stats.monthExpense)}`} />
+      </div>
+
+      {/* ── RATES STRIP — the derived KPIs the market benchmarks on ───── */}
+      <div className="mt-4 grid grid-cols-3 gap-4">
+        {[
+          { label: "Collection rate", value: rates.collectionRatePct == null ? "—" : `${rates.collectionRatePct}%`, hint: `${rates.windowDays}d received vs billed` },
+          { label: "No-show rate", value: rates.noShowPct == null ? "—" : `${rates.noShowPct}%`, hint: `${rates.windowDays}d cancelled vs decided` },
+          { label: "Slot utilisation", value: rates.utilisationPct == null ? "—" : `${rates.utilisationPct}%`, hint: "Today's bookings vs capacity" },
+        ].map((r) => (
+          <div key={r.label} className="card p-4">
+            <p className="text-xs text-slate-500">{r.label}</p>
+            <p className="mt-1 font-display text-2xl font-bold tracking-[-0.02em] tabular-nums text-ink">{r.value}</p>
+            <p className="mt-1 text-[11px] text-slate-400">{r.hint}</p>
+          </div>
+        ))}
       </div>
 
       {/* ── MID BENTO ROW: Occupancy | Next Appointment | Clinical Queue (§5.4) */}

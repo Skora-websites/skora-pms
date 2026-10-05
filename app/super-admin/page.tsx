@@ -20,6 +20,7 @@ import {
   getTopClinics,
   getRecentTickets,
 } from "@/lib/queries/super-admin";
+import { getDormantAccounts } from "@/lib/queries/analytics";
 import { StatCard, PageHeader, StatusBadge } from "@/components/ui/dashboard-ui";
 import { MiniBarChart } from "@/components/dashboard/mini-bar-chart";
 import { formatDate, formatINR } from "@/lib/utils";
@@ -28,7 +29,7 @@ export const metadata: Metadata = { title: "Dashboard · Super Admin" };
 
 export default async function SuperAdminDashboardPage() {
   await requireRole(["super_admin"]);
-  const [stats, doctors, doctorGrowth, patientGrowth, topClinics, recentTickets] =
+  const [stats, doctors, doctorGrowth, patientGrowth, topClinics, recentTickets, dormant] =
     await Promise.all([
       getSuperAdminStats(),
       getDoctors(),
@@ -36,6 +37,7 @@ export default async function SuperAdminDashboardPage() {
       getPatientGrowth(6),
       getTopClinics(5),
       getRecentTickets(5),
+      getDormantAccounts(90),
     ]);
 
   return (
@@ -66,6 +68,41 @@ export default async function SuperAdminDashboardPage() {
             <MiniBarChart points={patientGrowth} tone="accent" />
           </div>
         </div>
+      </div>
+
+      {/* Access review (DPDP hygiene): dormant dashboard accounts */}
+      <div className="mt-4 card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Access review · dormant accounts</h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Dashboard accounts with no login activity for 90+ days — review and deactivate.
+            </p>
+          </div>
+          <Link href="/super-admin/users" className="text-xs font-semibold text-brand-800 hover:underline">
+            Manage users
+          </Link>
+        </div>
+        {dormant.length === 0 ? (
+          <p className="px-6 py-6 text-center text-sm text-slate-400">
+            Every dashboard account has been active in the last 90 days. ✅
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2 px-6 py-4">
+            {dormant.map((a) => (
+              <span
+                key={a.userId}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs"
+              >
+                <span className="font-semibold text-ink">{a.name}</span>
+                <span className="text-slate-400">{a.role}</span>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                  {a.lastSeenDays == null ? "never logged in" : `${a.lastSeenDays}d ago`}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Top clinics + recent tickets */}
