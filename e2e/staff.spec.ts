@@ -34,6 +34,12 @@ test.describe("P4.3 Staff & Attendance", () => {
     await expect(staffCard).toBeVisible({ timeout: 15_000 });
     await expect(staffCard.getByText(roleName)).toBeVisible();
 
+    // The attendance panel refetches the daily list when the staff roster
+    // changes, and "Save attendance" posts exactly that list — wait until
+    // the new member's row is in it, or the save races the refetch and
+    // persists nothing while still reporting success.
+    await expect(page.getByLabel(`${staffName} status`)).toBeVisible({ timeout: 15_000 });
+
     // ── Mark attendance for today ────────────────────────────────────────────
     await page.getByRole("button", { name: /Save attendance/i }).click();
     await expect(page.getByText("Attendance saved.")).toBeVisible({ timeout: 15_000 });
