@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarPlus, Stethoscope } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, ClipboardList, Stethoscope, Users } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import {
   getTodaysAppointments,
@@ -10,12 +10,14 @@ import {
   isPracticeWideUser,
 } from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import { getDashboardStats } from "@/lib/queries/analytics";
 import { StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { timeGreeting, formatDate, firstName } from "@/lib/utils";
 
 /**
- * Doctor dashboard — deliberately minimal: a personal greeting plus the
- * doctor's appointments (today's schedule first, recent bookings as
+ * Doctor dashboard — personal greeting, a self-scoped KPI strip (own numbers
+ * only, per the D4 privacy rule; receptionists see their practice's counts),
+ * and the doctor's appointments (today's schedule first, recent bookings as
  * fallback). The full "Clinic OS" operational dashboard (KPIs, occupancy,
  * finance charts, clinical queue) lives on the clinic-manager/owner
  * overview at /admin.
@@ -26,15 +28,40 @@ export default async function DoctorDashboardPage() {
   // Receptionists see the whole practice's queue; doctors see their own.
   const isReceptionist = isPracticeWideUser(user.role);
   const practiceIds = isReceptionist ? await getPracticeDoctorIds(doctorId) : [];
+  const statsScope = isReceptionist ? practiceIds : [user.id];
 
-  const [todays, recent] = await Promise.all([
+  const [todays, recent, stats] = await Promise.all([
     isReceptionist
       ? getPracticeTodaysAppointments(practiceIds)
       : getTodaysAppointments(doctorId),
     isReceptionist
       ? getPracticeRecentAppointments(practiceIds, 6)
       : getRecentAppointments(doctorId, 6),
+    getDashboardStats(statsScope),
   ]);
+
+  const kpis = [
+    {
+      icon: CalendarDays,
+      label: isReceptionist ? "Appointments today" : "My appointments today",
+      value: stats.todayCount,
+    },
+    {
+      icon: CheckCircle2,
+      label: "Completed this week",
+      value: stats.completedWeek,
+    },
+    {
+      icon: ClipboardList,
+      label: "Follow-ups due",
+      value: stats.followUpsDue,
+    },
+    {
+      icon: Users,
+      label: isReceptionist ? "Practice patients" : "My patients",
+      value: stats.totalPatients,
+    },
+  ];
 
   return (
     <div>
@@ -46,6 +73,23 @@ export default async function DoctorDashboardPage() {
         <p className="mt-1 text-[12px] text-slate-500">
           Here is your schedule for today.
         </p>
+      </div>
+
+      {/* ── KPI strip (self-scoped tallies) ───────────────────────────── */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {kpis.map((k) => (
+          <div key={k.label} className="card p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500">{k.label}</p>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-100 text-brand-700">
+                <k.icon className="h-3.5 w-3.5" />
+              </span>
+            </div>
+            <p className="mt-1 font-display text-[26px] font-bold leading-8 tracking-[-0.02em] tabular-nums text-ink">
+              {k.value}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* ── Today's appointments (Clinical Queue) ─────────────────────── */}

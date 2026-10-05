@@ -9,6 +9,7 @@ import {
   clinicDoctors,
   doctorClinics,
   doctorSchedules,
+  followUpReminders,
   sessions,
   users,
 } from "@/lib/db/schema";
@@ -411,3 +412,70 @@ export const getDormantAccounts = cache(
 
 // Re-export for callers that want the window constant.
 export { windowStart, RANGE_DAYS };
+
+export type DoctorHomeStats = {
+  todayCount: number;
+  completedWeek: number;
+  followUpsDue: number;
+  totalPatients: number;
+};
+
+/**
+ * Doctor-home KPI strip, scoped to the given doctor set (a doctor sees
+ * strictly their own numbers per the D4 privacy rule; receptionists pass
+ * their whole practice). All counts are simple tallies over existing rows.
+ */
+export const getDashboardStats = cache(
+  async (doctorIds: number[]): Promise<DoctorHomeStats> => {
+    const ids = doctorIds.length ? doctorIds : [-1];
+    const today = todayStr();
+    const weekStart = windowStart(7);
+
+    const [todayRow, weekRow, dueRow, patientsRow] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(appointments)
+        .where(
+          and(
+            inArray(appointments.doctorId, ids),
+            eq(appointments.date, today),
+            ne(appointments.status, "cancelled")
+          )
+        ),
+
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(appointments)
+        .where(
+          and(
+            inArray(appointments.doctorId, ids),
+            eq(appointments.status, "completed"),
+            gte(appointments.date, weekStart)
+          )
+        ),
+
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(followUpReminders)
+        .where(
+          and(
+            inArray(followUpReminders.doctorId, ids),
+            eq(followUpReminders.status, "pending"),
+            sql`${followUpReminders.followUpDate} <= ${today}`
+          )
+        ),
+
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(and(eq(users.role, "patient"), inArray(users.referenceRoleId, ids))),
+    ]);
+
+    return {
+      todayCount: Number(todayRow[0]?.count ?? 0),
+      completedWeek: Number(weekRow[0]?.count ?? 0),
+      followUpsDue: Number(dueRow[0]?.count ?? 0),
+      totalPatients: Number(patientsRow[0]?.count ?? 0),
+    };
+  }
+);
