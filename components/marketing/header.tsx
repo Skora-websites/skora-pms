@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, X, ArrowRight } from "lucide-react";
 import { Logo } from "./logo";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ const NAV = [
 export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -23,6 +25,10 @@ export function Header() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  /* The home page opens on a dark cinematic hero — keep the transparent bar
+     light-on-dark until it gains its glass backdrop. */
+  const onDark = pathname === "/" && !scrolled && !open;
 
   return (
     <header
@@ -34,14 +40,19 @@ export function Header() {
       )}
     >
       <div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-5 lg:px-8">
-        <Logo />
+        <Logo light={onDark} />
 
         <nav className="hidden items-center gap-1 md:flex">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-full px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-brand-50 hover:text-brand-800"
+              className={cn(
+                "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                onDark
+                  ? "text-white/75 hover:bg-white/10 hover:text-white"
+                  : "text-ink-muted hover:bg-brand-50 hover:text-brand-800"
+              )}
             >
               {item.label}
             </Link>
@@ -51,13 +62,21 @@ export function Header() {
         <div className="hidden items-center gap-3 md:flex">
           <Link
             href="/login"
-            className="rounded-full px-4 py-2 text-sm font-medium text-ink transition-colors hover:text-brand-800"
+            className={cn(
+              "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+              onDark ? "text-white hover:text-accent-300" : "text-ink hover:text-brand-800"
+            )}
           >
             Sign In
           </Link>
           <Link
             href="/signup"
-            className="group inline-flex items-center gap-1.5 rounded-full bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-700/25 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-700/30"
+            className={cn(
+              "group inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg",
+              onDark
+                ? "bg-white text-navy-950 hover:bg-accent-100"
+                : "bg-brand-700 text-white shadow-brand-700/25 hover:shadow-brand-700/30"
+            )}
           >
             Get Started
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -66,7 +85,12 @@ export function Header() {
 
         <button
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-brand-900/10 bg-white text-ink md:hidden"
+          className={cn(
+            "inline-flex h-10 w-10 items-center justify-center rounded-xl border md:hidden",
+            onDark
+              ? "border-white/20 bg-white/10 text-white"
+              : "border-brand-900/10 bg-white text-ink"
+          )}
           aria-label="Toggle menu"
         >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

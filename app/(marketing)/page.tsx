@@ -1,14 +1,39 @@
-import { ArrowRight, Check, Star } from "lucide-react";
+import {
+  Building2,
+  Headphones,
+  MapPin,
+  MessageCircle,
+  ShieldCheck,
+} from "lucide-react";
 import { getLandingData } from "@/lib/queries/landing";
 import { getCurrentUser } from "@/lib/auth/user";
 import { isRazorpayConfigured } from "@/lib/packages/razorpay";
 import { PACKAGE_PLANS } from "@/lib/packages/config";
-import { HeroCarousel } from "@/components/marketing/hero-carousel";
+import { LandingHero } from "@/components/marketing/landing-hero";
+import { FeaturesBento } from "@/components/marketing/features-bento";
+import { HowItWorks } from "@/components/marketing/how-it-works";
+import { ProductsStack } from "@/components/marketing/products-stack";
+import { TestimonialsCarousel } from "@/components/marketing/testimonials-carousel";
+import { Reveal } from "@/components/marketing/reveal";
 import { Pricing } from "@/components/marketing/pricing";
 import { Faq } from "@/components/marketing/faq";
-import { publicUploadUrl } from "@/lib/utils/uploads";
 
 export const dynamic = "force-dynamic";
+
+const TRUST_ITEMS = [
+  { icon: ShieldCheck, label: "DPDP-compliant, data in India" },
+  { icon: Building2, label: "Multi-clinic support" },
+  { icon: Headphones, label: "24x7 support" },
+  { icon: MessageCircle, label: "WhatsApp integration" },
+  { icon: MapPin, label: "Made in India" },
+];
+
+const STATS = [
+  { num: "2,000+", label: "Healthcare providers" },
+  { num: "50K+", label: "Appointments managed" },
+  { num: "12+", label: "Built-in modules" },
+  { num: "99.9%", label: "Uptime guaranteed" },
+];
 
 export default async function HomePage() {
   const data = await getLandingData();
@@ -36,359 +61,185 @@ export default async function HomePage() {
   const cta = data.get("cta");
 
   return (
-    <>
-      {/* ── HERO ─────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-50 via-accent-50/40 to-brand-50">
-        <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-brand-600/5" />
-        <div className="pointer-events-none absolute -bottom-40 -left-32 h-96 w-96 rounded-full bg-accent-500/5" />
-        <div className="mx-auto grid max-w-7xl gap-12 px-5 pb-20 pt-36 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-8 lg:pt-44">
-          <HeroCarousel items={hero?.items ?? []} />
+    <div className="w-full max-w-full overflow-x-clip">
+      {/* ── ATTENTION ──────────────────────────────────────────────────── */}
+      <LandingHero items={hero?.items ?? []} />
 
-          <HeroVisual item={hero?.items[0]} />
+      {/* ── Trust marquee ──────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden border-t border-white/10 bg-navy-950 py-6">
+        <div className="marquee-track items-center">
+          {[...TRUST_ITEMS, ...TRUST_ITEMS].map(({ icon: Icon, label }, i) => (
+            <span
+              key={i}
+              className="flex items-center gap-3 whitespace-nowrap px-8 text-sm font-medium text-white/55"
+            >
+              <Icon className="h-4 w-4 text-accent-500" />
+              {label}
+              <span aria-hidden className="ml-8 h-1 w-1 rounded-full bg-white/20" />
+            </span>
+          ))}
         </div>
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-navy-950 to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-navy-950 to-transparent" />
+      </div>
 
-        <div className="border-y border-brand-900/5 bg-navy-950 py-5">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-12 gap-y-3 px-5 text-sm text-white/60">
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> DPDP-compliant, data in India</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> Multi-clinic support</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> 24×7 support</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> WhatsApp integration</span>
-            <span className="flex items-center gap-2"><Check className="h-4 w-4 text-accent-400" /> Made in India 🇮🇳</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FEATURES ─────────────────────────────────────────────────── */}
+      {/* ── INTEREST: gapless feature bento ────────────────────────────── */}
       {features && (
-        <section className="py-24">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={features} />
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {features.items.map((f) => (
-                <div
-                  key={f.id}
-                  className="group rounded-2xl border border-brand-900/10 bg-gradient-to-br from-brand-50/70 to-accent-50/50 p-7 transition-all duration-300 hover:-translate-y-1.5 hover:border-brand-700/30 hover:shadow-soft"
-                >
-                  <div className="mb-5 flex h-13 w-13 items-center justify-center rounded-xl bg-white text-2xl shadow-sm ring-1 ring-brand-900/5 transition-all duration-300 group-hover:bg-brand-700 group-hover:text-white">
-                    {f.icon}
-                  </div>
-                  <h3 className="font-display text-lg font-bold text-ink">{f.title}</h3>
-                  <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{f.description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        <FeaturesBento
+          title={features.title}
+          subtitle={features.subtitle}
+          items={features.items}
+        />
       )}
 
-      {/* ── STATS BAND ───────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-navy-950 py-16">
-        <div className="pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full bg-white/5" />
-        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-8 px-5 text-center lg:grid-cols-4 lg:px-8">
-          {[
-            { num: "2,000+", label: "Healthcare providers" },
-            { num: "50K+", label: "Appointments managed" },
-            { num: "12+", label: "Built-in modules" },
-            { num: "99.9%", label: "Uptime guaranteed" },
-          ].map((s) => (
-            <div key={s.label}>
-              <p className="font-display text-4xl font-extrabold text-white lg:text-5xl">{s.num}</p>
-              <p className="mt-2 text-sm font-medium text-white/70">{s.label}</p>
-            </div>
+      {/* ── Stats band ─────────────────────────────────────────────────── */}
+      <section className="ambient-grain relative overflow-hidden bg-navy-950 py-24">
+        <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-accent-500/10 blur-[120px]" />
+        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-2 gap-y-12 px-5 lg:grid-cols-4 lg:px-8">
+          {STATS.map((s, i) => (
+            <Reveal
+              key={s.label}
+              delay={i * 0.08}
+              className="border-white/10 text-center lg:[&:not(:first-child)]:border-l"
+            >
+              <p className="font-editorial text-5xl font-semibold tracking-tight text-white md:text-6xl">
+                {s.num}
+              </p>
+              <p className="mt-3 text-xs font-medium uppercase tracking-[0.2em] text-white/45">
+                {s.label}
+              </p>
+            </Reveal>
           ))}
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ─────────────────────────────────────────────── */}
+      {/* ── DESIRE: pinned steps ───────────────────────────────────────── */}
       {steps && (
-        <section className="bg-surface py-24">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={steps} />
-            <div className="relative mt-14 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="absolute left-[12.5%] right-[12.5%] top-7 hidden h-0.5 bg-gradient-to-r from-accent-500 to-brand-700 lg:block" />
-              {steps.items.map((s) => (
-                <div key={s.id} className="relative text-center">
-                  <div className="relative z-10 mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-accent-500 bg-white font-display text-xl font-extrabold text-brand-800 shadow-md">
-                    {s.badge}
-                  </div>
-                  <h4 className="mt-5 font-display text-base font-bold text-ink">{s.title}</h4>
-                  <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-ink-muted">
-                    {s.description}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        <HowItWorks
+          title={steps.title}
+          subtitle={steps.subtitle}
+          items={steps.items.map((s) => ({
+            id: s.id,
+            title: s.title,
+            description: s.description,
+            badge: s.badge,
+          }))}
+        />
       )}
 
-      {/* ── PRODUCTS ─────────────────────────────────────────────────── */}
+      {/* ── DESIRE: stacking product cards ─────────────────────────────── */}
       {products && (
-        <section className="py-24">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={products} />
-            <div className="space-y-20">
-              {products.items.map((p) => {
-                const featList = (p.features as unknown as string[]) ?? [];
-                const reverse = p.icon === "reverse";
-                const imgSrc = publicUploadUrl(p.image);
-                return (
-                  <div
-                    key={p.id}
-                    className={`grid items-center gap-12 lg:grid-cols-2 ${reverse ? "lg:[&>*:first-child]:order-2" : ""}`}
-                  >
-                    {imgSrc ? (
-                      <img
-                        src={imgSrc}
-                        alt={p.title ?? "Product"}
-                        className="w-full rounded-3xl ring-1 ring-brand-900/5"
-                      />
-                    ) : (
-                    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-50 to-accent-50/60 p-12 ring-1 ring-brand-900/5">
-                      <div className="mx-auto max-w-sm">
-                        <div className="rounded-2xl bg-white p-5 shadow-soft ring-1 ring-brand-900/5">
-                          <div className="flex items-center gap-3">
-                            <span className="h-3 w-3 rounded-full bg-accent-500" />
-                            <div className="h-2.5 flex-1 rounded-full bg-brand-100" />
-                            <div className="h-2.5 w-8 rounded-full bg-accent-200" />
-                          </div>
-                          <div className="mt-4 space-y-3">
-                            <div className="h-2.5 w-3/4 rounded-full bg-brand-100" />
-                            <div className="h-2.5 w-1/2 rounded-full bg-brand-50" />
-                            <div className="h-2.5 w-5/6 rounded-full bg-brand-100" />
-                          </div>
-                          <div className="mt-5 grid grid-cols-3 gap-3">
-                            {["84", "12", "₹3.2k"].map((v) => (
-                              <div key={v} className="rounded-xl bg-surface p-3 text-center">
-                                <p className="font-display text-sm font-bold text-brand-800">{v}</p>
-                                <p className="text-[10px] text-ink-muted">metric</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    )}
-                    <div>
-                      <span className="badge bg-brand-100 text-brand-800">{p.badge}</span>
-                      <h3 className="mt-4 font-display text-2xl font-extrabold text-ink lg:text-3xl">
-                        {p.title}
-                      </h3>
-                      <p className="mt-4 text-base leading-relaxed text-ink-muted">{p.description}</p>
-                      <ul className="mt-6 space-y-3">
-                        {featList.map((feat) => (
-                          <li key={feat} className="flex items-start gap-2.5 text-[15px] text-ink">
-                            <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent-500 text-white">
-                              <Check className="h-3 w-3" strokeWidth={3} />
-                            </span>
-                            {feat}
-                          </li>
-                        ))}
-                      </ul>
-                      <a
-                        href={p.link ?? "/contact"}
-                        className="group mt-8 inline-flex items-center gap-2 font-semibold text-brand-800 transition-colors hover:text-brand-600"
-                      >
-                        {p.linkText ?? "Contact Sales"}
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        <ProductsStack
+          title={products.title}
+          subtitle={products.subtitle}
+          items={products.items}
+        />
+      )}
+
+      {/* ── Testimonials ───────────────────────────────────────────────── */}
+      {testimonials && testimonials.items.length > 0 && (
+        <section className="ambient-grain relative overflow-hidden bg-forest-deep py-32 md:py-48">
+          <div className="pointer-events-none absolute -left-40 top-0 h-96 w-96 rounded-full bg-accent-500/10 blur-[130px]" />
+          <div className="pointer-events-none absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-brand-500/15 blur-[130px]" />
+          <div className="relative z-10 mx-auto max-w-7xl px-5 lg:px-8">
+            <Reveal className="mb-16 text-center">
+              <h2 className="font-editorial text-balance text-4xl font-semibold tracking-[-0.02em] text-white md:text-6xl">
+                {testimonials.title}
+              </h2>
+              {testimonials.subtitle && (
+                <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-white/60">
+                  {testimonials.subtitle}
+                </p>
+              )}
+            </Reveal>
+            <TestimonialsCarousel items={testimonials.items} />
           </div>
         </section>
       )}
 
-      {/* ── TESTIMONIALS ─────────────────────────────────────────────── */}
-      {testimonials && (
-        <section className="bg-surface py-24">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={testimonials} />
-            <div className="grid gap-6 md:grid-cols-3">
-              {testimonials.items.map((t) => (
-                <div
-                  key={t.id}
-                  className="rounded-2xl border border-brand-900/10 bg-white p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-soft"
-                >
-                  <div className="mb-4 flex gap-1">
-                    {Array.from({ length: t.stars ?? 5 }).map((_, i) => (
-                      <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-[15px] italic leading-relaxed text-ink-muted">
-                    “{t.description}”
-                  </p>
-                  <div className="mt-6 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-sm font-bold text-white">
-                      {t.title}
-                    </div>
-                    <div>
-                      <p className="font-display text-sm font-semibold text-ink">{t.linkText}</p>
-                      <p className="text-xs text-ink-muted">{t.link}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ── PRICING ──────────────────────────────────────────────────── */}
+      {/* ── ACTION: pricing ────────────────────────────────────────────── */}
       {pricing && (
-        <section className="py-24">
+        <section className="py-32 md:py-48">
           <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={pricing} />
+            <Reveal className="mx-auto mb-16 max-w-3xl text-center">
+              <h2 className="font-editorial text-balance text-4xl font-semibold tracking-[-0.02em] text-ink md:text-6xl">
+                {pricing.title}
+              </h2>
+              {pricing.subtitle && (
+                <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-ink-muted">
+                  {pricing.subtitle}
+                </p>
+              )}
+            </Reveal>
             <Pricing items={pricing.items} checkoutPlans={checkoutPlans} />
           </div>
         </section>
       )}
 
-      {/* ── FAQ ──────────────────────────────────────────────────────── */}
+      {/* ── FAQ ────────────────────────────────────────────────────────── */}
       {faq && (
-        <section className="bg-surface py-24">
+        <section className="bg-surface py-32 md:py-48">
           <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <SectionHeader section={faq} />
+            <Reveal className="mx-auto mb-14 max-w-3xl text-center">
+              <h2 className="font-editorial text-balance text-4xl font-semibold tracking-[-0.02em] text-ink md:text-5xl">
+                {faq.title}
+              </h2>
+              {faq.subtitle && (
+                <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-ink-muted">
+                  {faq.subtitle}
+                </p>
+              )}
+            </Reveal>
             <Faq items={faq.items} />
-            <div className="mt-10 text-center">
+            <div className="mt-12 text-center">
               <p className="text-sm text-ink-muted">Still have questions?</p>
               <a
                 href="/contact"
                 className="mt-2 inline-flex items-center gap-2 font-semibold text-brand-800 hover:text-brand-600"
               >
-                Contact Support <ArrowRight className="h-4 w-4" />
+                Contact Support
               </a>
             </div>
           </div>
         </section>
       )}
 
-      {/* ── CTA ──────────────────────────────────────────────────────── */}
+      {/* ── ACTION: massive closing CTA ────────────────────────────────── */}
       {cta && (
-        <section className="px-5 py-24 lg:px-8">
-          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-brand-800 px-8 py-16 text-center">
-            <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-white/5" />
-            <div className="pointer-events-none absolute -bottom-20 -right-10 h-72 w-72 rounded-full bg-white/5" />
-            <h2 className="relative font-display text-3xl font-extrabold text-white lg:text-4xl">
+        <section className="ambient-grain relative overflow-hidden bg-navy-950 py-40 md:py-56">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-[36rem] w-[70rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-500/10 blur-[160px]" />
+          <div
+            aria-hidden
+            className="hatch pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
+          />
+          <Reveal className="relative z-10 mx-auto max-w-5xl px-5 text-center lg:px-8">
+            <h2 className="font-editorial text-balance text-5xl font-semibold leading-[1.05] tracking-[-0.02em] text-white md:text-7xl">
               {cta.title}
             </h2>
-            <p className="relative mx-auto mt-4 max-w-xl text-lg text-white/80">{cta.subtitle}</p>
-            <div className="relative mt-9 flex flex-wrap justify-center gap-4">
+            {cta.subtitle && (
+              <p className="mx-auto mt-8 max-w-2xl text-pretty text-xl leading-relaxed text-white/65">
+                {cta.subtitle}
+              </p>
+            )}
+            <div className="mt-12 flex flex-wrap items-center justify-center gap-4">
               <a
                 href="/signup"
-                className="rounded-full bg-white px-8 py-3.5 font-semibold text-brand-800 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl"
+                className="group inline-flex items-center rounded-full bg-white px-9 py-4.5 text-base font-semibold text-navy-950 shadow-xl shadow-black/25 transition-all hover:-translate-y-0.5 hover:bg-accent-100"
               >
                 Start Free Trial
               </a>
               <a
                 href="/contact"
-                className="rounded-full border-2 border-white/70 px-8 py-3.5 font-semibold text-white transition-colors hover:bg-white/10"
+                className="inline-flex items-center rounded-full border border-white/30 px-9 py-4.5 text-base font-semibold text-white transition-colors hover:border-white/60 hover:bg-white/10"
               >
                 Request a Demo
               </a>
             </div>
-            <p className="relative mt-4 text-sm text-white/60">
+            <p className="mt-8 text-sm text-white/45">
               No credit card required · Full access during your trial
             </p>
-          </div>
+          </Reveal>
         </section>
-      )}
-    </>
-  );
-}
-
-/** Hero right column: CMS image when the first hero item has one, else the
- *  decorative product mock (kept from the original design). */
-function HeroVisual({ item }: { item?: { image: string | null; title: string | null } }) {
-  const src = publicUploadUrl(item?.image);
-  if (src) {
-    return (
-      <div className="relative hidden lg:block">
-        <img
-          src={src}
-          alt={item?.title ?? "SkoraCare platform"}
-          className="animate-float w-full rounded-3xl border border-brand-900/5 shadow-float"
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="relative hidden lg:block">
-      <div className="animate-float rounded-3xl border border-brand-900/5 bg-white p-7 shadow-float">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 font-display text-base font-bold text-white">
-            AS
-          </div>
-          <div>
-            <p className="font-display text-sm font-semibold text-ink">Dr. Aarav Sharma</p>
-            <p className="text-xs text-ink-muted">General Physician · New Delhi</p>
-          </div>
-          <span className="badge ml-auto bg-accent-100 text-accent-800">Online</span>
-        </div>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          {[
-            { val: "128", label: "Patients this week" },
-            { val: "32", label: "Appointments today" },
-            { val: "₹48k", label: "Monthly billing" },
-            { val: "4.9★", label: "Patient rating" },
-          ].map((s) => (
-            <div key={s.label} className="rounded-xl bg-surface p-3.5">
-              <p className="font-display text-xl font-bold text-ink">{s.val}</p>
-              <p className="mt-0.5 text-[11px] text-ink-muted">{s.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5">
-          <div className="mb-1.5 flex justify-between text-xs text-ink-muted">
-            <span>Clinic capacity</span>
-            <span>72%</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-brand-100">
-            <div className="h-full w-[72%] rounded-full bg-accent-500" />
-          </div>
-        </div>
-      </div>
-
-      <div className="absolute -right-6 top-16 animate-float-slow rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-100 text-lg">📋</span>
-          <div>
-            <p className="text-xs font-semibold text-ink">Prescription</p>
-            <p className="text-[11px] text-ink-muted">Uploaded just now</p>
-          </div>
-        </div>
-      </div>
-      <div className="absolute -left-8 bottom-24 animate-float rounded-2xl border border-brand-900/5 bg-white p-4 shadow-soft [animation-delay:1.2s]">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-lg">📍</span>
-          <div>
-            <p className="text-xs font-semibold text-ink">Home visit</p>
-            <p className="text-[11px] text-ink-muted">Map navigation ready</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionHeader({
-  section,
-}: {
-  section: { title: string | null; subtitle: string | null; metadata: unknown };
-}) {
-  const meta = (section.metadata ?? {}) as { badge?: string };
-  return (
-    <div className="mx-auto mb-14 max-w-2xl text-center">
-      {meta.badge && (
-        <span className="badge bg-brand-100 text-brand-800">{meta.badge}</span>
-      )}
-      <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-ink lg:text-4xl">
-        {section.title}
-      </h2>
-      {section.subtitle && (
-        <p className="mt-4 text-lg leading-relaxed text-ink-muted">{section.subtitle}</p>
       )}
     </div>
   );

@@ -11,7 +11,7 @@ export function Logo({
 }) {
   return (
     <Link href="/" className={cn("group inline-flex items-center gap-2.5", className)}>
-      <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-navy-950 shadow-md shadow-brand-900/25 transition-transform duration-300 group-hover:scale-105">
+      <span className={cn("relative flex h-10 w-10 items-center justify-center rounded-xl shadow-md shadow-brand-900/25 transition-transform duration-300 group-hover:scale-105", light ? "bg-white/10" : "bg-navy-950")}>
         <Activity className="h-5 w-5 text-accent-500" strokeWidth={2.5} />
       </span>
       <span className="flex flex-col leading-none">

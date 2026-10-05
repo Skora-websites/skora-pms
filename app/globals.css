@@ -241,6 +241,56 @@ h5,
   );
 }
 
+/* ── Marketing landing page ───────────────────────────────────────────── */
+
+/* Editorial display face — Outfit is loaded (as --font-outfit) on the
+   (marketing) layout only; falls back to the app-wide Jakarta. */
+.font-editorial {
+  font-family: var(--font-outfit), var(--font-jakarta), ui-sans-serif, system-ui,
+    sans-serif;
+}
+
+/* Infinite trust marquee — track holds the content twice and slides half
+   its width, producing a seamless loop. */
+@keyframes marquee-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-x 36s linear infinite;
+}
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+/* Film-grain overlay for dark cinematic sections */
+.ambient-grain {
+  position: relative;
+  isolation: isolate;
+}
+.ambient-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+  }
+}
+
 /* ── Branded splash (components/pwa/splash-screen.tsx) ────────────────────
    Shown once per session: canvas backdrop, pulsing ring echo around the
    logo, cross bars staggered in. Keyframes live here (not Tailwind tokens)
