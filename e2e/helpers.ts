@@ -1,4 +1,6 @@
 import { expect, type Page } from "@playwright/test";
+import mysql from "mysql2/promise";
+import { ACCOUNTS, DB } from "./test-env";
 
 let counter = 0;
 
@@ -33,6 +35,43 @@ export const tinyPdf = Buffer.from(
 /** Shared assertion so a failed login is never silently swallowed. */
 export async function expectSignedIn(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/doctor(\/|$)/);
+}
+
+/**
+ * Grant the doctor login extra modules directly in the DB (the same rows the
+ * super-admin permissions dialog writes). The seeded Doctor role is the
+ * clinical-core template (dashboard, appointments, schedule, follow-up,
+ * support — ROLE_MODEL_PLAN.md D3), so specs exercising modules outside
+ * that set (registrations, billing, income-expense, test-bookings,
+ * home-visits, chat, shop, staff/roles) opt in via this helper. Grants are
+ * per-request server-side, so no re-login is needed. Idempotent.
+ */
+export async function grantDoctorModules(modules: string[]) {
+  if (modules.length === 0) return;
+  const conn = await mysql.createConnection({
+    host: DB.host,
+    port: DB.port,
+    user: DB.user,
+    password: DB.password,
+    database: DB.database,
+  });
+  try {
+    const [rows] = await conn.query("SELECT id FROM users WHERE email = ?", [ACCOUNTS.doctor]);
+    const userId = (rows as { id: number }[])[0]?.id;
+    if (!userId) throw new Error(`grantDoctorModules: no user ${ACCOUNTS.doctor}`);
+    const placeholders = modules.map(() => "?").join(",");
+    // Each named module + all of its action children (server actions check
+    // child perms; the nav checks the parent).
+    await conn.execute(
+      `INSERT IGNORE INTO model_has_permissions (permission_id, model_id, model_type)
+       SELECT p.id, ?, 'App\\\\Models\\\\User' FROM permissions p
+       WHERE p.name IN (${placeholders})
+          OR p.parent_id IN (SELECT id FROM permissions WHERE name IN (${placeholders}))`,
+      [userId, ...modules, ...modules]
+    );
+  } finally {
+    await conn.end();
+  }
 }
 
 /**

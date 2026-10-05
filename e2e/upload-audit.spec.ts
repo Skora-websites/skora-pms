@@ -1,10 +1,16 @@
 import { test, expect } from "@playwright/test";
 import m from "mysql2/promise";
 import fs from "node:fs";
-import { unique, tinyPdf } from "./helpers";
+import { awaitHydration, grantDoctorModules, tinyPdf, unique } from "./helpers";
 import { DB, BASE_URL, SEED_PASSWORD, type DbRow } from "./test-env";
 
 type Row<T> = DbRow<T>;
+
+// Income-expense attachments + vendor report downloads sit outside the
+// doctor's clinical-core default — grant both once for the whole file.
+test.beforeAll(async () => {
+  await grantDoctorModules(["income-expense", "test-booking"]);
+});
 async function query<T>(sql: string, params: unknown[]): Promise<T[]> {
   const conn = await m.createConnection(DB);
   try {
@@ -81,7 +87,10 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await page.goto(link);
     await page.locator('input[type="file"]').setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
     await page.getByRole("button", { name: /Upload report/i }).click();
-    await expect(page.getByText(/pdf, jpg or png/i)).toBeVisible({ timeout: 10_000 });
+    // Match the rejection banner only — the file input's helper text also
+    // contains "PDF, JPG or PNG", so a loose regex is a strict-mode violation
+    // once both are on the page.
+    await expect(page.getByText("Only PDF, JPG or PNG reports are allowed.")).toBeVisible({ timeout: 10_000 });
     // Nothing stored yet
     const token = link.split("/").pop()!;
     const pre = await query<{ uploaded_file_path: string | null }>(
@@ -179,6 +188,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     }
     expect(timeStr, "a free 10:xx slot exists").not.toBe("");
     await page.goto("/doctor/appointments/book");
+    await awaitHydration(page); // the booking form's Patient options hydrate client-side
     const patientSelect = page.getByLabel("Patient");
     const optionCount = await patientSelect.locator("option").count();
     let chosenIndex = 1;
@@ -321,24 +331,46 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await page.locator("#edit-file").setInputFiles({ name: "new.jpg", mimeType: "image/jpeg", buffer: jpg });
     await page.getByRole("button", { name: /Save changes/i }).click();
     await expect(page.getByRole("button", { name: /Edit/i }).first()).toBeVisible({ timeout: 15_000 });
-    const [tx2] = await query<{ id: number; file_path: string | null }>(
-      "SELECT id, file_path FROM transactions WHERE id = ?", [tx.id]
-    );
-    expect(tx2.file_path).toMatch(/^transactions\/.+\.jpg$/);
+    // The action's UPDATE can land a tick after the modal closes — poll the DB.
+    let tx2: { id: number; file_path: string | null } = { id: tx.id, file_path: null };
+    await expect
+      .poll(async () => {
+        const [row] = await query<{ id: number; file_path: string | null }>(
+          "SELECT id, file_path FROM transactions WHERE id = ?", [tx.id]
+        );
+        tx2 = row;
+        return row.file_path;
+      }, { message: "attachment replaced with jpg", timeout: 10_000 })
+      .toMatch(/^transactions\/.+\.jpg$/);
     expect(tx2.file_path).not.toBe(oldPath);
 
-    expect(fs.existsSync(`storage/uploads/${oldPath}`), "old file unlinked after replace").toBe(false);
+    // deleteAttachment unlinks fire-and-forget — poll instead of racing it.
+    await expect
+      .poll(() => fs.existsSync(`storage/uploads/${oldPath}`), {
+        message: "old file unlinked after replace",
+        timeout: 5_000,
+      })
+      .toBe(false);
     expect(fs.existsSync(`storage/uploads/${tx2.file_path}`), "new file on disk").toBe(true);
 
     // ── Delete entry → file removed from disk ──────────────────────────────
     page.on("dialog", (d) => d.accept());
     await incomeRow.getByRole("button", { name: /Delete/i }).click();
     await expect(incomeRow).toHaveCount(0, { timeout: 15_000 }).catch(() => {});
-    const [gone] = await query<{ deleted_at: string | null }>(
-      "SELECT deleted_at FROM transactions WHERE id = ?", [tx.id]
-    );
-    expect(gone.deleted_at).toBeTruthy();
-    expect(fs.existsSync(`storage/uploads/${tx2.file_path}`), "file removed on delete").toBe(false);
+    await expect
+      .poll(async () => {
+        const [row] = await query<{ deleted_at: string | null }>(
+          "SELECT deleted_at FROM transactions WHERE id = ?", [tx.id]
+        );
+        return row?.deleted_at ?? null;
+      }, { message: "transaction soft-deleted", timeout: 10_000 })
+      .toBeTruthy();
+    await expect
+      .poll(() => fs.existsSync(`storage/uploads/${tx2.file_path}`), {
+        message: "file removed on delete",
+        timeout: 5_000,
+      })
+      .toBe(false);
   });
 
   test("consent: wrong type (txt) rejected with friendly error", async ({ browser }) => {
@@ -348,6 +380,7 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     const dateStr = future.toISOString().slice(0, 10);
     const timeStr = `11:${String(Math.floor(Math.random() * 49)).padStart(2, "0")}`;
     await page.goto("/doctor/appointments/book");
+    await awaitHydration(page); // the booking form's Patient options hydrate client-side
     const patientSelect = page.getByLabel("Patient");
     const optionCount = await patientSelect.locator("option").count();
     let chosenIndex = 1;

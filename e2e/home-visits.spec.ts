@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { grantDoctorModules } from "./helpers";
 
 test.describe("P4.5 Home Visits — patient details drawer", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["home-visit"]); });
   test("opens the patient details drawer from a home visit row", async ({ page }) => {
     await page.goto("/doctor/home-visits");
     await expect(page.getByRole("heading", { name: /Home Visits/i }).first()).toBeVisible();

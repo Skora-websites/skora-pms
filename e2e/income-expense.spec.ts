@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 
 test.describe("P3.2 Income & Expense", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["income-expense"]); });
   test("add categories, create income and expense entries, edit, update status, then delete", async ({ page }) => {
     const incomeCatName = unique("E2E Income Cat");
     const expenseCatName = unique("E2E Expense Cat");

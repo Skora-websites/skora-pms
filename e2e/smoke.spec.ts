@@ -1,15 +1,20 @@
 // Active smoke test: every route, every role. Evidence-based.
 import { test, expect } from "@playwright/test";
 
+// The doctor session holds the clinical-core default (dashboard,
+// appointments, schedule, follow-up, support — ROLE_MODEL_PLAN.md D3) plus
+// the dashboard-gated pages. Modules outside that set (billing, chat,
+// home-visits, income-expense, patients, roles, shop, staff, test-bookings)
+// would redirect — specs that exercise them grant the module first
+// (grantDoctorModules) and drive them directly.
 const DOCTOR_ROUTES = [
   "/", "/login",
-  "/doctor", "/doctor/appointments", "/doctor/appointments/book", "/doctor/billing",
-  "/doctor/chat", "/doctor/consultations", "/doctor/consult-pdf", "/doctor/emergency",
-  "/doctor/faq", "/doctor/follow-ups", "/doctor/home-visits", "/doctor/income-expense",
-  "/doctor/notifications", "/doctor/online-consultations", "/doctor/patients",
-  "/doctor/patients/new", "/doctor/profile", "/doctor/roles", "/doctor/schedule",
-  "/doctor/settings", "/doctor/shop", "/doctor/staff", "/doctor/support",
-  "/doctor/test-bookings",
+  "/doctor", "/doctor/appointments", "/doctor/appointments/book",
+  "/doctor/consultations", "/doctor/consult-pdf", "/doctor/emergency",
+  "/doctor/faq", "/doctor/follow-ups",
+  "/doctor/notifications", "/doctor/online-consultations",
+  "/doctor/profile", "/doctor/schedule",
+  "/doctor/settings", "/doctor/support",
 ];
 
 const ADMIN_ROUTES = [

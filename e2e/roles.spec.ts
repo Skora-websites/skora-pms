@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 
 test.describe("P4.4 Roles & Permissions", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["roles-permissions"]); });
   test("create role with permissions, edit it, then delete it", async ({ page }) => {
     await page.goto("/doctor/roles");
     await expect(page.getByRole("heading", { name: /Roles & permissions/i }).first()).toBeVisible();

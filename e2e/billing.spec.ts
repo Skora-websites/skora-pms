@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 
 test.describe("P3.1 Billing", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["billing"]); });
   test("add billing type, create bill, print PDF, edit bill, then delete", async ({ page }) => {
     const billingTypeName = unique("E2E Billing Type");
     const defaultAmount = "250";

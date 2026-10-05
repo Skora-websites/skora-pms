@@ -54,7 +54,7 @@ import {
   receptionistClinics,
 } from "../lib/db/schema";
 import { hashPassword } from "../lib/auth/password";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 const now = () => new Date();
 const daysFromNow = (n: number) => {
@@ -355,13 +355,33 @@ async function main() {
     { roleId: Number(receptionistRole.insertId), modelType: "App\\Models\\User", modelId: receptionistId },
   ]);
 
-  // Grant the Doctor role every permission — parents AND their action
-  // children. Server actions check child perms ("registrations-create",
-  // "billing-create", …) while getUserPermissions only expands child→parent,
-  // so a parent-only grant would leave the doctor unable to write anything.
+  // Doctor role = clinical core (D3, ROLE_MODEL_PLAN.md): dashboard,
+  // appointments, schedule, follow-up, support. Server actions check child
+  // perms ("appointments-create", "schedule-edit", …) while
+  // getUserPermissions only expands child→parent, so the role must carry
+  // both the parents and their action children. Every doctor created by the
+  // app (signup / super-admin / clinic staff) attaches this role, so this
+  // template IS the effective doctor default; super admins can grant more
+  // per doctor via the permissions dialog.
+  const doctorRolePerms = [
+    "dashboard", "dashboard-view",
+    "appointments",
+    "appointments-list", "appointments-create", "appointments-edit",
+    "appointments-delete", "appointments-cancel", "appointments-complete",
+    "schedule",
+    "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
+    "follow-up", "follow-up-list", "follow-up-status-update",
+    "support", "support-view",
+  ];
   const doctorPerms = await db
     .select({ id: permissions.id, name: permissions.name })
-    .from(permissions);
+    .from(permissions)
+    .where(inArray(permissions.name, doctorRolePerms));
+  if (doctorPerms.length !== doctorRolePerms.length) {
+    throw new Error(
+      `Doctor clinical-core permissions missing from catalog: found ${doctorPerms.length}/${doctorRolePerms.length}`
+    );
+  }
   await db.insert(roleHasPermissions).values(
     doctorPerms.map((p) => ({
       permissionId: p.id,

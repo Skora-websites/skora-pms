@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { awaitHydration, grantDoctorModules, unique } from "./helpers";
 
 test.describe("P4.3 Staff & Attendance", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["roles-permissions"]); });
   test("create a role, add staff with it, mark daily attendance, view monthly report", async ({ page }) => {
     const roleName = unique("E2E Staff Role");
     const staffName = unique("E2E Staff");
@@ -9,6 +10,7 @@ test.describe("P4.3 Staff & Attendance", () => {
 
     // ── Ensure a practice role exists to assign ──────────────────────────────
     await page.goto("/doctor/roles");
+    await awaitHydration(page);
     if ((await page.getByRole("button", { name: /New role/i }).count()) > 0) {
       await page.getByRole("button", { name: /New role/i }).click();
       await page.getByLabel("Role name").fill(roleName);
@@ -19,6 +21,7 @@ test.describe("P4.3 Staff & Attendance", () => {
 
     // ── Add staff member ─────────────────────────────────────────────────────
     await page.goto("/doctor/staff");
+    await awaitHydration(page);
     await page.getByRole("button", { name: /Add staff/i }).click();
     await page.getByLabel("Full name").fill(staffName);
     await page.getByLabel("Email").fill(staffEmail);

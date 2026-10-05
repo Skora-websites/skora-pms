@@ -1,10 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { grantDoctorModules } from "./helpers";
 
 // P3.3 Shop / Medicine Inventory — catalogue CRUD (legacy MasterController
 // parity). The catalogue is shared practice data; every doctor/receptionist
 // with dashboard access can manage entries and stock.
 
 test.describe("P3.3 Shop / Medicine Inventory", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["shop"]); });
   test("catalogue renders with add/edit/delete controls; search works", async ({ page }) => {
     await page.goto("/doctor/shop");
     await expect(page.getByRole("heading", { name: /Medicine Inventory/i }).first()).toBeVisible();

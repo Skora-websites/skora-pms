@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique, tinyPdf } from "./helpers";
+import { grantDoctorModules, unique, tinyPdf } from "./helpers";
 
 test.describe("P4.2 Test Bookings", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["test-booking"]); });
   test("create vendor, create test, book for a patient, upload report via vendor link", async ({ page, context }, testInfo) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: testInfo.project.use.baseURL! });
     await page.goto("/doctor/test-bookings");

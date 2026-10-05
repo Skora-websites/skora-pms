@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 
 test.describe("P2.3 Chat", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["chat"]); });
   test("send a message, favorite it, then delete it", async ({ page }) => {
     const messageContent = unique("E2E Chat message");
 

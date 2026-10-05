@@ -3,7 +3,13 @@
 // in the sidebar, renders permitted pages, and blocked URLs redirect to their
 // first permitted page — server-side, before any page code runs.
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
+
+// The staff/roles + patients pages this spec drives sit outside the doctor's
+// clinical-core default — grant them once for the whole file.
+test.beforeAll(async () => {
+  await grantDoctorModules(["roles-permissions", "registrations"]);
+});
 
 test("staff login: nav filtered by role, blocked modules redirect", async ({ browser }) => {
   // ── As the doctor: create a registrations-only role + staff account ──────

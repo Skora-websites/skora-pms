@@ -1,7 +1,9 @@
 // Search, filtering, pagination, sorting — driven through real UI with DB verification.
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { awaitHydration, grantDoctorModules, unique } from "./helpers";
 import { ACCOUNTS } from "./test-env";
+
+test.beforeAll(async () => { await grantDoctorModules(["registrations"]); });
 
 test("patients: search by exact name filters list, empty state on garbage term", async ({ page }) => {
   const name = unique("SearchPat");
@@ -37,6 +39,7 @@ test("patients: date-range filter (start_date) narrows results", async ({ page }
 
 test("appointments: status filter tabs render and switch", async ({ page }) => {
   await page.goto("/doctor/appointments");
+  await awaitHydration(page);
   // status filter buttons (all/pending/confirmed/...)
   const tabs = page.locator("a[href*='status=']");
   const count = await tabs.count();

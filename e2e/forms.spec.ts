@@ -1,8 +1,10 @@
 // Form failure paths: validation, duplicate submission, DB evidence.
 import { test, expect } from "@playwright/test";
 import m from "mysql2/promise";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 import { DB } from "./test-env";
+
+test.beforeAll(async () => { await grantDoctorModules(["registrations"]); });
 
 test("patient form: missing required fields → inline errors, no DB row", async ({ page }) => {
   const before = await countPatients();

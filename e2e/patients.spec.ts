@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { unique } from "./helpers";
+import { grantDoctorModules, unique } from "./helpers";
 
 test.describe("P2.1 Patient Registration", () => {
+  test.beforeAll(async () => { await grantDoctorModules(["registrations"]); });
   test("register a patient, view details, edit, then delete", async ({ page }) => {
     const patientName = unique("E2E Patient");
     const patientPhone = `98765${String(Date.now()).slice(-5)}`;
