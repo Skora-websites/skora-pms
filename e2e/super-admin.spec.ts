@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { awaitHydration, unique } from "./helpers";
-import { ACCOUNTS, SEED_PASSWORD } from "./test-env";
+import { SEED_PASSWORD } from "./test-env";
 
 test.describe.configure({ mode: "serial" });
 test.use({ storageState: "e2e/.auth/admin.json" });
@@ -90,12 +90,30 @@ test("super-admin: clinic CRUD", async ({ page }) => {
 });
 
 test("super-admin: sync doctor permissions", async ({ page }) => {
+  // Hermetic fixture: this test operates on a doctor it creates itself, NOT
+  // on ACCOUNTS.doctor. The permissions dialog's save replaces ALL direct
+  // model_has_permissions rows for the target — saving against the shared
+  // seeded doctor left it with every module granted and invalidated the
+  // Phase 1 exit criteria (audit §12.1). Any leftover direct grants from
+  // this run are revoked in global-teardown.ts.
+  await page.goto("/super-admin/users");
+  await awaitHydration(page);
+
+  const doctorEmail = `${unique("qa-doctor")}@example.com`;
+  await page.getByRole("button", { name: "New user" }).click();
+  await page.getByLabel("Full name").fill(unique("QA Doctor"));
+  await page.getByLabel("Email").fill(doctorEmail);
+  await page.getByLabel(/Password/).fill(SEED_PASSWORD);
+  await page.getByLabel("Role").selectOption("doctor");
+  await page.getByRole("button", { name: "Create user" }).click();
+  await expect(page.locator("tr", { hasText: doctorEmail })).toBeVisible();
+
   await page.goto("/super-admin/doctors");
   await awaitHydration(page);
-  await page.getByPlaceholder(/Search by name/).fill(ACCOUNTS.doctor);
+  await page.getByPlaceholder(/Search by name/).fill(doctorEmail);
   await page.getByRole("button", { name: "Search" }).click();
 
-  const card = page.locator(".card", { hasText: ACCOUNTS.doctor }).first();
+  const card = page.locator(".card", { hasText: doctorEmail }).first();
   await card.getByRole("button", { name: "Permissions" }).click();
 
   const scheduleCheckbox = page.getByRole("checkbox", { name: "schedule" });

@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
+import { audit } from "@/lib/security/audit-log";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Role + module permission: the /doctor/patients page is gated on the
+  // `registrations` module, so this data endpoint enforces the same — the
+  // layout guard only runs on page renders (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "registrations");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const { searchParams } = new URL(request.url);
@@ -47,6 +49,16 @@ export async function GET(request: NextRequest) {
     .from(users)
     .where(and(...conds))
     .orderBy(desc(users.createdAt));
+
+  // F-19: bulk PHI exports are audited — who exported how many records, with
+  // which filters. Fire-and-forget, matching the other exporters.
+  void audit.pdfDownloaded(user.id, {
+    entity: "patients",
+    entityId: 0,
+    action: "export",
+    description: `Patient roster exported (${rows.length} records, Aadhaar included)`,
+    filters: { q, start_date: startDate, end_date: endDate },
+  });
 
   const header = ["ID", "Registration ID", "Name", "Email", "Phone", "Gender", "DOB", "Address", "City", "State", "Pincode", "Aadhaar", "Status", "Registered On"];
   // esc: CSV quoting + spreadsheet formula neutralization (patient-controlled

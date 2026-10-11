@@ -11,13 +11,10 @@ import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
 import { getClientIp } from "@/lib/security/ip";
 import { consentSchema } from "@/lib/validation";
-import { saveConsentFile } from "@/lib/files/consent-upload";
+import { saveConsentFile, CONSENT_TTL_MS } from "@/lib/files/consent-upload";
 import { notifyUser } from "@/lib/notifications";
 
 export type ConsentState = { error: string | null };
-
-// Consent links expire 7 days after creation (legacy vendor-link parity).
-const CONSENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Auto-generated consent PDFs live outside public/ (PHI-safe). Uploaded consent
 // files are handled by the shared helper in lib/files/consent-upload.ts.

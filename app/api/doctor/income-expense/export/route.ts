@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, incomeTypes, expenseTypes } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 import {
   resolvePracticeDoctorId,
@@ -33,11 +33,10 @@ const STATUS_LABELS: Record<string, string> = {
  * Ownership-scoped via getCurrentUser + getTransactions.
  */
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Role + module permission — the /doctor/income-expense page requires the
+  // `income-expense` module; this endpoint enforces the same (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "income-expense");
+  if (user instanceof Response) return user;
   const doctorId = resolvePracticeDoctorId(user);
   // Owner doctors + receptionists export the practice ledger; a member
   // doctor exports strictly their own entries (matches the page scope).
@@ -54,6 +53,15 @@ export async function GET(req: NextRequest) {
   const { rows, incomeTypes: incomeCats, expenseTypes: expenseCats } =
     await getAllTransactionsForExport(ledgerIds, period);
 
+  // F-19: the GET export path had no audit row either (only POST did).
+  void audit.pdfDownloaded(user.id, {
+    entity: "transactions",
+    entityId: 0,
+    action: "export",
+    description: `Ledger exported (${rows.length} records)`,
+    filters: { type, start_date: startDate, end_date: endDate, period },
+  });
+
   let filtered = rows;
   if (type === "income") filtered = filtered.filter((r) => r.type === 1);
   else if (type === "expense") filtered = filtered.filter((r) => r.type === 2);
@@ -65,11 +73,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const user = await requireApiPermission(["doctor", "receptionist"], "income-expense");
+  if (user instanceof Response) return user;
   const doctorId = resolvePracticeDoctorId(user);
 
   let ids: number[] = [];

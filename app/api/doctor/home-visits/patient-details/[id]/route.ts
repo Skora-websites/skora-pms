@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { getHomeVisitPatientDetail } from "@/lib/queries/doctor";
 
 export const runtime = "nodejs";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Module permission matches the /doctor/home-visits page (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "home-visit");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const { id } = await params;

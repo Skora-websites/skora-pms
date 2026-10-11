@@ -4,12 +4,11 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { audit } from "@/lib/security/audit-log";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -27,11 +26,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  // Module permission matches the /doctor/test-bookings page (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "test-booking");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const { id } = await params;
@@ -50,8 +47,8 @@ export async function GET(
   const contentType = CONTENT_TYPES[ext];
   if (!contentType) return new Response("Unsupported file", { status: 415 });
 
-  const resolved = path.resolve(STORAGE_DIR, booking.uploadedFilePath);
-  if (!resolved.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const resolved = resolveWithinStorage(booking.uploadedFilePath);
+  if (!resolved) return new Response("Forbidden", { status: 403 });
 
   try {
     const bytes = await fs.readFile(resolved);

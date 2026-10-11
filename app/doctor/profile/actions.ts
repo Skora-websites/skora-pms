@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { MAX_IMAGE_BYTES, mbLabel } from "@/lib/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -42,7 +43,7 @@ export async function uploadProfilePhoto(
 
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return { error: "Please choose an image." };
-  if (file.size > 2 * 1024 * 1024) return { error: "Image must be under 2 MB." };
+  if (file.size > MAX_IMAGE_BYTES) return { error: `Image must be under ${mbLabel(MAX_IMAGE_BYTES)} MB.` };
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffImage(bytes);
@@ -87,7 +88,7 @@ export async function uploadSignature(
 
   const file = formData.get("signature") as File | null;
   if (!file || file.size === 0) return { error: "Please choose an image." };
-  if (file.size > 2 * 1024 * 1024) return { error: "Image must be under 2 MB." };
+  if (file.size > MAX_IMAGE_BYTES) return { error: `Image must be under ${mbLabel(MAX_IMAGE_BYTES)} MB.` };
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffImage(bytes);

@@ -41,7 +41,7 @@ import {
   users,
   vendors,
 } from "@/lib/db/schema";
-import { getCurrentUser, hasPermission, homePathForRole } from "./user";
+import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { getBusinessScope } from "./scope";
@@ -75,6 +75,9 @@ export async function requireWriteScope(permission: string): Promise<ActionScope
   if (!user) redirect("/login");
 
   if (user.role === "doctor" || user.role === "receptionist") {
+    // Trial expiry is a paid-feature boundary (audit F-03): the layout check
+    // only guards page renders, so it is re-asserted here on every write.
+    if (isTrialExpired(user)) return null;
     if (!(await hasPermission(user.id, permission))) return null;
     const anchor = resolvePracticeDoctorId(user);
     const doctorIds =

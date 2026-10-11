@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, roles, modelHasRoles, staffAttendances } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { getCurrentUser } from "@/lib/auth/user";
 import { revokeAllSessionsForUser } from "@/lib/auth/session";
 import { audit } from "@/lib/security/audit-log";
 
@@ -96,6 +97,32 @@ export async function updateStaff(
   const roleId = Number(formData.get("role_id"));
 
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
+
+  // Self-targeting guard (audit F-05): the ownership predicate below matches
+  // the caller's own row too — a receptionist with staff-edit could otherwise
+  // overwrite their own password (no current-password check), their email,
+  // or escalate their own role. Self-service goes through the profile page,
+  // which already verifies the current password.
+  const me = await getCurrentUser();
+  if (me && staffId === me.id) {
+    return { error: "You cannot modify your own account here — use your profile page." };
+  }
+
+  // Re-authentication for credential changes (audit F-05): setting a new
+  // staff password requires the CALLER's current password, mirroring
+  // updateProfileAction — a hijacked session can't silently mint credentials.
+  if (password) {
+    if (!me) return { error: "You need to sign in again." };
+    const currentPassword = String(formData.get("current_password") ?? "");
+    const [meRow] = await db
+      .select({ passwordHash: users.password })
+      .from(users)
+      .where(eq(users.id, me.id));
+    if (!meRow?.passwordHash || !(await bcrypt.compare(currentPassword, meRow.passwordHash))) {
+      return { error: "Enter your current password to set a new staff password." };
+    }
+  }
+
   if (!name) return { error: "Staff name is required." };
   if (!email) return { error: "Email is required." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email." };
@@ -105,7 +132,14 @@ export async function updateStaff(
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, staffId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
+    // F-06: match EITHER link column (defence-in-depth; createStaff writes both).
+    .where(
+      and(
+        eq(users.id, staffId),
+        or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+        eq(users.role, "receptionist")
+      )
+    );
   if (!existing) return { error: "Staff member not found." };
 
   const [dup] = await db
@@ -150,10 +184,24 @@ export async function deleteStaff(staffId: number): Promise<StaffActionResult> {
   if (!doctorId) return { error: "You don't have permission to delete staff." };
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
 
+  // Self-targeting guard (audit F-05): same ownership-predicate gap as
+  // updateStaff — the caller's own row satisfies it.
+  const me = await getCurrentUser();
+  if (me && staffId === me.id) {
+    return { error: "You cannot delete your own account." };
+  }
+
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, staffId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
+    // F-06: match EITHER link column (defence-in-depth; createStaff writes both).
+    .where(
+      and(
+        eq(users.id, staffId),
+        or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+        eq(users.role, "receptionist")
+      )
+    );
   if (!existing) return { error: "Staff member not found." };
 
   // Attendance cleanup + role unlink + user delete in one transaction —
@@ -209,7 +257,12 @@ export async function saveAttendance(
     const [staff] = await db
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.id, att.staff_id), eq(users.referenceRoleId, doctorId)));
+      .where(
+        and(
+          eq(users.id, att.staff_id),
+          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId))
+        )
+      );
     if (!staff) continue;
 
     const isWorkDay = att.status === "present" || att.status === "half_day";

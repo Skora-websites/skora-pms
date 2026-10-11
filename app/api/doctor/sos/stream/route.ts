@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiDoctorOnly } from "@/lib/auth/guard";
 import { resolveDoctorId } from "@/lib/dispatch/geo";
 import { subscribe } from "@/lib/dispatch/hub";
 
@@ -13,10 +13,11 @@ export const dynamic = "force-dynamic";
  * A 15s heartbeat keeps the connection alive through proxies.
  */
 export async function GET(request: Request) {
-  const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist"].includes(user.role)) {
-    return new Response("Unauthorized", { status: 401 });
-  }
+  // Doctor-only panel (audit F-02): same boundary as /doctor/emergency.
+  // The guard rejects BEFORE the stream is constructed, so no orphaned
+  // SSE connection is left behind for an unauthorized caller.
+  const user = await requireApiDoctorOnly(["doctor", "receptionist"]);
+  if (user instanceof Response) return user;
   const doctorId = resolveDoctorId(user);
 
   const encoder = new TextEncoder();

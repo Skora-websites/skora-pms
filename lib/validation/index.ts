@@ -113,36 +113,10 @@ export const billSchema = z.object({
   status: z.enum(["pending", "paid", "cancelled", "refunded"]).optional(),
 });
 
-/** Transaction record. */
-export const transactionSchema = z.object({
-  billId: z.coerce.number().int().positive("Bill is required"),
-  amount: z.coerce
-    .number()
-    .positive("Amount must be positive")
-    .max(999_999_999, "Amount too large"),
-  paymentMethod: z.enum(
-    ["cash", "card", "upi", "bank_transfer", "other"],
-    { message: "Invalid payment method" }
-  ),
-  notes: z.string().max(2000).optional().default(""),
-});
-
 /** Support ticket reply. */
 export const supportTicketReplySchema = z.object({
   ticketId: z.coerce.number().int().positive("Ticket is required"),
   message: nonEmpty("Message").max(5000, "Message too long"),
-});
-
-/** Follow-up update. */
-export const followUpSchema = z.object({
-  appointmentId: z.coerce.number().int().positive("Appointment is required"),
-  followUpDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
-  status: z.enum(["pending", "completed", "cancelled"], {
-    message: "Invalid follow-up status",
-  }),
-  notes: z.string().max(2000).optional().default(""),
 });
 
 /** Patient registration (create + update). Mirrors legacy `DoctordashboardController@store`. */
@@ -180,28 +154,10 @@ export const patientSchema = z.object({
     .or(z.literal("")),
 });
 
-/** Patient list filters (date-range search). */
-export const patientFilterSchema = z.object({
-  q: z.string().trim().max(100).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid start date").optional().or(z.literal("")),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid end date").optional().or(z.literal("")),
-});
-
-/** Profile update. */
-export const profileSchema = z.object({
-  name: nonEmpty("Name").max(100).optional(),
-  phone: phone(),
-  email: email().optional(),
-});
-
-/** Chat message send. */
-export const chatMessageSchema = z.object({
-  receiverId: z.coerce.number().int().positive("Receiver is required"),
-  message: nonEmpty("Message").max(5000, "Message too long"),
-});
-
-/** Generic pagination. */
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-});
+// NOTE (audit F-26): six schemas that were defined but referenced nowhere
+// were removed — transactionSchema, followUpSchema, patientFilterSchema,
+// profileSchema, chatMessageSchema (which described a different action
+// signature than sendChatMessage accepts) and paginationSchema (the query
+// layer hand-rolls pageBounds). If a schema here gains no consumer, delete
+// it rather than leaving aspirational coverage.
+// New schemas for clinic forms live in lib/validation/clinic.ts (F-22);

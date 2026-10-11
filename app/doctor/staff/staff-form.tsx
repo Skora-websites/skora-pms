@@ -106,6 +106,21 @@ export function StaffForm({ practiceRoles, staff }: { practiceRoles: Role[]; sta
                   placeholder="Min 8 characters"
                 />
               </div>
+              {staff && (
+                <div>
+                  <label htmlFor="current_password" className="label">
+                    Your password <span className="font-normal text-slate-400">(needed only when setting a new staff password)</span>
+                  </label>
+                  <input
+                    id="current_password"
+                    name="current_password"
+                    type="password"
+                    autoComplete="current-password"
+                    className="input"
+                    placeholder="Your current password"
+                  />
+                </div>
+              )}
               <div>
                 <label htmlFor="role_id" className="label">Role</label>
                 <select id="role_id" name="role_id" required className="input">

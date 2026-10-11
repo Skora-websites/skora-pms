@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, getUserPermissions, hasPermission, homePathForRole, type CurrentUser } from "./user";
+import { getCurrentUser, getUserPermissions, hasPermission, homePathForRole, isTrialExpired, type CurrentUser } from "./user";
 import {
   hasAdminModuleAccess,
   firstPermittedAdminPath,
@@ -36,6 +36,53 @@ export async function requireRoleWithPermission(roles: string[], permission: str
   const user = await requireRole(roles);
   const ok = await hasPermission(user.id, permission);
   if (!ok) redirect(homePathForRole(user.role));
+  return user;
+}
+
+/**
+ * API-route module-permission guard (audit F-01): authorizes on role AND the
+ * module permission the layout already requires for the same feature, so a
+ * page and its data endpoints cannot drift (both read DOCTOR_ROUTE_PERMISSIONS
+ * / ADMIN_ROUTE_PERMISSIONS names). The layout guard only runs on page
+ * renders — without this, a direct HTTP request skips it entirely.
+ *
+ * Owner bypass: the `admin` role skips module permissions by design, matching
+ * requireAdminTier (an owner holds no DB grants). Every other staff tier —
+ * doctor, receptionist, manager — must hold the module permission.
+ *
+ * Returns the user on success, or a ready 401/403 Response for the handler
+ * to return (never redirect — see requireApiRole).
+ */
+export async function requireApiPermission(
+  roles: string[],
+  permission: string
+): Promise<CurrentUser | Response> {
+  const user = await requireApiRole(roles);
+  if (user instanceof Response) return user;
+  // Trial expiry applies to the API surface too (audit F-03) — only doctors
+  // carry a trial, so staff tiers are unaffected.
+  if (isTrialExpired(user)) return new Response("Forbidden", { status: 403 });
+  if (user.role === "admin") return user; // owner bypass — requireAdminTier parity
+  const ok = await hasPermission(user.id, permission);
+  if (!ok) return new Response("Forbidden", { status: 403 });
+  return user;
+}
+
+/**
+ * Doctor-only API guard (audit F-02): panels the product restricts to
+ * doctors regardless of permissions — emergency dispatch and consultation
+ * records. The doctor layout hard-bounces receptionists from these pages
+ * (a deliberate product boundary, not a permission decision); this applies
+ * the same rule to the underlying data endpoints, which the layout cannot
+ * reach.
+ */
+export async function requireApiDoctorOnly(
+  roles: string[] = ["doctor"]
+): Promise<CurrentUser | Response> {
+  const user = await requireApiRole(roles);
+  if (user instanceof Response) return user;
+  if (isTrialExpired(user)) return new Response("Forbidden", { status: 403 });
+  if (user.role !== "doctor") return new Response("Forbidden", { status: 403 });
   return user;
 }
 

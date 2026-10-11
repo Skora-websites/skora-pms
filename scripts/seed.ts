@@ -277,6 +277,10 @@ async function main() {
       password: adminPassword,
       role: "receptionist",
       status: "active",
+      // Write BOTH link columns, matching createStaff (audit F-06): every
+      // staff read path filters on reference_role_id, so seeding doctor_id
+      // alone made the seeded practice's staff roster permanently empty.
+      referenceRoleId: doctorId,
       doctorId,
       emailVerifiedAt: now(),
       createdAt: now(),

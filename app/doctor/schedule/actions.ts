@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { MAX_IMAGE_BYTES, mbLabel } from "@/lib/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -17,6 +18,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { DEFAULT_DOCTOR_MODULE_PERMS, requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { parseClinicForm } from "@/lib/validation/clinic";
 import { ensureClinicAccess, ensureClinicOwner } from "@/lib/queries/clinic";
 import { audit } from "@/lib/security/audit-log";
 import bcrypt from "bcryptjs";
@@ -56,7 +58,7 @@ function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | "gif" | null {
 
 async function saveLogo(file: File): Promise<string | null> {
   if (!file || file.size === 0) return null;
-  if (file.size > 2 * 1024 * 1024) throw new Error("Clinic logo must be under 2 MB.");
+  if (file.size > MAX_IMAGE_BYTES) throw new Error(`Clinic logo must be under ${mbLabel(MAX_IMAGE_BYTES)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffImage(bytes);
   if (!kind) throw new Error("Only JPG, PNG, WEBP or GIF images are allowed.");
@@ -85,29 +87,9 @@ export async function createClinic(
 ): Promise<ScheduleActionResult> {
   const doctorId = await requireDoctorPermission("schedule-create");
   if (!doctorId) return { error: "You don't have permission to create clinics." };
-  const clinicName = String(formData.get("clinic_name") ?? "").trim();
-  const addressType = String(formData.get("address_type") ?? "manual");
-  const address = String(formData.get("address") ?? "").trim();
-  const latitude = String(formData.get("latitude") ?? "").trim() || null;
-  const longitude = String(formData.get("longitude") ?? "").trim() || null;
-  const phone = String(formData.get("phone") ?? "").trim();
-  const consultationFee = String(formData.get("consultation_fee") ?? "").trim();
-
-  if (!clinicName) return { error: "Clinic name is required." };
-  if (clinicName.length > 255) return { error: "Clinic name must be at most 255 characters." };
-  if (!(ADDRESS_TYPES as readonly string[]).includes(addressType)) {
-    return { error: "Invalid address type." };
-  }
-  if (addressType === "manual" && !address) return { error: "Address is required for manual address." };
-  if (addressType === "map" && (!latitude || !longitude)) {
-    return { error: "Latitude and longitude are required for map address." };
-  }
-  if (!phone) return { error: "Phone is required." };
-  if (phone.length > 20) return { error: "Phone must be at most 20 characters." };
-  const feeNum = Number(consultationFee);
-  if (!consultationFee || !Number.isFinite(feeNum) || feeNum < 0) {
-    return { error: "Consultation fee must be a valid non-negative amount." };
-  }
+  // Shared clinic-form contract (audit F-22) — one implementation for all tiers.
+  const parsed = parseClinicForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
 
   let logoPath: string | null = null;
   const logo = formData.get("clinic_logo") as File | null;
@@ -123,13 +105,13 @@ export async function createClinic(
     .insert(doctorClinics)
     .values({
       doctorId,
-      clinicName,
-      addressType: addressType as never,
-      address: addressType === "map" && !address ? `Map Location: ${latitude}, ${longitude}` : address,
-      latitude,
-      longitude,
-      phone,
-      consultationFee: feeNum.toFixed(2),
+      clinicName: parsed.clinicName,
+      addressType: parsed.addressType as never,
+      address: parsed.address,
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+      phone: parsed.phone,
+      consultationFee: parsed.fee,
       clinicLogo: logoPath,
       isActive: true,
       createdAt: new Date(),
@@ -395,60 +377,10 @@ export async function saveSchedules(
   return { error: null };
 }
 
-/** Update a single weekly slot. Mirrors legacy `updateSchedule`. */
-export async function updateSchedule(
-  _prev: ScheduleActionResult,
-  formData: FormData
-): Promise<ScheduleActionResult> {
-  const doctorId = await requireDoctorPermission("schedule-edit");
-  if (!doctorId) return { error: "You don't have permission to edit schedules." };
-  const scheduleId = Number(formData.get("id"));
-  const startTime = String(formData.get("start_time") ?? "").trim() || null;
-  const endTime = String(formData.get("end_time") ?? "").trim() || null;
-  const sessionType = String(formData.get("session_type") ?? "");
-  const maxPatients = Number(formData.get("max_patients") ?? "10");
-  const is24Hours = formData.get("is_24_hours") === "1" || formData.get("is_24_hours") === "true";
-  const slotDuration = Number(formData.get("slot_duration") ?? "0");
-  const gapDuration = Number(formData.get("gap_duration") ?? "0");
-
-  if (!scheduleId || !Number.isInteger(scheduleId)) return { error: "Invalid schedule ID." };
-  if (!(SESSION_TYPES as readonly string[]).includes(sessionType)) {
-    return { error: "Invalid session type." };
-  }
-  if (!Number.isInteger(maxPatients) || maxPatients < 1) {
-    return { error: "Max patients must be at least 1." };
-  }
-
-  // Ownership: the acting doctor's own slot (per-doctor schedules on shared clinics).
-  const [rows] = await db
-    .select({ id: doctorSchedules.id, doctorClinicId: doctorSchedules.doctorClinicId })
-    .from(doctorSchedules)
-    .where(and(eq(doctorSchedules.id, scheduleId), eq(doctorSchedules.doctorId, doctorId)));
-  if (!rows) return { error: "Schedule not found." };
-
-  const duration = !is24Hours && startTime && endTime ? calculateDuration(startTime, endTime) : { hours: 0, minutes: 0 };
-
-  await db
-    .update(doctorSchedules)
-    .set({
-      sessionType: sessionType as never,
-      maxPatients,
-      is24Hours,
-      durationHours: duration.hours,
-      durationMinutes: duration.minutes,
-      slotDuration,
-      gapDuration,
-      startTime: is24Hours ? null : startTime,
-      endTime: is24Hours ? null : endTime,
-      updatedAt: new Date(),
-    })
-    .where(eq(doctorSchedules.id, scheduleId));
-
-  void audit.fileUploaded(doctorId, { action: "schedule_updated", scheduleId });
-
-  revalidatePath("/doctor/schedule");
-  return { error: null };
-}
+// NOTE (audit F-28): the orphaned `updateSchedule` server action (single-slot
+// editor with no UI caller — an exported server action is a live HTTP
+// endpoint even when unreachable from the UI) was removed. Slot editing goes
+// through saveSchedule, whose form owns every slot in one transaction.
 
 /** Soft-delete a weekly slot. Mirrors legacy `destroySchedule`. */
 export async function deleteSchedule(scheduleId: number): Promise<ScheduleActionResult> {

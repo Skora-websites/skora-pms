@@ -32,6 +32,13 @@ import {
   modelHasRoles,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  MAX_IMPORT_BYTES,
+  MAX_BRAND_BYTES,
+  mbLabel,
+} from "@/lib/config";
 import { DEFAULT_DOCTOR_MODULE_PERMS } from "@/lib/auth/server-permissions";
 import { isDupKey, dupKeyConstraint } from "@/lib/db/dup";
 import { hashPassword } from "@/lib/auth/password";
@@ -97,9 +104,9 @@ function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | "gif" | null {
   return null;
 }
 
-async function saveImage(file: File, subdir: string, maxBytes = 2 * 1024 * 1024): Promise<string> {
+async function saveImage(file: File, subdir: string, maxBytes = MAX_IMAGE_BYTES): Promise<string> {
   if (!file || file.size === 0) throw new Error("Image file is missing.");
-  if (file.size > maxBytes) throw new Error("Image must be under 2 MB.");
+  if (file.size > maxBytes) throw new Error(`Image must be under ${mbLabel(maxBytes)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffImage(bytes);
   if (!kind) throw new Error("Only JPG, PNG, WEBP or GIF images are allowed.");
@@ -133,7 +140,7 @@ function sniffVideo(bytes: Buffer): "mp4" | "webm" | "mov" | "m4v" | null {
 
 async function saveVideo(file: File): Promise<string> {
   if (!file || file.size === 0) throw new Error("Video file is missing.");
-  if (file.size > 200 * 1024 * 1024) throw new Error("Video must be under 200 MB.");
+  if (file.size > MAX_VIDEO_BYTES) throw new Error(`Video must be under ${mbLabel(MAX_VIDEO_BYTES)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffVideo(bytes);
   if (!kind) throw new Error("Only MP4, WEBM, MOV or M4V videos are allowed.");
@@ -833,7 +840,7 @@ export async function importMasterItems(
 
   const file = formData.get("file") as File | null;
   if (!file || file.size === 0) return { error: "Choose a file to import." };
-  if (file.size > 5 * 1024 * 1024) return { error: "File must be under 5 MB." };
+  if (file.size > MAX_IMPORT_BYTES) return { error: `File must be under ${mbLabel(MAX_IMPORT_BYTES)} MB.` };
   const fileName = file.name.toLowerCase();
   const bytes = Buffer.from(await file.arrayBuffer());
 
@@ -1681,7 +1688,7 @@ export async function saveCompanySettings(
     const file = formData.get(key) as File | null;
     if (file && file.size > 0) {
       try {
-        uploads[key] = await saveImage(file, subdirs[key], 1 * 1024 * 1024);
+        uploads[key] = await saveImage(file, subdirs[key], MAX_BRAND_BYTES);
       } catch (err) {
         return { error: err instanceof Error ? err.message : `Could not save the ${key} file.` };
       }

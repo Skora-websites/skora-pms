@@ -1,12 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 import { getPatientPhotoPath } from "@/lib/queries/doctor";
 
 export const runtime = "nodejs";
-
-const PHOTO_DIR = path.join(process.cwd(), "storage", "uploads", "patient-photos");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -19,11 +18,10 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  // Module permission matches the /doctor/patients page (`registrations`,
+  // audit F-01) — the roster and its photos share one module.
+  const user = await requireApiPermission(["doctor", "receptionist"], "registrations");
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const patientId = Number(id);
@@ -43,7 +41,8 @@ export async function GET(
   const contentType = CONTENT_TYPES[ext];
   if (!contentType) return new Response("Unsupported file", { status: 415 });
 
-  const filePath = path.join(PHOTO_DIR, path.basename(photoPath));
+  const filePath = resolveWithinStorage(photoPath);
+  if (!filePath) return new Response("Forbidden", { status: 403 });
   try {
     const bytes = await fs.readFile(filePath);
     return new Response(bytes, {

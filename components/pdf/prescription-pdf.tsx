@@ -1,5 +1,5 @@
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
   page: {
@@ -101,6 +101,8 @@ type PdfData = {
     duration: string | null;
     note: string | null;
   }[];
+  /** Optional QR data-URL (goqr.me, server-generated). Omitted when upstream is down. */
+  qrDataUrl?: string | null;
 };
 
 export function PrescriptionPdf({ data }: { data: PdfData }) {
@@ -255,8 +257,17 @@ export function PrescriptionPdf({ data }: { data: PdfData }) {
             </View>
           )}
 
-          {/* Signature */}
+          {/* Signature + verification QR */}
           <View style={styles.footer}>
+            {data.qrDataUrl ? (
+              <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                <Image src={data.qrDataUrl} style={{ width: 70, height: 70 }} />
+                <Text style={{ fontSize: 7, color: "#666", marginTop: 2 }}>
+                  Scan to verify Rx #{consultation.id}
+                </Text>
+              </View>
+            ) : null}
             <Text style={styles.authLabel}>Authorized Signature</Text>
             <Text style={styles.docName}>{docName}</Text>
             <View style={styles.signatureLine} />

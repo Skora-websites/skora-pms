@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, staffAttendances } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { todayStr } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -12,11 +12,10 @@ export const runtime = "nodejs";
  * GET /api/doctor/staff/attendance?date=YYYY-MM-DD
  */
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Module permission matches the /doctor/staff page (`roles-permissions`,
+  // audit F-01) — staff PII + attendance sit behind the same module.
+  const user = await requireApiPermission(["doctor", "receptionist"], "roles-permissions");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const date = req.nextUrl.searchParams.get("date") ?? todayStr();
@@ -28,7 +27,13 @@ export async function GET(req: NextRequest) {
     db
       .select({ id: users.id, name: users.name, email: users.email, phone: users.phone })
       .from(users)
-      .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")))
+      // F-06: match EITHER link column (defence-in-depth).
+      .where(
+        and(
+          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+          eq(users.role, "receptionist")
+        )
+      )
       .orderBy(users.name),
     db
       .select()

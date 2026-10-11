@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
@@ -14,12 +14,14 @@ export const runtime = "nodejs";
  * Admin-tier callers search across their whole business scope.
  */
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Module permission matches the /doctor/test-bookings page (audit F-01);
+  // admin tier keeps its business-scope branch, owner bypasses.
+  const user = await requireApiPermission(
+    ["doctor", "receptionist", "admin", "manager"],
+    "test-booking"
+  );
+  if (user instanceof Response) return user;
   const isAdminTier = user.role === "admin" || user.role === "manager";
-  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
   const ownerIds = isAdminTier
     ? (await getBusinessScope()).doctorIds
     : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];

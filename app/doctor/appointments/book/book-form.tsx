@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { CalendarPlus, FileUp, FilePlus2 } from "lucide-react";
 import { createAppointment } from "../actions";
+import { BookingHolidayHint } from "@/components/integrations/booking-holiday-hint";
 
 type Patient = { id: number; name: string; phone: string | null };
 type DoctorOption = { id: number; name: string; salutation: string | null; qualification: string | null };
@@ -134,6 +135,7 @@ export function BookAppointmentForm({
             />
           </div>
         </div>
+        <BookingHolidayHint />
 
         <div className="grid grid-cols-2 gap-4">
           <div>

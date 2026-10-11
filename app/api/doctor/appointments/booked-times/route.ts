@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { isPracticeDoctor } from "@/lib/queries/clinic";
 import { getBusinessScope } from "@/lib/auth/scope";
 
@@ -18,12 +18,14 @@ export const runtime = "nodejs";
  *  - `exclude_id` lets the edit form ignore the appointment being edited
  */
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Module permission matches the /doctor/appointments page (`appointments`,
+  // audit F-01); admin tier keeps its business-scope branch, owner bypasses.
+  const user = await requireApiPermission(
+    ["doctor", "receptionist", "admin", "manager"],
+    "appointments"
+  );
+  if (user instanceof Response) return user;
   const isAdminTier = user.role === "admin" || user.role === "manager";
-  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
   // Admin tier: resolve the practice/business scope (in-scope doctor ids);
   // doctor/receptionist keep the practice-anchor semantics.
   const scopeDoctorIds = isAdminTier ? (await getBusinessScope()).doctorIds : null;

@@ -62,6 +62,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// Nonce-based CSP (audit F-08): the proxy generates a per-request nonce and
+// Next.js applies it during SSR only for DYNAMICALLY rendered pages. Static
+// generation happens at build time with no request, so its bootstrap scripts
+// would carry no nonce and be blocked by the nonce-locked script-src. This
+// must stay in lockstep with proxy.ts's buildCsp().
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html

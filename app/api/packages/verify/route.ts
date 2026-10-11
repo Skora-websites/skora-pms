@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     paymentId,
     signature,
     source: "checkout",
+    callerId: user.id, // bound to the caller (audit F-14)
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 

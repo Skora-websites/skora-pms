@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { MAX_ATTACHMENT_BYTES, mbLabel } from "@/lib/config";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -111,7 +112,7 @@ function sniffFile(bytes: Buffer): "pdf" | "jpg" | "png" | null {
 
 async function saveTransactionAttachment(file: File): Promise<string | null> {
   if (!file || file.size === 0) return null;
-  if (file.size > 3 * 1024 * 1024) throw new Error("Attachment must be under 3 MB.");
+  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`Attachment must be under ${mbLabel(MAX_ATTACHMENT_BYTES)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffFile(bytes);
   if (!kind) throw new Error("Only PDF, JPG or PNG attachments are allowed.");

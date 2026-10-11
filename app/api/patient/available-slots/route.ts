@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/user";
+import { getHolidays, isHolidayOn } from "@/lib/integrations/public-apis";
+import { HOLIDAY_STATE_DEFAULT, PUBLIC_API_HOLIDAY_ENABLED } from "@/lib/config";
 
 export const runtime = "nodejs";
 
@@ -109,7 +111,11 @@ export async function GET(request: NextRequest) {
   }
 
   if (schedules.length === 0) {
-    return NextResponse.json({ slots: [], message: "Doctor is not available on this day." });
+    return NextResponse.json({
+      slots: [],
+      message: "Doctor is not available on this day.",
+      holiday: await holidayAdvisoryFor(date),
+    });
   }
 
   // Booked times (exclude cancelled).
@@ -157,5 +163,18 @@ export async function GET(request: NextRequest) {
     })
     .sort();
 
-  return NextResponse.json({ slots: free, message: null });
+  return NextResponse.json({ slots: free, message: null, holiday: await holidayAdvisoryFor(date) });
+}
+
+/** Holiday advisory for a date (non-blocking): booking stays allowed for emergencies. */
+async function holidayAdvisoryFor(date: string): Promise<{ name: string; source: string } | null> {
+  if (!PUBLIC_API_HOLIDAY_ENABLED) return null;
+  try {
+    const year = Number(date.slice(0, 4));
+    const { data } = await getHolidays(HOLIDAY_STATE_DEFAULT, year);
+    const hit = isHolidayOn(data, date, HOLIDAY_STATE_DEFAULT);
+    return hit ? { name: hit.name, source: hit.source } : null;
+  } catch {
+    return null;
+  }
 }

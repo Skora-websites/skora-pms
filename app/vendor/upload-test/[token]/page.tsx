@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { testBookings, users, vendors } from "@/lib/db/schema";
 import { UploadCloud, CheckCircle2 } from "lucide-react";
 import { VendorUploadForm } from "./upload-form";
+import { isVendorTokenExpired } from "./token-ttl";
 
 export const metadata: Metadata = { title: "Upload Test Report" };
 
@@ -23,11 +24,17 @@ export default async function VendorUploadPage({ params }: PageProps) {
       uploadedFilePath: testBookings.uploadedFilePath,
       tests: testBookings.tests,
       uploadLinkToken: testBookings.uploadLinkToken,
+      updatedAt: testBookings.updatedAt,
     })
     .from(testBookings)
     .where(eq(testBookings.uploadLinkToken, token));
 
   if (!booking) notFound();
+
+  // Expiry (audit F-11): an aged token can no longer view the booking's
+  // identity or reach the upload form. The doctor re-arms the link via
+  // "Regenerate upload link", which resets the TTL anchor.
+  if (isVendorTokenExpired(booking.updatedAt)) notFound();
 
   const [patient, vendor, doctor] = await Promise.all([
     db.select({ name: users.name, phone: users.phone }).from(users).where(eq(users.id, booking.patientId)),

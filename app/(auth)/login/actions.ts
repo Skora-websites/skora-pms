@@ -9,6 +9,7 @@ import { setSessionCookie, getSessionUserId, destroySession } from "@/lib/auth/s
 import { getCurrentUser, getUserPermissions, homePathForRole } from "@/lib/auth/user";
 import { doctorPathToReceptionist, firstPermittedDoctorPath } from "@/lib/auth/permissions";
 import { authRateLimit } from "@/lib/security/rate-limit";
+import { getClientIp } from "@/lib/security/ip";
 import { audit } from "@/lib/security/audit-log";
 import { loginSchema } from "@/lib/validation";
 
@@ -29,6 +30,18 @@ export async function loginAction(
   }
 
   const { email, password } = parsed.data;
+
+  // Two rate-limit dimensions (audit F-07): per-email stops single-source
+  // spraying; per-IP stops distributed guessing against one known account.
+  // The per-IP check fails open when the IP is unresolvable (no trusted
+  // proxy header configured) — a shared "unknown" bucket would let one
+  // client lock out every user on the deployment.
+  const clientIp = await getClientIp();
+  const ipCheck = authRateLimit.loginIp(clientIp);
+  if (!ipCheck.allowed) {
+    const minutes = Math.ceil(ipCheck.retryAfterMs / 60_000);
+    return { error: `Too many login attempts. Try again in ${minutes} minute(s).` };
+  }
 
   const { allowed, retryAfterMs } = authRateLimit.login(email);
   if (!allowed) {
@@ -76,9 +89,10 @@ export async function loginAction(
   if (existing) await destroySession();
 
   await setSessionCookie(user.id);
-  // Successful login clears the failure counter — a legitimate user who
+  // Successful login clears the failure counters — a legitimate user who
   // logs in/out several times in a row must not hit "too many attempts".
   authRateLimit.loginReset(email);
+  authRateLimit.loginIpReset(clientIp);
   await audit.login(user.id, { email, role: user.role });
 
   // Doctor-side users land on their first PERMITTED page directly. Landing on

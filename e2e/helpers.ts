@@ -75,6 +75,37 @@ export async function grantDoctorModules(modules: string[]) {
 }
 
 /**
+ * Remove the doctor login's direct module grants — the exact inverse of
+ * grantDoctorModules. Lets permission-denial specs run deterministically no
+ * matter what earlier specs granted to the shared account. Role-level grants
+ * (role_has_permissions) are never touched.
+ */
+export async function revokeDoctorModules(modules: string[]) {
+  if (modules.length === 0) return;
+  const conn = await mysql.createConnection({
+    host: DB.host,
+    port: DB.port,
+    user: DB.user,
+    password: DB.password,
+    database: DB.database,
+  });
+  try {
+    const [rows] = await conn.query("SELECT id FROM users WHERE email = ?", [ACCOUNTS.doctor]);
+    const userId = (rows as { id: number }[])[0]?.id;
+    if (!userId) throw new Error(`revokeDoctorModules: no user ${ACCOUNTS.doctor}`);
+    const placeholders = modules.map(() => "?").join(",");
+    await conn.execute(
+      `DELETE FROM model_has_permissions WHERE model_id = ? AND permission_id IN (
+         SELECT id FROM permissions WHERE name IN (${placeholders})
+            OR parent_id IN (SELECT id FROM permissions WHERE name IN (${placeholders})))`,
+      [userId, ...modules, ...modules]
+    );
+  } finally {
+    await conn.end();
+  }
+}
+
+/**
  * Wait until the page's client bundle has hydrated so the first click lands
  * on a live React handler instead of being swallowed by the pre-hydration
  * document. Dev-mode first-compile (Turbopack) is slow enough that a plain

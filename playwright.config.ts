@@ -8,6 +8,7 @@ export default defineConfig({
   // unhandled rejection. Run it manually instead.
   testIgnore: "**/probes.spec.ts",
   globalSetup: "./e2e/global-setup.ts",
+  globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false,
   workers: 1,
   retries: 1,

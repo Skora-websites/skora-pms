@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
 import { saveConsultation } from "../../actions";
+import { ExternalMedicineSearch } from "@/components/integrations/medicine-search";
 
 const initialState = { error: null as string | null, consultationId: null as number | null };
 
@@ -105,6 +106,7 @@ export function ConsultationForm({
 
       {/* ── Medicines (with search) ── */}
       <MedicineSearchInput onAdd={addMedicine} />
+      <ExternalMedicineSearch onAdd={addMedicine} />
 
       <Field label="Prescribed medicines (one per line)">
         <textarea

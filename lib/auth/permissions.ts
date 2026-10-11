@@ -44,6 +44,7 @@ export const DOCTOR_ROUTE_PERMISSIONS: { prefix: string; perm: DoctorNavPerm }[]
   { prefix: "/doctor/notifications", perm: "dashboard" },
   { prefix: "/doctor/faq", perm: "dashboard" },
   { prefix: "/doctor/consult-pdf", perm: "dashboard" },
+  { prefix: "/doctor/reference", perm: "dashboard" },
   { prefix: "/doctor/profile", perm: "dashboard" },
   { prefix: "/doctor/settings", perm: "dashboard" },
   { prefix: "/doctor", perm: "dashboard" },

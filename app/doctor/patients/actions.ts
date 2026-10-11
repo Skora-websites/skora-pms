@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { MAX_IMAGE_BYTES, mbLabel } from "@/lib/config";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -29,7 +30,7 @@ function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | null {
 
 async function savePhoto(file: File): Promise<string | null> {
   if (file.size === 0) return null;
-  if (file.size > 2 * 1024 * 1024) throw new Error("Photo must be under 2 MB.");
+  if (file.size > MAX_IMAGE_BYTES) throw new Error(`Photo must be under ${mbLabel(MAX_IMAGE_BYTES)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffImage(bytes);
   if (!kind) throw new Error("Only JPG, PNG or WEBP images are allowed.");
@@ -99,6 +100,16 @@ export async function createPatient(
 
   const email = data.email || null;
   if (email) {
+    // No-key deliverability guard: block bad-MX only, never on helper outage.
+    try {
+      const { checkEmail } = await import("@/lib/integrations/public-apis");
+      const verdict = await checkEmail(email);
+      if (verdict.data.verdict === "invalid" && verdict.data.source !== "local-fallback") {
+        return { error: `This email looks undeliverable (${verdict.data.reason}). Please verify it.` };
+      }
+    } catch {
+      // ignore — registration must not depend on the helper
+    }
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing) return { error: "A patient with this email already exists." };
   }

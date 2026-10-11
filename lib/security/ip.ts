@@ -15,6 +15,20 @@
 
 import { headers } from "next/headers";
 
+// F-07: surface the degradation instead of failing silently. Without the
+// variable, every audit row records ip_address='unknown' and every per-IP
+// rate bucket collapses into ONE shared bucket. Warn once at startup in
+// production so the operator sees it; never enable it automatically —
+// setting TRUSTED_PROXY_HEADER on a directly-exposed server re-opens IP
+// spoofing (the header must be proxy-overwritten).
+if (process.env.NODE_ENV === "production" && !process.env.TRUSTED_PROXY_HEADER) {
+  console.warn(
+    "[security] TRUSTED_PROXY_HEADER is not set — audit IP attribution is off and " +
+      "per-IP rate limits cannot distinguish clients (audit F-07). Set it ONLY when " +
+      "the app runs behind a proxy that overwrites that header."
+  );
+}
+
 export async function getClientIp(): Promise<string> {
   const h = await headers();
 

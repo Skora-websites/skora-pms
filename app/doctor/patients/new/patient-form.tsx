@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UserPlus, UploadCloud } from "lucide-react";
 import { createPatient } from "../actions";
 import { GENDERS } from "@/lib/constants";
+import { PincodeAutofillHint } from "@/components/integrations/pincode-autofill";
 
 const initialState = { error: null as string | null };
 
@@ -87,6 +88,7 @@ export function PatientForm() {
           <div>
             <label htmlFor="pincode" className="label">Pincode</label>
             <input id="pincode" name="pincode" type="text" className="input" placeholder="6-digit" maxLength={6} />
+            <PincodeAutofillHint />
           </div>
         </div>
 

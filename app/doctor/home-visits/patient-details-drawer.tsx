@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CalendarDays, ClipboardList, FileText, Home, MapPin, Phone, UserRound, X } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
+import { GeoVerifyButton } from "@/components/integrations/geo-verify-button";
 
 type PatientDetail = {
   patient: {
@@ -133,6 +134,15 @@ export function PatientDetailsDrawer({ patientId, patientName }: { patientId: nu
                             .filter(Boolean)
                             .join(", ") || "—"}
                         </p>
+                        <div className="mt-1">
+                          <GeoVerifyButton
+                            getAddress={() =>
+                              [data.patient.streetAddress, data.patient.address, data.patient.city, data.patient.state, data.patient.pincode]
+                                .filter(Boolean)
+                                .join(", ")
+                            }
+                          />
+                        </div>
                       </div>
                       <div>
                         <Label>Referred by</Label>

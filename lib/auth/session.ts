@@ -1,10 +1,10 @@
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/db/schema";
-import { SESSION_MAX_AGE_S } from "@/lib/config";
+import { SESSION_MAX_AGE_S, SESSION_IDLE_TIMEOUT_S, SESSION_ACTIVITY_REFRESH_S } from "@/lib/config";
 
 export const SESSION_COOKIE = "skora_session";
 
@@ -33,16 +33,32 @@ export async function signSessionToken(userId: number, jti = randomUUID()) {
 
 /**
  * Record a server-side session row so sessions can be revoked (logout-all,
- * password change, admin kick).
+ * password change, admin kick). Capture the client IP and user agent at
+ * issuance (audit F-10) — previously the columns were never written, so
+ * token-theft attribution was impossible.
  */
 export async function persistSession(userId: number, jti: string) {
   const now = Math.floor(Date.now() / 1000);
+  let ipAddress: string | null = null;
+  let userAgent: string | null = null;
+  // Only request-scoped contexts have headers(); calls outside one (scripts,
+  // background jobs) still record the session row.
+  try {
+    const { getClientIp } = await import("@/lib/security/ip");
+    ipAddress = await getClientIp();
+    const h = await headers();
+    userAgent = h.get("user-agent")?.slice(0, 255) ?? null;
+  } catch {
+    /* no request scope */
+  }
   try {
     await db.insert(sessions).values({
       id: jti,
       userId,
       payload: "{}",
       lastActivity: now,
+      ipAddress,
+      userAgent,
     });
   } catch {
     // Duplicate jti (e.g. re-issued token) — safe to ignore.
@@ -101,10 +117,31 @@ export async function getSessionUserId(): Promise<number | null> {
     const jti = typeof payload.jti === "string" ? payload.jti : null;
     if (jti) {
       const [row] = await db
-        .select({ id: sessions.id })
+        .select({ id: sessions.id, lastActivity: sessions.lastActivity })
         .from(sessions)
         .where(eq(sessions.id, jti));
       if (!row) return null; // session revoked
+
+      // Idle timeout (audit F-10): a session unused past the window dies on
+      // its next use — no idle session rides the full 30-day absolute TTL.
+      // last_activity is unix SECONDS (int column).
+      const last = Number(row.lastActivity) || 0;
+      const nowS = Math.floor(Date.now() / 1000);
+      if (SESSION_IDLE_TIMEOUT_S > 0 && last > 0 && nowS - last > SESSION_IDLE_TIMEOUT_S) {
+        void revokeSession(jti);
+        return null;
+      }
+
+      // Throttled activity refresh (audit F-10): last_activity was written
+      // once at issuance and never again. Fire-and-forget + fail-open — a
+      // transient DB error must never log a live user out.
+      if (nowS - last > SESSION_ACTIVITY_REFRESH_S) {
+        void db
+          .update(sessions)
+          .set({ lastActivity: nowS })
+          .where(eq(sessions.id, jti))
+          .catch(() => undefined);
+      }
     }
     return userId;
   } catch {

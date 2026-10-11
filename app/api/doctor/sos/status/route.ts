@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sosOffers, sosRequests, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiDoctorOnly } from "@/lib/auth/guard";
 import { maskPatient, resolveDoctorId, SOS_TTL_MIN } from "@/lib/dispatch/geo";
 
 export const runtime = "nodejs";
@@ -15,10 +15,11 @@ export const runtime = "nodejs";
  * filtered out so no stale accept can happen.
  */
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Doctor-only panel (audit F-02): the doctor layout hard-bounces
+  // receptionists from /doctor/emergency regardless of permissions — a
+  // deliberate product boundary the underlying endpoint must share.
+  const user = await requireApiDoctorOnly(["doctor", "receptionist"]);
+  if (user instanceof Response) return user;
   const doctorId = resolveDoctorId(user);
 
   const rows = await db

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { MAX_REPORT_BYTES, mbLabel } from "@/lib/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +11,7 @@ import { testBookings, users } from "@/lib/db/schema";
 import { sendMail } from "@/lib/mail/send";
 import { notifyUser } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
+import { isVendorTokenExpired } from "./token-ttl";
 
 export type VendorUploadResult = { error: string | null; success?: boolean };
 
@@ -54,12 +56,19 @@ export async function uploadTestReport(
       status: testBookings.status,
       uploadedFilePath: testBookings.uploadedFilePath,
       uploadLinkToken: testBookings.uploadLinkToken,
+      updatedAt: testBookings.updatedAt,
     })
     .from(testBookings)
     .where(eq(testBookings.uploadLinkToken, token));
 
   if (!booking) return { error: "Invalid or expired upload link." };
   if (booking.uploadLinkToken !== token) return { error: "Invalid or expired upload link." };
+
+  // Expiry (audit F-11): the token ages out with the booking window; the
+  // doctor re-arms it via "Regenerate upload link" (resets updatedAt).
+  if (isVendorTokenExpired(booking.updatedAt)) {
+    return { error: "Invalid or expired upload link." };
+  }
 
   // Business rule: a cancelled booking must not be reactivated via upload,
   // and a completed booking's clinical report must not be silently replaced.
@@ -72,7 +81,7 @@ export async function uploadTestReport(
 
   const file = formData.get("test_report") as File | null;
   if (!file || file.size === 0) return { error: "Please choose a report file." };
-  if (file.size > 5 * 1024 * 1024) return { error: "Report must be under 5 MB." };
+  if (file.size > MAX_REPORT_BYTES) return { error: `Report must be under ${mbLabel(MAX_REPORT_BYTES)} MB.` };
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffFile(bytes);

@@ -12,8 +12,10 @@
  * 3. Security headers: CSP, HSTS, X-Frame-Options, X-Content-Type-Options,
  *    Referrer-Policy, Permissions-Policy, Cache-Control.
  *
- * NOTE: CSP is intentionally relaxed for dev (inline styles/scripts
- * needed by Next.js React Refresh). Tighten for production builds.
+ * NOTE: CSP script-src is nonce-locked in production (audit F-08) and
+ * relaxed for dev (React Refresh needs 'unsafe-eval'). app/layout.tsx must
+ * keep `export const dynamic = "force-dynamic"` — static pages cannot carry
+ * the per-request nonce and their bootstrap scripts would be blocked.
  *
  * Client-IP resolution for server actions lives in `lib/security/ip.ts`
  * (server actions cannot read the middleware request directly).
@@ -25,37 +27,65 @@ import { jwtVerify } from "jose";
 // ── CSP directives ──────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV === "development";
 
-const cspDirectives = [
-  // Default: only own origin + known CDNs
-  `default-src 'self'`,
-  // Scripts — Next.js needs 'unsafe-inline' + 'unsafe-eval' for
-  // the dev overlay and React Refresh.  In production builds the
-  // framework generates nonces so these can be removed.
-  `script-src 'self' ${
-    isDev ? "'unsafe-eval' 'unsafe-inline'" : ""
-  } 'unsafe-inline' https://cdn.jsdelivr.net`,
-  // Styles — same trade-off for dev.
-  `style-src 'self' ${
-    isDev ? "'unsafe-inline'" : ""
-  } 'unsafe-inline' https://fonts.googleapis.com`,
-  // Fonts
-  `font-src 'self' https://fonts.gstatic.com`,
-  // Images
-  `img-src 'self' data: blob: https:`,
-  // Connect (API calls, WebSocket for dev overlay)
-  `connect-src 'self'${
-    isDev ? " ws://localhost:*" : ""
-  } https://cdn.jsdelivr.net`,
-  // Frames
-  `frame-src 'self'`,
-  // Media
-  `media-src 'self'`,
-  // Workers
-  `worker-src 'self' blob:`,
-  // Prevent inline event handlers / JS URLs
-  `base-uri 'self'`,
-  `form-action 'self'`,
-].filter(Boolean).join("; ");
+/**
+ * Per-request CSP with a nonce (audit F-08).
+ *
+ * 'unsafe-inline' previously shipped in PRODUCTION script-src — it sat
+ * outside the isDev ternary, so CSP provided no mitigation against XSS at
+ * all. Production now uses the nonce mechanism from the Next.js CSP guide
+ * (node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md):
+ *
+ *   1. the proxy generates a fresh nonce per request and sets the CSP on
+ *      BOTH the request headers (so Next.js extracts the nonce and applies
+ *      it to its own bootstrap + flight scripts) and the response;
+ *   2. pages must render DYNAMICALLY — forced app-wide via
+ *      `export const dynamic = "force-dynamic"` in app/layout.tsx — because
+ *      statically generated pages are built without a request and cannot
+ *      carry the nonce;
+ *   3. 'strict-dynamic' lets the nonced bootstrap load the route bundles and
+ *      covers runtime-injected third-party scripts (the Razorpay checkout
+ *      script is document-injected from app JS, which strict-dynamic allows).
+ *
+ * style-src deliberately keeps 'unsafe-inline' in production: React renders
+ * style={{...}} props as style ATTRIBUTES, and attributes cannot be nonced —
+ * a strict style-src breaks every dynamic layout (maps, progress bars).
+ * Style injection is not script execution; the XSS-relevant directive is
+ * script-src, which is now nonce-locked.
+ */
+function buildCsp(nonce: string): string {
+  return [
+    // Default: only own origin
+    `default-src 'self'`,
+    // Scripts — dev additionally needs 'unsafe-eval' (React Refresh) and
+    // 'unsafe-inline' (dev overlay); production allows only nonce'd scripts.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${
+      isDev ? " 'unsafe-eval' 'unsafe-inline'" : ""
+    }`,
+    // Styles — React style attributes require 'unsafe-inline' (see above).
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    // Fonts
+    `font-src 'self' https://fonts.gstatic.com`,
+    // Images (Leaflet tiles + user uploads are https:)
+    `img-src 'self' data: blob: https:`,
+    // Connect (API calls, WebSocket for dev overlay). Dev also allows the
+    // local agent-toolbar port (4747) so its session-sync probes aren't
+    // CSP-blocked in the console. Production stays 'self'-only.
+    `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:4747 http://127.0.0.1:4747" : ""}`,
+    // Frames
+    `frame-src 'self'`,
+    // Media
+    `media-src 'self'`,
+    // Workers
+    `worker-src 'self' blob:`,
+    // Plugin content has no legitimate use — hard-deny.
+    `object-src 'none'`,
+    // Redundant with X-Frame-Options: DENY, but correct as defence-in-depth.
+    `frame-ancestors 'none'`,
+    // Prevent inline event handlers / JS URLs
+    `base-uri 'self'`,
+    `form-action 'self'`,
+  ].join("; ");
+}
 
 // ── Session gate ──────────────────────────────────────────────────────
 // Dashboard URL prefixes that require an authenticated session.
@@ -92,12 +122,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Fresh nonce per request (audit F-08): the CSP travels on the REQUEST
+  // headers so Next.js extracts it during SSR and nonces its own inline
+  // scripts, and on the RESPONSE so the browser enforces it.
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const cspDirectives = buildCsp(nonce);
+
   // Expose the path (and query) to server components. Layouts can't call
   // usePathname(), so this header lets the doctor/admin layouts enforce
   // permissions server-side and rebuild redirects without losing
   // query strings (e.g. the booking page's ?patient=<id> preselect).
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname + request.nextUrl.search);
+  requestHeaders.set("Content-Security-Policy", cspDirectives);
 
   // Receptionist panel URL-space: /receptionist/* renders the /doctor/*
   // routes (the app internals stay on /doctor; the doctor layout bounces
@@ -142,9 +179,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // ── Content-Security-Policy ────────────────────────────────────
-  // In dev we keep a relaxed policy.  In production the policy
-  // should be tightened once the app is fully audited for inline
-  // styles/scripts (e.g. via nonce or hash).
+  // Nonce-locked script-src in production (see buildCsp above).
   response.headers.set("Content-Security-Policy", cspDirectives);
 
   // ── Cache-Control for dynamic pages ────────────────────────────

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, staffAttendances } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 
@@ -11,11 +11,9 @@ export const runtime = "nodejs";
  * GET /api/doctor/staff/attendance/report?month=1&year=2026&staff_id=optional
  */
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Module permission matches the /doctor/staff page (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "roles-permissions");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const month = Number(req.nextUrl.searchParams.get("month") ?? new Date().getMonth() + 1);
@@ -31,7 +29,11 @@ export async function GET(req: NextRequest) {
   const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
   const endDate = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
-  const conds = [eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")];
+  // F-06: match EITHER link column (defence-in-depth).
+  const conds = [
+    or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+    eq(users.role, "receptionist"),
+  ];
   const staffIdParam = req.nextUrl.searchParams.get("staff_id");
   if (staffIdParam) {
     const sid = Number(staffIdParam);

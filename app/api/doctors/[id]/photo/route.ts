@@ -1,13 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -27,10 +26,15 @@ export async function GET(_request: Request, { params }: Props) {
     return new Response("Invalid doctor ID", { status: 400 });
   }
 
+  // Target constraint (audit F-12): the route previously accepted ANY user
+  // id — patients included — letting any authenticated account enumerate the
+  // user-id space and pull non-doctor profile photos. The booking UI only
+  // ever renders DOCTOR photos here, so the target is constrained to the
+  // doctor role while staying readable by every signed-in tier.
   const [doctor] = await db
     .select({ profilePhotoPath: users.profilePhotoPath })
     .from(users)
-    .where(eq(users.id, doctorId))
+    .where(and(eq(users.id, doctorId), eq(users.role, "doctor")))
     .limit(1);
   if (!doctor?.profilePhotoPath) return new Response("Not found", { status: 404 });
 
@@ -38,8 +42,8 @@ export async function GET(_request: Request, { params }: Props) {
   const contentType = CONTENT_TYPES[ext];
   if (!contentType) return new Response("Not found", { status: 404 });
 
-  const filePath = path.resolve(STORAGE_DIR, doctor.profilePhotoPath);
-  if (!filePath.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const filePath = resolveWithinStorage(doctor.profilePhotoPath);
+  if (!filePath) return new Response("Forbidden", { status: 403 });
 
   try {
     const bytes = await fs.readFile(filePath);

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, gte, inArray, like, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
+import { audit } from "@/lib/security/audit-log";
 import { todayStr, sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,10 @@ export const dynamic = "force-dynamic";
  * mirroring the legacy AppointmentsExport columns.
  */
 export async function GET(request: Request) {
-  const user = await getCurrentUser();
-  if (!user || !["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Role + module permission — the /doctor/appointments page requires the
+  // `appointments` module; this endpoint enforces the same (audit F-01).
+  const user = await requireApiPermission(["doctor", "receptionist"], "appointments");
+  if (user instanceof Response) return user;
   const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
 
   const url = new URL(request.url);
@@ -86,6 +87,22 @@ export async function GET(request: Request) {
     .leftJoin(users, eq(users.id, appointments.patientId))
     .where(and(...conds))
     .orderBy(desc(appointments.date), desc(appointments.time));
+
+  // F-19: bulk PHI exports are audited — who exported how many records, with
+  // which filters. Fire-and-forget, matching the other exporters.
+  void audit.pdfDownloaded(user.id, {
+    entity: "appointments",
+    entityId: 0,
+    action: "export",
+    description: `Appointments CSV exported (${rows.length} records)`,
+    filters: {
+      status,
+      search_name: searchName,
+      search_phone: searchPhone,
+      start_date: startDate,
+      end_date: endDate,
+    },
+  });
 
   // ── Build CSV (RFC-4180) ──
   const headers = [

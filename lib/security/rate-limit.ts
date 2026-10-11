@@ -67,6 +67,18 @@ export function resetRateLimit(key: string) {
 export const authRateLimit = {
   login: (email: string) => rateLimit(`login:${email}`, RATE_LIMIT.login, RATE_LIMIT.loginWindowMs),
   loginReset: (email: string) => resetRateLimit(`login:${email}`),
+  // Per-IP dimension (audit F-07): bounds distributed credential stuffing
+  // against one known account. When the IP is unresolvable this fails OPEN
+  // rather than collapsing every caller into one shared "unknown" bucket —
+  // a shared bucket turns a per-client limit into a global DoS. The
+  // per-email key above still applies in that case.
+  loginIp: (ip: string) =>
+    ip === "unknown"
+      ? { allowed: true, retryAfterMs: 0 }
+      : rateLimit(`login-ip:${ip}`, RATE_LIMIT.loginIp, RATE_LIMIT.loginWindowMs),
+  loginIpReset: (ip: string) => {
+    if (ip !== "unknown") resetRateLimit(`login-ip:${ip}`);
+  },
   signup: (email: string) => rateLimit(`signup:${email}`, RATE_LIMIT.signup, 60 * 60_000),
   // Signup OTP verification: cap guesses per email per OTP window so
   // brute-forcing the 6-digit code is impractical, including direct calls

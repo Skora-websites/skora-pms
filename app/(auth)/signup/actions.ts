@@ -97,6 +97,19 @@ export async function signupAction(
     return { error: message };
   }
 
+  // No-key email deliverability guard: block undeliverable (bad MX) only.
+  // Disposable/risky addresses still pass (OTP already proves ownership);
+  // upstream failure degrades to allow (never block signup on our helper).
+  try {
+    const { checkEmail } = await import("@/lib/integrations/public-apis");
+    const { data } = await checkEmail(rawEmail);
+    if (data.verdict === "invalid" && data.source !== "local-fallback") {
+      return { error: `This email looks undeliverable (${data.reason}). Please use another address.` };
+    }
+  } catch {
+    // ignore — signup must not depend on the helper
+  }
+
   if (rawPassword !== confirmation) {
     return { error: "Passwords do not match." };
   }

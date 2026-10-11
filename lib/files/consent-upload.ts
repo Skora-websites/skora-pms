@@ -3,13 +3,21 @@ import "server-only";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { MAX_CONSENT_FILE_BYTES } from "@/lib/config";
+import { MAX_CONSENT_FILE_BYTES, mbLabel } from "@/lib/config";
 
 // Uploaded consent files live outside public/ (PHI-safe), served via
 // authenticated API routes only.
 const CONSENT_FILES_DIR = path.join(process.cwd(), "storage", "uploads", "consent-files");
 
 export { MAX_CONSENT_FILE_BYTES };
+
+/**
+ * Consent links (and their files) live 7 days after creation — legacy
+ * vendor-link parity. Shared by the write path (respondConsent's answer
+ * window) and the read path (/api/consents/[slug]/file retention bound) so
+ * the two cannot drift — the drift is exactly what produced audit F-04.
+ */
+export const CONSENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Magic-byte check — only real JPG/PNG/PDF files pass (spoofed extensions rejected). */
 function sniffConsentFile(bytes: Buffer): "jpg" | "png" | "pdf" | null {
@@ -30,7 +38,10 @@ function sniffConsentFile(bytes: Buffer): "jpg" | "png" | "pdf" | null {
  */
 export async function saveConsentFile(file: File): Promise<string | null> {
   if (file.size === 0) return null;
-  if (file.size > MAX_CONSENT_FILE_BYTES) throw new Error("File must be under 5 MB.");
+  // Message derived from the configured cap (audit F-25): raising
+  // MAX_CONSENT_FILE_SIZE in the environment previously kept saying "5 MB".
+  if (file.size > MAX_CONSENT_FILE_BYTES)
+    throw new Error(`File must be under ${mbLabel(MAX_CONSENT_FILE_BYTES)} MB.`);
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = sniffConsentFile(bytes);
   if (!kind) throw new Error("Only JPG, PNG or PDF files are allowed.");

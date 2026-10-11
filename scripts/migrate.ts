@@ -47,6 +47,20 @@ async function main() {
     .filter((f) => f.endsWith(".sql") && /^\d{4}_/.test(f))
     .sort();
 
+  // Integrity guard (G-06 / audit F-16): a non-numeric .sql file in drizzle/
+  // is never applied and never recorded — it looks authoritative but is
+  // silently inert. Surface it loudly instead of failing invisibly later.
+  const strays = fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql") && !/^\d{4}_/.test(f));
+  if (strays.length > 0) {
+    console.warn(
+      `⚠️  ${strays.length} non-migration .sql file(s) in drizzle/ will NEVER be applied:`,
+      strays.join(", "),
+      "\n   They are not picked up by this runner. Archive or delete them"
+    );
+  }
+
   const pending = files.filter((f) => !applied.has(f));
 
   if (statusOnly) {

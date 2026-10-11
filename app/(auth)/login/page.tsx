@@ -43,7 +43,12 @@ export default function LoginPage() {
             <p className="mt-1 text-sm text-ink-muted">Sign in to your clinic workspace</p>
           </div>
           <LoginForm />
-          <p className="mt-6 text-center text-sm text-ink-muted">
+          <p className="mt-4 text-center text-sm text-ink-muted">
+            <Link href="/forgot-password" className="font-semibold text-brand-800 hover:text-brand-600">
+              Forgot your password?
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-sm text-ink-muted">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="font-semibold text-brand-800 hover:text-brand-600">
               Sign up

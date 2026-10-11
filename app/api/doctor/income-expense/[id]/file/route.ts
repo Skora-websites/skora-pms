@@ -4,13 +4,12 @@ import path from "node:path";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 import { audit } from "@/lib/security/audit-log";
 import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -29,12 +28,14 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  // Module permission matches the /doctor/income-expense page (audit F-01);
+  // admin tier keeps its business-scope branch, owner bypasses.
+  const user = await requireApiPermission(
+    ["doctor", "receptionist", "admin", "manager"],
+    "income-expense"
+  );
+  if (user instanceof Response) return user;
   const isAdminTier = user.role === "admin" || user.role === "manager";
-  if (!["doctor", "receptionist"].includes(user.role) && !isAdminTier) {
-    return new Response("Forbidden", { status: 403 });
-  }
   const allowedUserIds = isAdminTier
     ? (await getBusinessScope()).doctorIds
     : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];
@@ -58,8 +59,8 @@ export async function GET(
   if (!contentType) return new Response("Unsupported file", { status: 415 });
 
   // Defend against path traversal: only serve files within the uploads directory.
-  const resolved = path.resolve(STORAGE_DIR, tx.filePath);
-  if (!resolved.startsWith(STORAGE_DIR)) {
+  const resolved = resolveWithinStorage(tx.filePath);
+  if (!resolved) {
     return new Response("Forbidden", { status: 403 });
   }
 

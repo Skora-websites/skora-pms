@@ -9,7 +9,9 @@
     "lint": "eslint",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migrate:status": "tsx scripts/migrate.ts --status",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "db:check": "node scripts/check-db-schema.mjs",
+    "check:storage": "node scripts/check-storage-guard.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

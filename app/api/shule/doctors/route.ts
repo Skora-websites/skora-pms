@@ -35,13 +35,19 @@ const RATE_LIMIT = 120; // requests…
 const RATE_WINDOW_MS = 60_000; // …per minute per IP
 
 export async function GET(request: NextRequest) {
+  // Per-client bucket (audit F-07): key on the real IP when attributable,
+  // otherwise on the bearer-token fingerprint — never on the shared
+  // "unknown" constant, which would collapse every integrator into one
+  // 120-req/min bucket one abusive client could exhaust.
   const ip = await getClientIp();
-  const { allowed } = rateLimit(`shule-doctors:${ip}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const authHeader = request.headers.get("authorization");
+  const clientKey =
+    ip !== "unknown" ? `ip:${ip}` : `token:${authHeader ? authHeader.slice(-16) : "anonymous"}`;
+  const { allowed } = rateLimit(`shule-doctors:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const authHeader = request.headers.get("authorization");
   const user = await getUserByApiTokenHeader(authHeader);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

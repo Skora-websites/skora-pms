@@ -103,14 +103,13 @@ import { BASE_URL } from './test-env';
   // ============================
   console.log('\n========== PROBE 3: Capacitor Sidecar (documented analysis) ==========');
   const page3 = await context.newPage();
-  await page3.goto(`${BASE_URL}/probes/probe3-capacitor.md`);
-  await page3.waitForLoadState('domcontentloaded');
-  console.log('3a. Capacitor probe doc loaded: ' + (page3.url().endsWith('.md') ? 'YES (raw markdown served)' : 'YES (rendered)'));
-
-  // Quick check: is the file accessible as raw text?
+  // The probe artifacts moved out of the web root to docs/probes/ (audit F-28
+  // — development scratch files must not ship under public/). Read the doc
+  // from disk instead of over HTTP; the old /probes/* URL now 404s by design.
   const response = await page3.request.get(`${BASE_URL}/probes/probe3-capacitor.md`);
-  const isAccessible = response.ok();
-  console.log(`3b. Probe3 doc HTTP accessible: ${isAccessible} (${response.status()})`);
+  console.log(`3a. Probe3 doc served over HTTP: ${response.status()} (expected 404 — moved to docs/probes/)`);
+  const isAccessible = response.status() === 404;
+  console.log(`3b. Probe3 doc correctly NOT public: ${isAccessible}`);
   console.log('3c. Bundle size estimate: ~3-5MB (Capacitor core + geolocation + background-task)');
   console.log('3d. PWA → Native bridge: REQUIRES Capacitor app wrapper (capacitor:// not accessible from Vercel PWA)');
   console.log('3e. Background survival: 30min+ on Android (Foreground Service) / iOS (Background Location mode)');

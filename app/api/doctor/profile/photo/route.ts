@@ -5,10 +5,9 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { isPracticeDoctor } from "@/lib/queries/clinic";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -52,8 +51,8 @@ export async function GET(request: Request) {
   if (!contentType) return new Response("Not found", { status: 404 });
 
   // Path-traversal defense: resolve and verify the file stays inside storage/uploads.
-  const filePath = path.resolve(STORAGE_DIR, photoPath);
-  if (!filePath.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const filePath = resolveWithinStorage(photoPath);
+  if (!filePath) return new Response("Forbidden", { status: 403 });
 
   try {
     const bytes = await fs.readFile(filePath);

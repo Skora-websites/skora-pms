@@ -2,10 +2,10 @@ import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getCurrentUser } from "@/lib/auth/user";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
 
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 const ALLOWED_DIRS = new Set(["clinic", "blogs", "landing", "company", "support-videos"]);
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -50,8 +50,8 @@ export async function GET(
   }
 
   const relative = segments.join("/");
-  const resolved = path.resolve(STORAGE_DIR, relative);
-  if (!resolved.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const resolved = resolveWithinStorage(relative);
+  if (!resolved) return new Response("Forbidden", { status: 403 });
 
   const ext = path.extname(resolved).toLowerCase();
   const contentType = CONTENT_TYPES[ext];

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -128,22 +128,24 @@ export function Sidebar({
   promo?: boolean;
 }) {
   const pathname = usePathname();
-  // Promo card dismissible per user (persisted). Render-time adjustment
-  // pattern: localStorage is only read on the client, so the first client
-  // render re-renders with the stored value before paint (SSR renders the
-  // card; hydration reconciles). No effect needed.
-  const [promoDismissed, setPromoDismissed] = useState<boolean | null>(null);
-  const storedDismissal =
-    typeof window !== "undefined"
-      ? (() => {
-          try {
-            return localStorage.getItem(PROMO_DISMISS_KEY) === "1";
-          } catch {
-            return false;
-          }
-        })()
-      : null;
-  const promoVisible = promo && !(storedDismissal ?? promoDismissed);
+  // Promo card dismissible per user (persisted). useSyncExternalStore with a
+  // server snapshot of `true` keeps SSR and the first client render identical
+  // (card shown); the stored dismissal applies after hydration, so a
+  // previously-dismissed card hides post-mount instead of throwing a
+  // hydration mismatch. Never read localStorage during render.
+  const storedVisible = useSyncExternalStore(
+    () => () => {},
+    () => {
+      try {
+        return localStorage.getItem(PROMO_DISMISS_KEY) !== "1";
+      } catch {
+        return true;
+      }
+    },
+    () => true
+  );
+  const [dismissed, setDismissed] = useState(false);
+  const showPromo = promo && storedVisible && !dismissed;
 
   const dismissPromo = () => {
     try {
@@ -151,7 +153,7 @@ export function Sidebar({
     } catch {
       // Storage unavailable — still hide for this session.
     }
-    setPromoDismissed(true);
+    setDismissed(true);
   };
 
   const isActive = (item: NavItem) =>
@@ -229,7 +231,7 @@ export function Sidebar({
         {/* Sidebar footer promo (DESIGN.md §5.1) — static brand card with
             contour-line texture, doctor shell only. Dismiss button lets the
             user remove it permanently (persisted in localStorage). */}
-        {!collapsed && promoVisible && (
+        {!collapsed && showPromo && (
           <div className="relative mb-3 overflow-hidden rounded-3xl bg-navy-950 p-4 text-white">
             <ContourLines />
             <button

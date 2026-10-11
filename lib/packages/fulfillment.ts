@@ -31,6 +31,10 @@ export async function fulfillPackagePayment(input: {
   paymentId: string | null;
   signature?: string | null;
   source: "checkout" | "webhook";
+  /** Caller's user id — required for checkout (audit F-14): the browser
+   *  callback must only fulfill the CALLER'S order, never another user's.
+   *  The webhook path has no session and legitimately omits it. */
+  callerId?: number;
 }): Promise<FulfillmentResult> {
   const [payment] = await db
     .select()
@@ -38,6 +42,13 @@ export async function fulfillPackagePayment(input: {
     .where(eq(packagePayments.razorpayOrderId, input.orderId))
     .limit(1);
   if (!payment) return { ok: false, error: "Unknown order." };
+
+  // Checkout binding (audit F-14): an authenticated caller can only ever
+  // fulfill their own order. The HMAC signature proves the payment is real,
+  // not that the caller owns it.
+  if (input.source === "checkout" && input.callerId !== payment.userId) {
+    return { ok: false, error: "This order belongs to a different account." };
+  }
 
   if (payment.status === "paid") {
     // Already fulfilled (webhook raced the browser callback, or a retry) —

@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { db } from "@/lib/db";
 import { users, roles, modelHasRoles } from "@/lib/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { initials, formatDate } from "@/lib/utils";
 import { StaffForm } from "./staff-form";
@@ -31,7 +31,15 @@ export default async function StaffPage() {
         createdAt: users.createdAt,
       })
       .from(users)
-      .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")))
+      // F-06 defence-in-depth: accept EITHER link column (getCurrentUser
+      // already falls back this way) so rows provisioned with doctor_id only
+      // stay visible even if the two columns drift again.
+      .where(
+        and(
+          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+          eq(users.role, "receptionist")
+        )
+      )
       .orderBy(users.createdAt),
     db.select({ id: roles.id, name: roles.name }).from(roles).where(eq(roles.doctorId, doctorId)),
   ]);

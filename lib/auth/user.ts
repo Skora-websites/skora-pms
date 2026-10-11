@@ -161,6 +161,22 @@ export async function hasAnyPermission(userId: number, names: string[]) {
   return names.some((n) => perms.has(n));
 }
 
+/**
+ * Trial gating (audit F-03). The doctor layout's expiry check only guards
+ * page renders — server actions and API routes never traverse it, so an
+ * expired trial previously retained full write access. Every shared guard
+ * (requireWriteScope, requireDoctorPermission, the API permission guards)
+ * calls this so the paid-feature boundary holds on ALL paths.
+ *
+ * `trialEndsAt = NULL` means "no trial restriction" (seeded and legacy
+ * doctors) — never "expired". Only the `doctor` role carries a trial;
+ * every other role always returns false.
+ */
+export function isTrialExpired(user: Pick<CurrentUser, "role" | "trialEndsAt">): boolean {
+  if (user.role !== "doctor" || !user.trialEndsAt) return false;
+  return new Date(user.trialEndsAt).getTime() <= Date.now();
+}
+
 export type UserRole =
   | "super_admin"
   | "admin"

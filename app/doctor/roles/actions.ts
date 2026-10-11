@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
@@ -239,7 +239,13 @@ export async function getUserPermissionNames(userId: number): Promise<string[]> 
     const [staff] = await db
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.id, userId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
+      .where(
+        and(
+          eq(users.id, userId),
+          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+          eq(users.role, "receptionist")
+        )
+      );
     if (!staff) return [];
   }
 
@@ -259,11 +265,27 @@ export async function saveStaffPermissions(
   if (!doctorId) return { error: "You don't have permission to edit staff permissions." };
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
 
+  // Self-targeting guard (audit F-05): a receptionist holding roles-edit
+  // could otherwise pass their own id — the ownership predicate below
+  // matches their row — and grant themselves the entire permission catalog.
+  // The role actions already refuse self-modification (updateRole/deleteRole);
+  // this closes the same class here.
+  const me = await getCurrentUser();
+  if (me && staffId === me.id) {
+    return { error: "You cannot edit your own permissions." };
+  }
+
   // The staff member must belong to this doctor.
   const [staff] = await db
     .select({ id: users.id, name: users.name })
     .from(users)
-    .where(and(eq(users.id, staffId), eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")));
+    .where(
+      and(
+        eq(users.id, staffId),
+        or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+        eq(users.role, "receptionist")
+      )
+    );
   if (!staff) return { error: "Staff member not found." };
 
   const permissionIds = await parsePermissionInput(permissionNames);

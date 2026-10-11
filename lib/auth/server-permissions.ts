@@ -13,7 +13,7 @@ import { redirect } from "next/navigation";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { permissions, modelHasPermissions, modelHasRoles, roles } from "@/lib/db/schema";
-import { getCurrentUser, hasPermission, homePathForRole } from "./user";
+import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 
 const USER_MODEL = "App\\Models\\User";
@@ -84,6 +84,10 @@ export async function requireDoctorPermission(
   if (!["doctor", "receptionist"].includes(user.role)) {
     redirect(homePathForRole(user.role));
   }
+  // Trial expiry blocks doctor read/write paths too (audit F-03) — the
+  // layout gate alone is reachable only through page renders. Receptionists
+  // are unaffected: only the doctor role carries a trial.
+  if (isTrialExpired(user)) return null;
   if (!(await hasPermission(user.id, permission))) return null;
   return resolvePracticeDoctorId(user);
 }

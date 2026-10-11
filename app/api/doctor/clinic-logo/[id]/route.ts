@@ -6,10 +6,9 @@ import { db } from "@/lib/db";
 import { doctorClinics } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getBusinessScope } from "@/lib/auth/scope";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -64,8 +63,8 @@ export async function GET(
   const contentType = CONTENT_TYPES[ext];
   if (!contentType) return new Response("Unsupported file", { status: 415 });
 
-  const resolved = path.resolve(STORAGE_DIR, relative);
-  if (!resolved.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const resolved = resolveWithinStorage(relative);
+  if (!resolved) return new Response("Forbidden", { status: 403 });
 
   try {
     const bytes = await fs.readFile(resolved);

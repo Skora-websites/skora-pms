@@ -13,58 +13,10 @@ import { requireAdminPermission } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { isDupKey } from "@/lib/db/dup";
+// Shared clinic-form contract (audit F-22) — one implementation for all tiers.
+import { parseClinicForm } from "@/lib/validation/clinic";
 
 export type ClinicActionResult = { error: string | null };
-
-const ADDRESS_TYPES = ["manual", "map"] as const;
-
-function parseClinicForm(formData: FormData):
-  | { error: string }
-  | {
-      clinicName: string;
-      addressType: (typeof ADDRESS_TYPES)[number];
-      address: string;
-      latitude: string | null;
-      longitude: string | null;
-      phone: string;
-      fee: string;
-    } {
-  const clinicName = String(formData.get("clinic_name") ?? "").trim();
-  const addressTypeRaw = String(formData.get("address_type") ?? "manual");
-  const address = String(formData.get("address") ?? "").trim();
-  const latitude = String(formData.get("latitude") ?? "").trim() || null;
-  const longitude = String(formData.get("longitude") ?? "").trim() || null;
-  const phone = String(formData.get("phone") ?? "").trim();
-  const fee = String(formData.get("consultation_fee") ?? "").trim();
-
-  if (!clinicName) return { error: "Clinic name is required." };
-  if (clinicName.length > 255) return { error: "Clinic name must be at most 255 characters." };
-  if (!(ADDRESS_TYPES as readonly string[]).includes(addressTypeRaw)) {
-    return { error: "Invalid address type." };
-  }
-  const addressType = addressTypeRaw as (typeof ADDRESS_TYPES)[number];
-  if (addressType === "manual" && !address) return { error: "Address is required for manual address." };
-  if (addressType === "map" && (!latitude || !longitude)) {
-    return { error: "Latitude and longitude are required for map address." };
-  }
-  if (!phone) return { error: "Phone is required." };
-  if (phone.length > 20) return { error: "Phone must be at most 20 characters." };
-  const feeNum = Number(fee);
-  if (!fee || !Number.isFinite(feeNum) || feeNum < 0) {
-    return { error: "Consultation fee must be a valid non-negative amount." };
-  }
-
-  return {
-    clinicName,
-    addressType,
-    // Map locations without a typed address synthesize one (doctor-module parity).
-    address: addressType === "map" && !address ? `Map Location: ${latitude}, ${longitude}` : address,
-    latitude,
-    longitude,
-    phone,
-    fee: feeNum.toFixed(2),
-  };
-}
 
 /**
  * Create a clinic under the owner's business. Every clinic row requires an

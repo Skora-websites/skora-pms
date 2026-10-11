@@ -6,6 +6,7 @@ import { CalendarPlus, Clock, Loader2, MapPin, IndianRupee, BadgeCheck, Stethosc
 import { createPatientAppointment } from "../actions";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/utils";
+import { HolidayBadge } from "@/components/integrations/holiday-badge";
 
 type Doctor = {
   id: number;
@@ -59,7 +60,8 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
       .then((data) => {
         if (cancelled) return;
         setSlots(data.slots ?? []);
-        setSlotMessage(data.message ?? null);
+        const holidayNote = data.holiday ? ` Holiday: ${data.holiday.name} — emergency-only.` : "";
+        setSlotMessage(data.message ? `${data.message}${holidayNote}` : holidayNote || null);
         setSelectedSlot("");
         setFetchedKey(requestKey);
       })
@@ -222,6 +224,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                 onChange={(e) => setDate(e.target.value)}
                 className="input"
               />
+              <HolidayBadge date={date} />
             </div>
 
             {/* Available slots */}

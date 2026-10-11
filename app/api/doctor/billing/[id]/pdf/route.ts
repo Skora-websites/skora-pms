@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiRole } from "@/lib/auth/guard";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { getBillById } from "@/lib/queries/doctor";
 import { audit } from "@/lib/security/audit-log";
 import { getBusinessScope } from "@/lib/auth/scope";
@@ -21,7 +21,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // API routes answer 401/403 outright — never redirect (307 hides the denial).
-  const user = await requireApiRole(["doctor", "receptionist", "admin", "manager"]);
+  // Module permission matches the /doctor/billing page (`billing`); the owner
+  // bypasses it by design (requireApiPermission parity with requireAdminTier).
+  const user = await requireApiPermission(["doctor", "receptionist", "admin", "manager"], "billing");
   if (user instanceof Response) return user;
 
   const { id } = await params;
@@ -56,6 +58,16 @@ export async function GET(
   try {
     const { renderToBuffer } = await import("@react-pdf/renderer");
     const { BillPdf } = await import("@/components/pdf/bill-pdf");
+    // Verification QR (no-key, server-side). Omitted when upstream is down.
+    let qrDataUrl: string | null = null;
+    try {
+      const { qrPngBytes } = await import("@/lib/integrations/public-apis");
+      const qrText = `SkoraCares ${bill.billNumber} | ${bill.patientName ?? "patient"} | Rs.${bill.totalAmount}`;
+      const { data: bytes } = await qrPngBytes(qrText, 180);
+      qrDataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+    } catch {
+      qrDataUrl = null;
+    }
     const element = React.createElement(BillPdf, {
       data: {
         billNumber: bill.billNumber,
@@ -74,6 +86,7 @@ export async function GET(
         status: bill.status ?? "pending",
         notes: bill.notes,
         printDate: new Date().toISOString().slice(0, 10),
+        qrDataUrl,
       },
     }) as unknown as React.ReactElement<import("@react-pdf/renderer").DocumentProps>;
     const pdfBuffer = await renderToBuffer(element);

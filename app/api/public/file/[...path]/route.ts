@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
 
-const STORAGE_DIR = path.join(process.cwd(), "storage", "uploads");
 // Only CMS assets the public marketing site legitimately renders. SVG is
 // excluded on purpose: uploads never produce it (magic-byte sniff is jpg/
 // png/webp/gif only) and served SVG can embed same-origin script.
@@ -35,8 +35,8 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
-  const resolved = path.resolve(STORAGE_DIR, segments.join("/"));
-  if (!resolved.startsWith(STORAGE_DIR)) return new Response("Forbidden", { status: 403 });
+  const resolved = resolveWithinStorage(segments.join("/"));
+  if (!resolved) return new Response("Forbidden", { status: 403 });
 
   const contentType = CONTENT_TYPES[path.extname(resolved).toLowerCase()];
   if (!contentType) return new Response("Unsupported file", { status: 415 });

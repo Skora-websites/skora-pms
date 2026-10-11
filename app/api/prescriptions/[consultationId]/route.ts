@@ -20,10 +20,12 @@ export async function GET(
   const id = Number(consultationId);
   if (!Number.isInteger(id)) return new Response("Bad request", { status: 400 });
 
-  // Doctors/office staff may download their own consultations; patients only their own.
+  // Doctors may download their own consultations; patients only their own.
+  // Receptionists are excluded outright — doctor-only panel (audit F-02):
+  // the layout blocks /doctor/consultations for them regardless of perms.
   let doctorId: number;
-  if (["doctor", "receptionist"].includes(user.role)) {
-    doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  if (user.role === "doctor") {
+    doctorId = user.id;
   } else if (user.role === "patient") {
     const [c] = await db
       .select({ doctorId: consultations.doctorId })
@@ -38,10 +40,22 @@ export async function GET(
   const data = await getConsultationForPdf(doctorId, id);
   if (!data) return new Response("Not found", { status: 404 });
 
+  // Verification QR (no-key goqr.me, server-side). Omitted when upstream is down.
+  let qrDataUrl: string | null = null;
+  try {
+    const { qrPngBytes } = await import("@/lib/integrations/public-apis");
+    const { APP_URL } = await import("@/lib/config");
+    const qrText = `${APP_URL}/api/prescriptions/${id} | Rx ${id} | ${data.patient?.name ?? "patient"}`;
+    const { data: bytes } = await qrPngBytes(qrText, 180);
+    qrDataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    qrDataUrl = null;
+  }
+
   try {
     // Dynamic import keeps the heavy renderer out of the main server bundle.
     const { renderToBuffer } = await import("@react-pdf/renderer");
-    const element = React.createElement(PrescriptionPdf, { data }) as unknown as React.ReactElement<
+    const element = React.createElement(PrescriptionPdf, { data: { ...data, qrDataUrl } }) as unknown as React.ReactElement<
       import("@react-pdf/renderer").DocumentProps
     >;
     const buffer = await renderToBuffer(element);
