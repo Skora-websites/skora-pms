@@ -59,7 +59,7 @@ export function EditPatientForm({ patient }: { patient: PatientFormData }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="gender" className="label">Gender <span className="text-red-500">*</span></label>
-            <select id="gender" name="gender" required className="input" defaultValue={patient.gender ?? "Male"}>
+            <select id="gender" name="gender" required className="input" defaultValue={patient.gender ?? ""}>
               <option value="" disabled>Select gender...</option>
               {GENDERS.map((g) => (
                 <option key={g} value={g}>{g}</option>

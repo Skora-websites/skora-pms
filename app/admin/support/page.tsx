@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Headset } from "lucide-react";
 import { requireAdminTier } from "@/lib/auth/guard";
+import { getCurrentUser } from "@/lib/auth/user";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { getSupportTickets } from "@/lib/queries/doctor";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
@@ -18,7 +20,9 @@ export default async function AdminSupportPage() {
   const scope = await getBusinessScope();
 
   // The owner's own tickets + every scoped doctor's tickets.
-  const viewerIds = [await (await import("@/lib/auth/user")).getCurrentUser().then((u) => u!.id), ...scope.doctorIds];
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const viewerIds = [user.id, ...scope.doctorIds];
   const uniqueIds = [...new Set(viewerIds)];
   const ticketLists = await Promise.all(uniqueIds.map((id) => getSupportTickets(id)));
 

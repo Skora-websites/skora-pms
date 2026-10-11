@@ -15,7 +15,11 @@ export default async function ConsentPage({
   const consent = await getConsentBySlug(slug);
   if (!consent) notFound();
 
+  // A decided consent is served as 404 — the slug must not keep exposing the
+  // doctor/patient names or the appointment details. getConsentBySlug returns
+  // null once isAccepted/isRejected is set, so this branch is unreachable.
   const decided = consent.isAccepted || consent.isRejected;
+  if (decided) notFound();
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-accent-50/40 to-brand-50 px-5 py-24">
@@ -48,7 +52,7 @@ export default async function ConsentPage({
             )}
             <div className="flex items-center justify-between">
               <span className="text-ink-muted">Patient</span>
-              <span className="font-semibold text-ink">{consent.patientName}</span>
+              <span className="font-semibold text-ink">You</span>
             </div>
             {consent.appointmentDate && (
               <div className="flex items-center justify-between">
@@ -71,34 +75,7 @@ export default async function ConsentPage({
             that the information I have provided is accurate to the best of my knowledge.
           </p>
 
-          {decided ? (
-            <div className="mt-7 rounded-2xl border border-accent-500/30 bg-accent-50 p-6 text-center">
-              <CheckCircle2 className="mx-auto h-10 w-10 text-accent-600" />
-              <p className="mt-3 font-semibold text-ink">
-                {consent.isAccepted ? "Consent accepted" : "Consent declined"}
-              </p>
-              <p className="mt-1 text-sm text-ink-muted">
-                {consent.isAccepted
-                  ? "The clinic has been notified of your acceptance."
-                  : "The clinic has been notified of your decision."}
-              </p>
-              {consent.consentFile && (
-                <a
-                  href={`/api/consents/${consent.slug}/file`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-brand-700 shadow-sm ring-1 ring-brand-200 transition-colors hover:bg-brand-50"
-                >
-                  <FileText className="h-4 w-4" />
-                  {consent.consentFile.startsWith("consent-pdfs/")
-                    ? "Download consent certificate"
-                    : "Download uploaded document"}
-                </a>
-              )}
-            </div>
-          ) : (
-            <ConsentForm slug={consent.slug} />
-          )}
+          <ConsentForm slug={consent.slug} />
         </div>
 
         <p className="mt-6 text-center text-xs text-ink-muted">

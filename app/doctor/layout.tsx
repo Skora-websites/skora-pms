@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/guard";
 import { getUserPermissions } from "@/lib/auth/user";
 import {
+  DOCTOR_ONLY_PATHS,
   doctorPathToReceptionist,
   firstPermittedDoctorPath,
   hasDoctorModuleAccess,
@@ -52,13 +53,7 @@ export default async function DoctorLayout({
   // (consultation records + online consultations) belong to the doctor, not
   // the front desk.
   const isReceptionistPanel = user.role === "receptionist";
-  if (
-    isReceptionistPanel &&
-    (pathname === "/doctor/emergency" ||
-      pathname === "/doctor/consultations" ||
-      pathname.startsWith("/doctor/consultations/") ||
-      pathname === "/doctor/online-consultations")
-  ) {
+  if (isReceptionistPanel && DOCTOR_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     redirect("/receptionist");
   }
   if (!hasDoctorModuleAccess(perms, pathname)) {
@@ -93,6 +88,11 @@ export default async function DoctorLayout({
     { perm: "dashboard", label: "Online Consultations", href: "/doctor/online-consultations", icon: "video", section: "Clinical modules", doctorOnly: true },
     { perm: "dashboard", label: "Emergency", href: "/doctor/emergency", icon: "siren", section: "Clinical modules", doctorOnly: true },
     { perm: "support", label: "Support", href: "/doctor/support", icon: "headset", section: "General" },
+    // doctorOnly mirrors the bounce above: these pages belong to the doctor,
+    // never to the front desk (all map to the "dashboard" module).
+    { perm: "dashboard", label: "Consult (PDF)", href: "/doctor/consult-pdf", icon: "file-text", section: "General", doctorOnly: true },
+    { perm: "dashboard", label: "Reference", href: "/doctor/reference", icon: "newspaper", section: "General", doctorOnly: true },
+    { perm: "dashboard", label: "Help / FAQ", href: "/doctor/faq", icon: "help-circle", section: "General", doctorOnly: true },
     { perm: "roles-permissions", label: "My Staff", href: "/doctor/staff", icon: "users", section: "Administration" },
     { perm: "roles-permissions", label: "Roles & Permission", href: "/doctor/roles", icon: "user-cog", section: "Administration" },
   ];

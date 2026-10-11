@@ -34,6 +34,11 @@ export const getConsentBySlug = cache(async (slug: string): Promise<ConsentDetai
 
   if (!consent) return null;
 
+  // A decided consent is no longer servable: the slug holder has already
+  // responded, so neither the names nor the appointment details may be
+  // exposed again. Mirrors the read policy in the consent-file route.
+  if (consent.isAccepted || consent.isRejected) return null;
+
   const [doctor] = await db
     .select({ name: users.name, qualification: users.qualification })
     .from(users)

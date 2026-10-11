@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { MAX_ATTACHMENT_BYTES, mbLabel } from "@/lib/config";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
@@ -387,6 +388,9 @@ export async function updateFollowUpStatus(consultationId: number, status: strin
 }
 
 // ── Support ──────────────────────────────────────────────────────────────
+// The subject of a new ticket — the shared reply schema validates a ticketId,
+// which a brand-new ticket does not have yet.
+const supportTicketSubjectSchema = z.object({ subject: z.string().trim().min(3).max(200) });
 
 export async function createSupportTicket(
   _prev: TicketAction,
@@ -402,14 +406,10 @@ export async function createSupportTicket(
   const subject = String(formData.get("subject") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
 
-  const parsed = supportTicketReplySchema.safeParse({
-    ticketId: 0,
-    message,
-  });
+  const parsed = supportTicketSubjectSchema.safeParse({ subject });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  if (!subject) return { error: "Subject is required." };
 
   const now = new Date();
   const [ticket] = await db.insert(supportTickets).values({

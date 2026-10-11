@@ -50,6 +50,20 @@ export const DOCTOR_ROUTE_PERMISSIONS: { prefix: string; perm: DoctorNavPerm }[]
   { prefix: "/doctor", perm: "dashboard" },
 ];
 
+/**
+ * Doctor-dashboard paths receptionists must never reach, whatever module
+ * permissions they hold. Used by the layout bounce and the nav filter so the
+ * two can never drift apart.
+ */
+export const DOCTOR_ONLY_PATHS = [
+  "/doctor/emergency",
+  "/doctor/consultations",
+  "/doctor/online-consultations",
+  "/doctor/consult-pdf",
+  "/doctor/reference",
+  "/doctor/faq",
+];
+
 /** Module permission required for a doctor-dashboard pathname (or null). */
 export function doctorPermissionForPath(pathname: string): DoctorNavPerm | null {
   for (const { prefix, perm } of DOCTOR_ROUTE_PERMISSIONS) {

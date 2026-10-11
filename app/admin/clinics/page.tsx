@@ -145,7 +145,7 @@ export default async function AdminClinicsPage() {
               <p className="mt-4 text-xs text-slate-500">
                 <span className="font-semibold text-slate-400">Managers:</span>{" "}
                 {managersByClinic.get(c.id)?.length
-                  ? managersByClinic.get(c.id)!.join(", ")
+                  ? managersByClinic.get(c.id)?.join(", ")
                   : "None assigned"}
               </p>
             </div>

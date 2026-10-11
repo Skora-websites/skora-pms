@@ -75,9 +75,9 @@ export function SecuritySettings() {
             <p className="text-sm text-slate-500">
               Two-factor authentication adds an extra layer of security to your account.
             </p>
-            <button className="mt-2 text-sm font-medium text-brand-700 hover:underline">
-              Configure 2FA
-            </button>
+            <p className="mt-2 text-sm text-slate-500">
+              2FA configuration is not available yet.
+            </p>
           </div>
         </div>
       </div>

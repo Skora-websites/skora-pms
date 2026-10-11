@@ -134,7 +134,7 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
       <div className="rounded-3xl border-2 border-red-200 bg-white p-6 text-center shadow-lg">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-400" />
         <p className="mt-2 font-semibold text-slate-700">Checking your SOS request…</p>
-        <p className="mt-1 text-sm text-slate-500">Hang tight — we're confirming the request status.</p>
+        <p className="mt-1 text-sm text-slate-500">Hang tight — we are confirming the request status.</p>
       </div>
     );
   }
