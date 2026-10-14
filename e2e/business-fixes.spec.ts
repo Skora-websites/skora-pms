@@ -83,6 +83,12 @@ test.describe("Business-fix verification", () => {
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
+    // Filter to the run's own date: the list is newest-first and paginated,
+    // and other specs book months ahead, so an unfiltered lookup falls off
+    // page 1. The view supports ?date=YYYY-MM-DD.
+    await page.goto(`/doctor/appointments?date=${dateStr}`);
+    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 });
+
     const dateLabel = future.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
     const row = page
       .locator("tr", { hasText: patientName })
@@ -145,6 +151,12 @@ test.describe("Business-fix verification", () => {
     await page.getByRole("button", { name: /Continue to booking/i }).click();
     await page.getByRole("button", { name: /Book appointment/i }).click();
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
+
+    // Filter to the run's own date: the list is newest-first and paginated,
+    // and other specs book months ahead, so an unfiltered lookup falls off
+    // page 1. The view supports ?date=YYYY-MM-DD.
+    await page.goto(`/doctor/appointments?date=${dateStr}`);
+    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 });
 
     const dateLabel = future.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
     const row = page
