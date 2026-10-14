@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Mail } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { db } from "@/lib/db";
-import { mailSettings, companySettings } from "@/lib/db/schema";
+import { getCompanySettings, getMailSettings } from "@/lib/queries/admin";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { MailSettingsForm } from "./mail-settings-form";
 
@@ -10,8 +9,7 @@ export const metadata: Metadata = { title: "Email Setup · Super Admin" };
 
 export default async function EmailSetupPage() {
   await requireRole(["super_admin"]);
-  const [mail] = await db.select().from(mailSettings).limit(1);
-  const [company] = await db.select().from(companySettings).limit(1);
+  const [mail, company] = await Promise.all([getMailSettings(), getCompanySettings()]);
 
   return (
     <div>

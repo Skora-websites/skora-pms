@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { CalendarClock } from "lucide-react";
-import { asc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { clinicDoctors, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import {
+  listClinicDoctorOptions,
+  listScopedClinics,
+  listScopedSchedules,
+  scopeOrSentinel,
+} from "@/lib/queries/admin";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 
 export const metadata: Metadata = { title: "Schedule · Business" };
@@ -12,38 +15,12 @@ export const metadata: Metadata = { title: "Schedule · Business" };
 export default async function AdminSchedulePage() {
   await requireAdminTier("/admin/schedule");
   const scope = await getBusinessScope();
-  const clinicIds = scope.clinicIds.length ? scope.clinicIds : [-1];
+  const clinicIds = scopeOrSentinel(scope.clinicIds);
 
   const [clinics, schedules, doctors] = await Promise.all([
-    db
-      .select({
-        id: doctorClinics.id,
-        clinicName: doctorClinics.clinicName,
-        address: doctorClinics.address,
-        phone: doctorClinics.phone,
-      })
-      .from(doctorClinics)
-      .where(inArray(doctorClinics.id, clinicIds))
-      .orderBy(asc(doctorClinics.id)),
-    db
-      .select({
-        clinicId: doctorSchedules.doctorClinicId,
-        doctorName: users.name,
-        dayOfWeek: doctorSchedules.dayOfWeek,
-        startTime: doctorSchedules.startTime,
-        endTime: doctorSchedules.endTime,
-        sessionType: doctorSchedules.sessionType,
-        isActive: doctorSchedules.isActive,
-      })
-      .from(doctorSchedules)
-      .innerJoin(users, eq(users.id, doctorSchedules.doctorId))
-      .where(inArray(doctorSchedules.doctorClinicId, clinicIds))
-      .orderBy(asc(doctorSchedules.doctorClinicId), asc(doctorSchedules.id)),
-    db
-      .select({ doctorId: clinicDoctors.doctorId, clinicId: clinicDoctors.clinicId, name: users.name })
-      .from(clinicDoctors)
-      .innerJoin(users, eq(users.id, clinicDoctors.doctorId))
-      .where(inArray(clinicDoctors.clinicId, clinicIds)),
+    listScopedClinics(clinicIds),
+    listScopedSchedules(clinicIds),
+    listClinicDoctorOptions(clinicIds),
   ]);
 
   const schedulesByClinic = new Map<number, typeof schedules>();

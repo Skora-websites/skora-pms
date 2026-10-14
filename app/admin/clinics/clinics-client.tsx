@@ -197,10 +197,10 @@ export type ClinicCard = {
   id: number;
   clinicName: string;
   addressType: "manual" | "map" | null;
-  address: string;
+  address: string | null;
   latitude: string | null;
   longitude: string | null;
-  phone: string;
+  phone: string | null;
   consultationFee: string | null;
   isActive: boolean;
 };

@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { UserPlus, Users } from "lucide-react";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import { listScopedPatients } from "@/lib/queries/admin";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, initials } from "@/lib/utils";
 
@@ -24,27 +22,7 @@ export default async function AdminPatientsPage({
   await requireAdminTier("/admin/patients");
   const scope = await getBusinessScope();
   const { q } = await searchParams;
-
-  const conds = [eq(users.role, "patient"), inArray(users.referenceRoleId, scope.doctorIds.length ? scope.doctorIds : [-1])];
-  if (q) {
-    const like = `%${q}%`;
-    conds.push(sql`(${users.name} LIKE ${like} OR ${users.phone} LIKE ${like} OR ${users.email} LIKE ${like})`);
-  }
-
-  const rows = await db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      gender: users.gender,
-      status: users.status,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .where(and(...conds))
-    .orderBy(sql`${users.createdAt} DESC`)
-    .limit(100);
+  const rows = await listScopedPatients(scope.doctorIds, q, 100);
 
   return (
     <div>

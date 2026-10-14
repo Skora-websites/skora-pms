@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { Building2 } from "lucide-react";
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { clinicDoctors, clinicManagers, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import {
+  countDoctorsPerClinic,
+  countSchedulesPerClinic,
+  listManagersPerClinic,
+  listScopedClinics,
+  scopeOrSentinel,
+} from "@/lib/queries/admin";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatINR } from "@/lib/utils";
 import { AddClinicButton, ClinicCardActions, type ClinicCard } from "./clinics-client";
@@ -15,60 +19,16 @@ export const metadata: Metadata = { title: "Clinics · Business" };
 export default async function AdminClinicsPage() {
   await requireAdminTier("/admin/clinics");
   const scope = await getBusinessScope();
-  const clinicIds = scope.clinicIds.length ? scope.clinicIds : [-1];
+  const clinicIds = scopeOrSentinel(scope.clinicIds);
 
-  const [clinics, doctorCounts, scheduleCounts, managers, doctors] = await Promise.all([
-    db
-      .select({
-        id: doctorClinics.id,
-        clinicName: doctorClinics.clinicName,
-        addressType: doctorClinics.addressType,
-        address: doctorClinics.address,
-        latitude: doctorClinics.latitude,
-        longitude: doctorClinics.longitude,
-        phone: doctorClinics.phone,
-        consultationFee: doctorClinics.consultationFee,
-        isActive: doctorClinics.isActive,
-      })
-      .from(doctorClinics)
-      .where(inArray(doctorClinics.id, clinicIds))
-      .orderBy(asc(doctorClinics.id)),
-    db
-      .select({
-        clinicId: clinicDoctors.clinicId,
-        count: sql<number>`count(distinct ${clinicDoctors.doctorId})`,
-      })
-      .from(clinicDoctors)
-      .where(inArray(clinicDoctors.clinicId, clinicIds))
-      .groupBy(clinicDoctors.clinicId),
-    db
-      .select({
-        clinicId: doctorSchedules.doctorClinicId,
-        count: sql<number>`count(*)`,
-      })
-      .from(doctorSchedules)
-      .where(inArray(doctorSchedules.doctorClinicId, clinicIds))
-      .groupBy(doctorSchedules.doctorClinicId),
-    db
-      .select({
-        clinicId: clinicManagers.clinicId,
-        userId: clinicManagers.userId,
-        userName: users.name,
-      })
-      .from(clinicManagers)
-      .innerJoin(users, eq(users.id, clinicManagers.userId))
-      .where(inArray(clinicManagers.clinicId, clinicIds)),
-    clinicDoctorOptions(),
-  ]);
-
-  const doctorCountByClinic = new Map(doctorCounts.map((r) => [r.clinicId, Number(r.count)]));
-  const scheduleCountByClinic = new Map(scheduleCounts.map((r) => [r.clinicId, Number(r.count)]));
-  const managersByClinic = new Map<number, string[]>();
-  for (const m of managers) {
-    const list = managersByClinic.get(m.clinicId) ?? [];
-    list.push(m.userName);
-    managersByClinic.set(m.clinicId, list);
-  }
+  const [clinics, doctorCountByClinic, scheduleCountByClinic, managersByClinic, doctors] =
+    await Promise.all([
+      listScopedClinics(clinicIds),
+      countDoctorsPerClinic(clinicIds),
+      countSchedulesPerClinic(clinicIds),
+      listManagersPerClinic(clinicIds),
+      clinicDoctorOptions(),
+    ]);
 
   const cards: ClinicCard[] = clinics.map((c) => ({
     id: c.id,

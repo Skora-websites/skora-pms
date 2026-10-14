@@ -1,38 +1,26 @@
 import type { Metadata } from "next";
 import { PhoneCall } from "lucide-react";
-import { and, desc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { getFollowUps, getFollowUpReminders } from "@/lib/queries/doctor";
+import { listPatientOptions } from "@/lib/queries/admin";
 import { PageHeader, EmptyState, StatusBadge, QuickContactActions } from "@/components/ui/dashboard-ui";
 import { formatDate, todayStr } from "@/lib/utils";
 import { NewFollowUpForm, ReminderActions } from "@/app/doctor/follow-ups/follow-up-forms";
 
 export const metadata: Metadata = { title: "Follow Ups · Business" };
 
-/** Patients across ALL scoped doctors (unlike single-owner getDoctorPatients). */
-async function getScopePatients(doctorIds: number[]) {
-  if (doctorIds.length === 0) return [];
-  return db
-    .select({ id: users.id, name: users.name, phone: users.phone })
-    .from(users)
-    .where(and(eq(users.role, "patient"), inArray(users.referenceRoleId, doctorIds)))
-    .orderBy(desc(users.createdAt));
-}
-
 export default async function AdminFollowUpsPage() {
   await requireAdminTier("/admin/follow-ups");
   const scope = await getBusinessScope();
-  const [followUps, reminders] = await Promise.all([
+  const [followUps, reminders, patients] = await Promise.all([
     getFollowUps(scope.doctorIds),
     getFollowUpReminders(scope.doctorIds),
+    // The New Follow-up form needs the whole business's patient list, not just
+    // the anchor doctor's (getDoctorPatients is single-owner scoped; the admin
+    // tier fans out across all scoped doctors).
+    listPatientOptions(scope.doctorIds),
   ]);
-  // The New Follow-up form needs the whole business's patient list, not just
-  // the anchor doctor's (getDoctorPatients is single-owner scoped; the admin
-  // tier fans out across all scoped doctors).
-  const patients = await getScopePatients(scope.doctorIds);
 
   const today = todayStr();
   const pending = followUps.filter((f) => f.followUpStatus === "pending");
