@@ -57,9 +57,25 @@ test.describe("Business-fix verification", () => {
   test("F2/F3: cancel pending_consent appointment + consent row synced, confirm blocked", async ({ page }) => {
     const future = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
     const dateStr = future.toISOString().slice(0, 10);
-    const minute = String(10 + Math.floor(Math.random() * 49)).padStart(2, "0");
-    const timeStr = `11:${minute}`;
-    const timeLabel = `11:${minute} AM`;
+    // Pick a FREE 11:xx slot. A blind random minute collides with rows left by
+    // earlier runs, and the booking form then rejects the submit with an alert
+    // the flow never waits for — which looks like a hang on the redirect.
+    const taken = await query<{ time: string }>(
+      "SELECT time FROM appointments WHERE date = ? AND time LIKE '11:%'",
+      [dateStr]
+    );
+    const takenSet = new Set(taken.map((r) => r.time));
+    let minute = 0;
+    for (let m = 10; m <= 58; m++) {
+      const candidate = String(m).padStart(2, "0");
+      if (!takenSet.has(`11:${candidate} AM`)) {
+        minute = m;
+        break;
+      }
+    }
+    const minuteStr = String(minute).padStart(2, "0");
+    const timeStr = `11:${minuteStr}`;
+    const timeLabel = `11:${minuteStr} AM`;
 
     await page.goto("/doctor/appointments/book");
     const patientSelect = page.getByLabel("Patient");
