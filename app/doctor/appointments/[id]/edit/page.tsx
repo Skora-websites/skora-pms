@@ -11,7 +11,6 @@ import {
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 
 
-import { and, eq, inArray } from "drizzle-orm";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { EditAppointmentForm } from "./edit-form";
 

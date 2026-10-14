@@ -1,13 +1,12 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
-import { getCurrentUser, hasPermission, homePathForRole } from "@/lib/auth/user";
+import { getCurrentUser } from "@/lib/auth/user";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
-import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
+
 import { audit } from "@/lib/security/audit-log";
 
 export type RoleActionResult = { error: string | null };
@@ -29,32 +28,8 @@ async function getUserRoles(userId: number): Promise<string[]> {
  * (super-admin permissions dialog) and practice users holding the
  * roles-permissions module (route guard for /doctor/roles) may read the
  * permission catalog / staff permission sets. Everyone else gets nothing.
+ * (The helper itself now lives in lib/actions/permissions.ts.)
  */
-async function canViewPermissionData(): Promise<boolean> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role === "super_admin") return true;
-  // admin (business owner) moved to the /admin tier — no doctor-tier bypass.
-  if (user.role !== "doctor" && user.role !== "receptionist") {
-    redirect(homePathForRole(user.role));
-  }
-  return hasPermission(user.id, "roles-permissions");
-}
-
-/** Permission names grouped by module (parent). Mirrors legacy `allPermissions`. */
-export async function getAllPermissions() {
-  if (!(await canViewPermissionData())) return [];
-  const all = await db.select().from(permissions).orderBy(permissions.id);
-  const modules = all.filter((p) => p.parentId === null);
-  const children = all.filter((p) => p.parentId !== null);
-
-  return modules.map((m) => ({
-    id: m.id,
-    name: m.name,
-    permissions: children.filter((c) => c.parentId === m.id),
-  }));
-}
-
 async function parsePermissionInput(raw: FormData | string[] | string): Promise<number[]> {
   const names = Array.isArray(raw)
     ? raw
@@ -220,42 +195,10 @@ export async function deleteRole(roleId: number): Promise<RoleActionResult> {
 
 // ── Staff permission manager (legacy `StaffPermissionController` parity) ───
 
-/**
- * Permission names held directly by a user (via model_has_permissions).
- * Practice callers (doctor/receptionist) may only read their own staff —
- * same ownership rule as `saveStaffPermissions`. Admins may read any user.
- */
-export async function getUserPermissionNames(userId: number): Promise<string[]> {
-  if (!userId || !Number.isInteger(userId)) return [];
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
-  if (user.role !== "super_admin" && user.role !== "admin") {
-    if (user.role !== "doctor" && user.role !== "receptionist") {
-      redirect(homePathForRole(user.role));
-    }
-    if (!(await hasPermission(user.id, "roles-permissions"))) return [];
-    const doctorId = resolvePracticeDoctorId(user);
-    const [staff] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(
-        and(
-          eq(users.id, userId),
-          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
-          eq(users.role, "receptionist")
-        )
-      );
-    if (!staff) return [];
-  }
-
-  const rows = await db
-    .select({ name: permissions.name })
-    .from(permissions)
-    .innerJoin(modelHasPermissions, eq(modelHasPermissions.permissionId, permissions.id))
-    .where(and(eq(modelHasPermissions.modelId, userId), eq(modelHasPermissions.modelType, USER_MODEL)));
-  return rows.map((r) => r.name);
-}
+// getAllPermissions / getUserPermissionNames moved to lib/actions/permissions.ts
+// — the super-admin doctor-permissions screen needs them too, and route groups
+// must not import each other's actions.
+export { getAllPermissions, getUserPermissionNames } from "@/lib/actions/permissions";
 
 export async function saveStaffPermissions(
   staffId: number,

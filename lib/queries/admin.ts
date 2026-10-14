@@ -1,11 +1,13 @@
 import "server-only";
 
 import { cache } from "react";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   clinicDoctors,
+  appointments,
   businesses,
+  billings,
   businessClinics,
   clinicManagers,
   companySettings,
@@ -103,6 +105,19 @@ export const listScopedClinicNames = cache(async (clinicIds: number[]): Promise<
     .from(doctorClinics)
     .where(inArray(doctorClinics.id, clinicIds))
     .orderBy(asc(doctorClinics.id));
+});
+
+/** Clinic id/name/address for the owner dashboard's per-clinic comparison. */
+export const listScopedClinicSummaries = cache(async (clinicIds: number[]) => {
+  if (clinicIds.length === 0) return [];
+  return db
+    .select({
+      id: doctorClinics.id,
+      clinicName: doctorClinics.clinicName,
+      address: doctorClinics.address,
+    })
+    .from(doctorClinics)
+    .where(inArray(doctorClinics.id, clinicIds));
 });
 
 /** Distinct doctor count per clinic. */
@@ -749,3 +764,132 @@ export const listAllBusinesses = cache(async (): Promise<BusinessSummaryRow[]> =
   // MySQL returns count(*) as a string for DECIMAL/INT aggregates.
   return rows.map((r) => ({ ...r, clinicCount: Number(r.clinicCount ?? 0) }));
 });
+
+/** A single business's name, or undefined when the scope hides every business. */
+export const getFirstBusinessName = cache(async (businessIds: number[]): Promise<string | undefined> => {
+  if (businessIds.length === 0) return undefined;
+  const [row] = await db
+    .select({ name: businesses.name })
+    .from(businesses)
+    .where(inArray(businesses.id, businessIds))
+    .limit(1);
+  return row?.name;
+});
+
+// ── Owner dashboard KPIs ────────────────────────────────────────────
+
+/**
+ * The cross-clinic KPI strip and its recent-appointment feed.
+ *
+ * Tenancy note: appointments are scoped by their OWN clinicId, not the
+ * doctor's, because a doctor can work at several clinics — doctor-only
+ * scoping would leak another branch's rows into a single-clinic manager's
+ * overview. Legacy rows predating clinic assignment (null clinic_id) fall
+ * back to doctor scoping. Every query here keeps that rule.
+ */
+export const getOwnerDashboard = cache(
+  async (params: {
+    doctorIds: number[];
+    clinicIds: number[];
+    today: string;
+    monthStart: string;
+  }) => {
+    const { doctorIds, clinicIds, today, monthStart } = params;
+    const doctorIdList = scopeOrSentinel(doctorIds);
+    const clinicIdList = scopeOrSentinel(clinicIds);
+
+    // An appointment belongs to this scope when its clinic is in scope, or it
+    // has no clinic and its doctor is in scope.
+    const appointmentInScope = or(
+      and(isNotNull(appointments.clinicId), inArray(appointments.clinicId, clinicIdList)),
+      and(isNull(appointments.clinicId), inArray(appointments.doctorId, doctorIdList))
+    )!;
+
+    const [todayAppointments, monthRevenue, activeStaff, totalPatients, recentAppointments, revenueByDoctor, memberships] =
+      await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(appointments)
+          .where(
+            and(
+              appointmentInScope,
+              eq(appointments.date, today),
+              ne(appointments.status, "cancelled")
+            )
+          ),
+
+        db
+          .select({ total: sql<string>`coalesce(sum(${billings.receivedAmount}), 0)` })
+          .from(billings)
+          .where(
+            and(
+              inArray(billings.doctorId, doctorIdList),
+              isNull(billings.deletedAt),
+              gte(billings.billDate, monthStart)
+            )
+          ),
+
+        clinicIds.length
+          ? db
+              .select({ count: sql<number>`count(distinct ${clinicDoctors.doctorId})` })
+              .from(clinicDoctors)
+              .where(inArray(clinicDoctors.clinicId, clinicIdList))
+          : Promise.resolve([{ count: 0 }] as { count: number }[]),
+
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(and(eq(users.role, "patient"), inArray(users.referenceRoleId, doctorIdList))),
+
+        db
+          .select({
+            id: appointments.id,
+            date: appointments.date,
+            time: appointments.time,
+            status: appointments.status,
+            caseType: appointments.caseType,
+            patientName: users.name,
+            clinicName: doctorClinics.clinicName,
+          })
+          .from(appointments)
+          .innerJoin(users, eq(users.id, appointments.patientId))
+          .leftJoin(doctorClinics, eq(doctorClinics.id, appointments.clinicId))
+          .where(and(appointmentInScope, gte(appointments.date, today)))
+          .orderBy(desc(appointments.date), desc(appointments.time))
+          .limit(6),
+
+        // Doctor-level MTD revenue, mapped onto the clinic each doctor works at.
+        db
+          .select({
+            doctorId: billings.doctorId,
+            total: sql<string>`coalesce(sum(${billings.receivedAmount}), 0)`,
+          })
+          .from(billings)
+          .where(
+            and(
+              inArray(billings.doctorId, doctorIdList),
+              isNull(billings.deletedAt),
+              gte(billings.billDate, monthStart)
+            )
+          )
+          .groupBy(billings.doctorId),
+
+        clinicIds.length
+          ? db
+              .select({ doctorId: clinicDoctors.doctorId, clinicId: clinicDoctors.clinicId })
+              .from(clinicDoctors)
+              .where(inArray(clinicDoctors.clinicId, clinicIds))
+          : Promise.resolve([] as { doctorId: number; clinicId: number }[]),
+      ]);
+
+    return {
+      todayAppointments: Number(todayAppointments[0]?.count ?? 0),
+      monthRevenue: Number(monthRevenue[0]?.total ?? 0),
+      activeStaff: Number(activeStaff[0]?.count ?? 0),
+      totalPatients: Number(totalPatients[0]?.count ?? 0),
+      recentAppointments,
+      revenueByDoctor,
+      memberships,
+    };
+  }
+);
