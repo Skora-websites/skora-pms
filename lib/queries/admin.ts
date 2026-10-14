@@ -83,6 +83,28 @@ export const listScopedClinics = cache(async (clinicIds: number[]): Promise<Clin
     .orderBy(asc(doctorClinics.id));
 });
 
+export type ScopedClinicNameRow = {
+  id: number;
+  clinicName: string;
+  ownerDoctorId: number;
+  isActive: boolean | null;
+};
+
+/** Minimal clinic identity (id, name, owning doctor) for roster headers. */
+export const listScopedClinicNames = cache(async (clinicIds: number[]): Promise<ScopedClinicNameRow[]> => {
+  if (clinicIds.length === 0) return [];
+  return db
+    .select({
+      id: doctorClinics.id,
+      clinicName: doctorClinics.clinicName,
+      ownerDoctorId: doctorClinics.doctorId,
+      isActive: doctorClinics.isActive,
+    })
+    .from(doctorClinics)
+    .where(inArray(doctorClinics.id, clinicIds))
+    .orderBy(asc(doctorClinics.id));
+});
+
 /** Distinct doctor count per clinic. */
 export const countDoctorsPerClinic = cache(
   async (clinicIds: number[]): Promise<Map<number, number>> => {
@@ -169,6 +191,28 @@ export const listScopedReceptionists = cache(async (doctorIds: number[]) => {
     })
     .from(users)
     .where(and(eq(users.role, "receptionist"), inArray(users.doctorId, doctorIds)))
+    .orderBy(asc(users.id));
+});
+
+/**
+ * Every receptionist with the ownership column needed to filter by scope.
+ *
+ * The admin staff page needs the reference_role_id anchor so it can tell which
+ * clinic a receptionist belongs to, so it cannot use the scoped variant above.
+ */
+export const listAllReceptionistsWithAnchor = cache(async () => {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      status: users.status,
+      referenceRoleId: users.referenceRoleId,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.role, "receptionist"))
     .orderBy(asc(users.id));
 });
 

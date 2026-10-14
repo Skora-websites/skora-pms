@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { UserCog } from "lucide-react";
-import { asc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { clinicManagers, doctorClinics, modelHasPermissions, permissions, users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import {
+  listDirectManagerPermissions,
+  listManagerAssignments,
+  listManagerUsers,
+  listScopedClinics,
+  scopeOrSentinel,
+} from "@/lib/queries/admin";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { ManagerForm, ManagerList } from "./managers-client";
 import { getManagerModuleCatalog } from "./actions";
@@ -14,39 +18,13 @@ export const metadata: Metadata = { title: "Managers · Business" };
 export default async function AdminManagersPage() {
   await requireAdminTier("/admin/managers");
   const scope = await getBusinessScope();
-  const clinicIds = scope.clinicIds.length ? scope.clinicIds : [-1];
 
   const [assignments, clinics, managerUserRows, catalog, permRows] = await Promise.all([
-    db
-      .select({
-        id: clinicManagers.id,
-        clinicId: clinicManagers.clinicId,
-        userId: clinicManagers.userId,
-        isActive: clinicManagers.isActive,
-        createdAt: clinicManagers.createdAt,
-        managerName: users.name,
-        managerEmail: users.email,
-      })
-      .from(clinicManagers)
-      .innerJoin(users, eq(users.id, clinicManagers.userId))
-      .where(inArray(clinicManagers.businessId, scope.businessIds.length ? scope.businessIds : [-1]))
-      .orderBy(asc(clinicManagers.id)),
-    db
-      .select({ id: doctorClinics.id, clinicName: doctorClinics.clinicName })
-      .from(doctorClinics)
-      .where(inArray(doctorClinics.id, clinicIds))
-      .orderBy(asc(doctorClinics.id)),
-    db
-      .select({ id: users.id, name: users.name, email: users.email })
-      .from(users)
-      .where(eq(users.role, "manager"))
-      .orderBy(asc(users.name)),
+    listManagerAssignments(scopeOrSentinel(scope.businessIds)),
+    listScopedClinics(scopeOrSentinel(scope.clinicIds)),
+    listManagerUsers(),
     getManagerModuleCatalog(),
-    db
-      .select({ modelId: modelHasPermissions.modelId, name: permissions.name })
-      .from(modelHasPermissions)
-      .innerJoin(permissions, eq(permissions.id, modelHasPermissions.permissionId))
-      .where(eq(modelHasPermissions.modelType, "App\\Models\\User")),
+    listDirectManagerPermissions(),
   ]);
 
   // Direct permission names per manager (module + action rows).

@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { Stethoscope, UserCog, Users } from "lucide-react";
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { clinicDoctors, doctorClinics, users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
+import {
+  listAllReceptionistsWithAnchor,
+  listClinicMembers,
+  listScopedClinicNames,
+  scopeOrSentinel,
+} from "@/lib/queries/admin";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { initials, formatDate } from "@/lib/utils";
@@ -28,43 +31,13 @@ export default async function AdminStaffPage() {
   // operation; managers holding roles-permissions get the read-only roster.
   const isOwner = viewerRole === "owner";
   const scope = await getBusinessScope();
-  const clinicIds = scope.clinicIds.length ? scope.clinicIds : [-1];
+  const clinicIds = scopeOrSentinel(scope.clinicIds);
 
   // Doctor memberships per clinic + each clinic's owning doctor.
   const [memberRows, clinics, receptionists] = await Promise.all([
-    db
-      .select({
-        clinicId: clinicDoctors.clinicId,
-        doctorId: clinicDoctors.doctorId,
-        isActive: clinicDoctors.isActive,
-        name: users.name,
-        email: users.email,
-        phone: users.phone,
-        specialization: users.specialization,
-        status: users.status,
-        createdAt: users.createdAt,
-      })
-      .from(clinicDoctors)
-      .innerJoin(users, eq(users.id, clinicDoctors.doctorId))
-      .where(and(inArray(clinicDoctors.clinicId, clinicIds), eq(clinicDoctors.isActive, true)))
-      .orderBy(asc(clinicDoctors.id)),
-    db
-      .select({ id: doctorClinics.id, clinicName: doctorClinics.clinicName, ownerDoctorId: doctorClinics.doctorId, isActive: doctorClinics.isActive })
-      .from(doctorClinics)
-      .where(inArray(doctorClinics.id, clinicIds))
-      .orderBy(asc(doctorClinics.id)),
-    db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        phone: users.phone,
-        status: users.status,
-        referenceRoleId: users.referenceRoleId,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.role, "receptionist")),
+    listClinicMembers(clinicIds),
+    listScopedClinicNames(clinicIds),
+    listAllReceptionistsWithAnchor(),
   ]);
 
   // Receptionists anchored to a doctor inside the business scope; keyed by
