@@ -16,7 +16,6 @@ import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
 import { SOS_FARE } from "@/lib/config";
-import { onNativeLocation, startNativeTracking, stopNativeTracking } from "@/lib/native/sos-native";
 import { useWakeLock } from "@/components/sos/use-wake-lock";
 import { primeAlarmAudio, startSosAlarm, stopSosAlarm } from "@/components/sos/sos-alarm";
 
@@ -174,56 +173,31 @@ export function EmergencyPanel({
   // When an active case exists, share live GPS every 5s (Uber-style tracking)
   // and track own position for the doctor-side map.
   //
-  // Native-first: in the Capacitor shell the foreground service keeps the
-  // stream alive while the page is backgrounded, so it replaces the 5s poll.
-  // The browser loop stays as the web fallback.
+  // The native client is the Flutter app (lib/ + android/), which talks to the
+  // server directly — this web panel only ever runs in a browser, so there is
+  // no native bridge to consult here.
   useEffect(() => {
     if (activeCase == null) return;
+    if (!navigator.geolocation) return;
 
     const share = (lat: number, lng: number) => {
       setOwnPosition({ lat, lng });
       void updateDoctorLocation(activeCase, lat, lng);
     };
 
-    let disposed = false;
-    let detachNative: (() => void) | null = null;
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const startBrowser = () => {
-      if (!navigator.geolocation) return;
-      const send = () => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => share(pos.coords.latitude, pos.coords.longitude),
-          () => {
-            /* ignore — retry next tick */
-          },
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-      };
-      send();
-      interval = setInterval(send, 5000);
+    const send = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => share(pos.coords.latitude, pos.coords.longitude),
+        () => {
+          /* ignore — retry next tick */
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
     };
-
-    void (async () => {
-      detachNative = await onNativeLocation((loc) => share(loc.lat, loc.lng));
-      if (disposed) {
-        detachNative?.();
-        return;
-      }
-      if (detachNative) {
-        await startNativeTracking();
-      } else {
-        startBrowser();
-      }
-    })();
-
+    send();
+    const interval = setInterval(send, 5000);
     return () => {
-      disposed = true;
-      if (interval) clearInterval(interval);
-      if (detachNative) {
-        detachNative();
-        void stopNativeTracking();
-      }
+      clearInterval(interval);
     };
   }, [activeCase]);
 

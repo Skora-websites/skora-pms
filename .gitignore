@@ -59,11 +59,22 @@ tmp-shot-*.png
 /.claude/
 /backups/
 
-# Capacitor + Android build output (machine-specific / regenerable)
+# Flutter / Dart build artifacts
+/.dart_tool/
+/.flutter-plugins
+/.flutter-plugins-dependencies
+/.metadata
+.flutter-plugins-dependencies
+/build/
+/pubspec.lock
+
+# Android (Flutter-generated project)
 /android/app/build/
 /android/build/
 /android/.gradle/
 /android/local.properties
-/www/*
-!/www/.gitkeep
-!/www/index.html
+/android/.kotlin/
+
+# IDE
+.idea/
+*.iml
