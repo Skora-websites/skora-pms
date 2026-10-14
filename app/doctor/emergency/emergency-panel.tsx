@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, BellOff, CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
 import {
@@ -16,6 +16,7 @@ import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
 import { SOS_FARE } from "@/lib/config";
+import { onNativeLocation, startNativeTracking, stopNativeTracking } from "@/lib/native/sos-native";
 import { useWakeLock } from "@/components/sos/use-wake-lock";
 import { primeAlarmAudio, startSosAlarm, stopSosAlarm } from "@/components/sos/sos-alarm";
 
@@ -72,7 +73,6 @@ export function EmergencyPanel({
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
-  const shareTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep the screen awake while an emergency case is active so the 5s GPS
   // sharing loop isn't killed by the phone sleeping (Android + iOS 16.4+).
@@ -173,25 +173,57 @@ export function EmergencyPanel({
 
   // When an active case exists, share live GPS every 5s (Uber-style tracking)
   // and track own position for the doctor-side map.
+  //
+  // Native-first: in the Capacitor shell the foreground service keeps the
+  // stream alive while the page is backgrounded, so it replaces the 5s poll.
+  // The browser loop stays as the web fallback.
   useEffect(() => {
     if (activeCase == null) return;
-    if (!navigator.geolocation) return;
-    const send = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setOwnPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          void updateDoctorLocation(activeCase, pos.coords.latitude, pos.coords.longitude);
-        },
-        () => {
-          /* ignore — retry next tick */
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
+
+    const share = (lat: number, lng: number) => {
+      setOwnPosition({ lat, lng });
+      void updateDoctorLocation(activeCase, lat, lng);
     };
-    send();
-    shareTimer.current = setInterval(send, 5000);
+
+    let disposed = false;
+    let detachNative: (() => void) | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startBrowser = () => {
+      if (!navigator.geolocation) return;
+      const send = () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => share(pos.coords.latitude, pos.coords.longitude),
+          () => {
+            /* ignore — retry next tick */
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      };
+      send();
+      interval = setInterval(send, 5000);
+    };
+
+    void (async () => {
+      detachNative = await onNativeLocation((loc) => share(loc.lat, loc.lng));
+      if (disposed) {
+        detachNative?.();
+        return;
+      }
+      if (detachNative) {
+        await startNativeTracking();
+      } else {
+        startBrowser();
+      }
+    })();
+
     return () => {
-      if (shareTimer.current) clearInterval(shareTimer.current);
+      disposed = true;
+      if (interval) clearInterval(interval);
+      if (detachNative) {
+        detachNative();
+        void stopNativeTracking();
+      }
     };
   }, [activeCase]);
 

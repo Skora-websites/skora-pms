@@ -133,12 +133,23 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
 
   useEffect(() => {
     if (!requestId) return;
-    void pollOnce();
-    pollRef.current = setInterval(() => void pollOnce(), 3000);
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/patient/sos/status/${requestId}`, { credentials: "include" });
+        if (r.ok) setStatus((await r.json()) as StatusPayload);
+      } catch {
+        /* retry on the next tick */
+      }
+    };
+    // Deferred so the first fetch doesn't setState synchronously during the
+    // effect (cascading-render lint rule) while still priming immediately.
+    const prime = setTimeout(tick, 0);
+    pollRef.current = setInterval(tick, 3000);
     return () => {
+      clearTimeout(prime);
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [requestId, pollOnce]);
+  }, [requestId]);
 
   // Request dispatched but the first status poll hasn't returned yet — show a
   // neutral pending state instead of falling back to the idle SOS button
