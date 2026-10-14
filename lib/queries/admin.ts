@@ -265,6 +265,65 @@ export const listClinicDoctorOptions = cache(async (clinicIds: number[]) => {
     .orderBy(asc(users.id));
 });
 
+// ── Booking ─────────────────────────────────────────────────────────
+
+export type DoctorOptionRow = {
+  id: number;
+  name: string;
+  salutation: string | null;
+  qualification: string | null;
+};
+
+/** Doctors inside the business scope (booking owner dropdown). */
+export const listScopeDoctors = cache(async (doctorIds: number[]): Promise<DoctorOptionRow[]> => {
+  if (doctorIds.length === 0) return [];
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      salutation: users.salutation,
+      qualification: users.qualification,
+    })
+    .from(users)
+    .where(and(eq(users.role, "doctor"), inArray(users.id, doctorIds)))
+    .orderBy(asc(users.id));
+});
+
+/** One patient by id, only when they belong to a scoped doctor. */
+export const getScopedPatient = cache(async (patientId: number, doctorIds: number[]) => {
+  if (doctorIds.length === 0) return null;
+  const [row] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      gender: users.gender,
+      dob: users.dob,
+      address: users.address,
+      pincode: users.pincode,
+      city: users.city,
+      state: users.state,
+      streetAddress: users.streetAddress,
+      salutation: users.salutation,
+      aadhaarNo: users.aadhaarNo,
+      referredBy: users.referredBy,
+      profilePhotoPath: users.profilePhotoPath,
+      status: users.status,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.id, patientId),
+        eq(users.role, "patient"),
+        inArray(users.referenceRoleId, doctorIds)
+      )
+    )
+    .limit(1);
+  return row ?? null;
+});
+
 // ── Manager administration ──────────────────────────────────────────
 
 /** Every manager-role user (candidates for clinic assignment). */

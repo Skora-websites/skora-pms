@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarPlus } from "lucide-react";
-import { and, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+
+import { getScopedPatient } from "@/lib/queries/admin";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { PageHeader, StatusBadge } from "@/components/ui/dashboard-ui";
@@ -25,34 +24,7 @@ export default async function AdminPatientDetailPage({
   const patientId = Number(id);
   if (!Number.isInteger(patientId)) notFound();
 
-  const [patient] = await db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      gender: users.gender,
-      dob: users.dob,
-      address: users.address,
-      pincode: users.pincode,
-      city: users.city,
-      state: users.state,
-      streetAddress: users.streetAddress,
-      salutation: users.salutation,
-      aadhaarNo: users.aadhaarNo,
-      referredBy: users.referredBy,
-      profilePhotoPath: users.profilePhotoPath,
-      status: users.status,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .where(
-      and(
-        eq(users.id, patientId),
-        eq(users.role, "patient"),
-        inArray(users.referenceRoleId, scope.doctorIds.length ? scope.doctorIds : [-1])
-      )
-    );
+  const patient = await getScopedPatient(patientId, scope.doctorIds);
   if (!patient) notFound();
 
   return (

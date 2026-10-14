@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import { listPatientOptions, listScopeDoctors } from "@/lib/queries/admin";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { BookAppointmentForm } from "@/app/doctor/appointments/book/book-form";
 
@@ -26,33 +24,8 @@ export default async function AdminBookAppointmentPage({
   // admin registrations list) — anchoring on doctorIds[0] alone would omit
   // patients of the business's other doctors from the dropdown entirely.
   const [patients, doctors] = await Promise.all([
-    scope.doctorIds.length
-      ? db
-          .select({ id: users.id, name: users.name, phone: users.phone })
-          .from(users)
-          .where(
-            and(
-              eq(users.role, "patient"),
-              inArray(users.referenceRoleId, scope.doctorIds)
-            )
-          )
-          .orderBy(desc(users.createdAt))
-      : Promise.resolve([] as { id: number; name: string; phone: string | null }[]),
-    db
-      .select({
-        id: users.id,
-        name: users.name,
-        salutation: users.salutation,
-        qualification: users.qualification,
-      })
-      .from(users)
-      .where(
-        and(
-          eq(users.role, "doctor"),
-          inArray(users.id, scope.doctorIds.length ? scope.doctorIds : [-1])
-        )
-      )
-      .orderBy(asc(users.id)),
+    listPatientOptions(scope.doctorIds),
+    listScopeDoctors(scope.doctorIds),
   ]);
 
   // Preselect support: "Book" on an admin patient page links here with
