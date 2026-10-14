@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Users } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
-import { db } from "@/lib/db";
-import { users, roles, modelHasRoles } from "@/lib/db/schema";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { listPracticeReceptionists, listPracticeRoleOptions, listRoleAssignments } from "@/lib/queries/admin";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { initials, formatDate } from "@/lib/utils";
 import { StaffForm } from "./staff-form";
@@ -13,51 +11,18 @@ import { AttendancePanel } from "./attendance-panel";
 
 export const metadata: Metadata = { title: "My Staff · Doctor" };
 
-const USER_MODEL = "App\\Models\\User";
-
 export default async function StaffPage() {
   const user = await requireRole(["doctor", "receptionist"]);
   const doctorId = resolvePracticeDoctorId(user);
 
   const [staff, practiceRoles] = await Promise.all([
-    db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        phone: users.phone,
-        role: users.role,
-        status: users.status,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      // F-06 defence-in-depth: accept EITHER link column (getCurrentUser
-      // already falls back this way) so rows provisioned with doctor_id only
-      // stay visible even if the two columns drift again.
-      .where(
-        and(
-          or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
-          eq(users.role, "receptionist")
-        )
-      )
-      .orderBy(users.createdAt),
-    db.select({ id: roles.id, name: roles.name }).from(roles).where(eq(roles.doctorId, doctorId)),
+    listPracticeReceptionists(doctorId),
+    listPracticeRoleOptions(doctorId),
   ]);
 
   // Role name per staff member (first practice role assigned). Scoped to
   // this practice's role ids — no global table scan (F-06).
-  const roleRows = await db
-    .select({ modelId: modelHasRoles.modelId, roleId: modelHasRoles.roleId })
-    .from(modelHasRoles)
-    .where(
-      and(
-        eq(modelHasRoles.modelType, USER_MODEL),
-        inArray(
-          modelHasRoles.roleId,
-          practiceRoles.length > 0 ? practiceRoles.map((r) => r.id) : [-1]
-        )
-      )
-    );
+  const roleRows = await listRoleAssignments(practiceRoles.map((r) => r.id));
   const roleNameById = new Map(practiceRoles.map((r) => [r.id, r.name]));
   const roleOfStaff = new Map<number, string>();
   for (const rr of roleRows) {

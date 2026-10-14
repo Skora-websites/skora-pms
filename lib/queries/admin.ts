@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   clinicDoctors,
@@ -256,6 +256,76 @@ export const listScopedSchedules = cache(async (clinicIds: number[]): Promise<Sc
     .innerJoin(users, eq(users.id, doctorSchedules.doctorId))
     .where(inArray(doctorSchedules.doctorClinicId, clinicIds))
     .orderBy(asc(doctorSchedules.doctorClinicId), asc(doctorSchedules.id));
+});
+
+// ── Staff & roles ───────────────────────────────────────────────────
+
+const USER_MODEL_CONST = "App\\Models\\User";
+
+export type PracticeStaffRow = {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: "admin" | "super_admin" | "doctor" | "patient" | "receptionist" | "manager";
+  status: string | null;
+  createdAt: Date | null;
+  referenceRoleId: number | null;
+  doctorId: number | null;
+};
+
+/**
+ * Receptionist accounts linked to a practice by EITHER ownership column.
+ *
+ * F-06 defence-in-depth: getCurrentUser already falls back between
+ * `reference_role_id` and `doctor_id`, so the roster accepts either too —
+ * rows provisioned with doctor_id only stay visible even if the two columns
+ * drift apart again.
+ */
+export const listPracticeReceptionists = cache(async (doctorId: number): Promise<PracticeStaffRow[]> => {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      role: users.role,
+      status: users.status,
+      createdAt: users.createdAt,
+      referenceRoleId: users.referenceRoleId,
+      doctorId: users.doctorId,
+    })
+    .from(users)
+    .where(
+      and(
+        or(eq(users.referenceRoleId, doctorId), eq(users.doctorId, doctorId)),
+        eq(users.role, "receptionist")
+      )
+    )
+    .orderBy(asc(users.createdAt));
+});
+
+/** Roles belonging to one practice. */
+export const listPracticeRoleOptions = cache(async (doctorId: number) => {
+  return db
+    .select({ id: roles.id, name: roles.name })
+    .from(roles)
+    .where(eq(roles.doctorId, doctorId))
+    .orderBy(asc(roles.id));
+});
+
+/** modelId → roleId assignments restricted to the given role ids. */
+export const listRoleAssignments = cache(async (roleIds: number[]) => {
+  if (roleIds.length === 0) return [];
+  return db
+    .select({ modelId: modelHasRoles.modelId, roleId: modelHasRoles.roleId })
+    .from(modelHasRoles)
+    .where(
+      and(
+        eq(modelHasRoles.modelType, USER_MODEL_CONST),
+        inArray(modelHasRoles.roleId, roleIds)
+      )
+    );
 });
 
 /** Doctor memberships as {doctorId, clinicId, name} for schedule forms. */
