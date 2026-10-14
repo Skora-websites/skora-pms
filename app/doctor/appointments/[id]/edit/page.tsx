@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/guard";
-import { getAppointmentById, getDoctorPatients, resolvePracticeDoctorId, isPracticeWideUser } from "@/lib/queries/doctor";
+import {
+  getAppointmentById,
+  getAppointmentInPractice,
+  getDoctorPatients,
+  resolvePracticeDoctorId,
+  isPracticeWideUser,
+} from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
-import { db } from "@/lib/db";
-import { appointments } from "@/lib/db/schema";
+
+
 import { and, eq, inArray } from "drizzle-orm";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { EditAppointmentForm } from "./edit-form";
@@ -42,11 +48,7 @@ export default async function EditAppointmentPage({
   let appointment = null;
   if (isReceptionist) {
     const practiceIds = await getPracticeDoctorIds(doctorId);
-    const [row] = await db
-      .select()
-      .from(appointments)
-      .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, practiceIds)));
-    appointment = row ?? null;
+    appointment = await getAppointmentInPractice(practiceIds, appointmentId);
   } else {
     appointment = await getAppointmentById(doctorId, appointmentId);
   }

@@ -230,6 +230,22 @@ export const getAppointmentById = cache(async (doctorId: number, id: number) => 
   return row ?? null;
 });
 
+/**
+ * An appointment by id when its doctor is anywhere in `doctorIds`.
+ *
+ * Receptionists edit any doctor's appointment in their practice, so the lookup
+ * cannot be single-owner. Returns null when the appointment exists but belongs
+ * outside the scope.
+ */
+export const getAppointmentInPractice = cache(async (doctorIds: number[], id: number) => {
+  if (doctorIds.length === 0) return null;
+  const [row] = await appointmentRows(
+    and(eq(appointments.id, id), inArray(appointments.doctorId, doctorIds)),
+    asc(appointments.id)
+  );
+  return row ?? null;
+});
+
 export const getDoctorPatients = cache(async (doctorId: number, search?: string, startDate?: string, endDate?: string) => {
   const conds = [eq(users.referenceRoleId, doctorId), eq(users.role, "patient")];
   if (search) {

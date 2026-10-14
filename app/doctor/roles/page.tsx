@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
-import { db } from "@/lib/db";
-import { roles, roleHasPermissions, permissions, users } from "@/lib/db/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  listPermissionsByRole,
+  listPracticeReceptionistOptions,
+  listRolesWithPermissionCounts,
+} from "@/lib/queries/admin";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { RoleForm } from "./role-form";
 import { RoleCardActions } from "./role-card-actions";
@@ -18,46 +20,15 @@ export default async function RolesPage() {
   const doctorId = resolvePracticeDoctorId(user);
 
   const [rows, receptionists, permissionModules] = await Promise.all([
-    db
-      .select({
-        id: roles.id,
-        name: roles.name,
-        doctorId: roles.doctorId,
-        permissionCount: sql<number>`count(${roleHasPermissions.permissionId})`,
-      })
-      .from(roles)
-      .leftJoin(roleHasPermissions, sql`${roleHasPermissions.roleId} = ${roles.id}`)
-      .where(eq(roles.doctorId, doctorId))
-      .groupBy(roles.id, roles.name, roles.doctorId)
-      .orderBy(roles.id),
-    db
-      .select({ id: users.id, name: users.name, email: users.email })
-      .from(users)
-      .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")))
-      .orderBy(users.name),
+    listRolesWithPermissionCounts(doctorId),
+    listPracticeReceptionistOptions(doctorId),
     getAllPermissions(),
   ]);
 
   // Permission names per custom role (for the edit form). Scoped to the
   // practice's own role ids — no unfiltered join over every practice's
   // role-permission rows (F-06).
-  const rolePermRows = await db
-    .select({ roleId: roleHasPermissions.roleId, name: permissions.name })
-    .from(roleHasPermissions)
-    .innerJoin(permissions, eq(permissions.id, roleHasPermissions.permissionId))
-    .where(
-      inArray(
-        roleHasPermissions.roleId,
-        rows.length > 0 ? rows.map((r) => r.id) : [-1]
-      )
-    );
-  const permsByRole = new Map<number, string[]>();
-  for (const rp of rolePermRows) {
-    const list = permsByRole.get(rp.roleId) ?? [];
-    list.push(rp.name);
-    permsByRole.set(rp.roleId, list);
-  }
-
+  const permsByRole = await listPermissionsByRole(rows.map((r) => r.id));
   const rolesWithPerms = rows.map((r) => ({ ...r, permissionNames: permsByRole.get(r.id) ?? [] }));
 
   return (

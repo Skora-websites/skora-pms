@@ -574,6 +574,47 @@ export const listPracticeRoles = cache(async (doctorId: number) => {
   return rows.map((r) => ({ ...r, userCount: Number(r.userCount ?? 0) }));
 });
 
+export type RoleWithPermissionCount = {
+  id: number;
+  name: string;
+  doctorId: number | null;
+  permissionCount: number;
+};
+
+/**
+ * A practice's roles with the number of permissions each one grants.
+ *
+ * The count comes from a LEFT JOIN + GROUP BY rather than a correlated
+ * subquery: a role with zero permissions must still appear (an INNER JOIN
+ * would silently drop it and the role would vanish from the UI).
+ */
+export const listRolesWithPermissionCounts = cache(
+  async (doctorId: number): Promise<RoleWithPermissionCount[]> => {
+    const rows = await db
+      .select({
+        id: roles.id,
+        name: roles.name,
+        doctorId: roles.doctorId,
+        permissionCount: sql<number>`count(${roleHasPermissions.permissionId})`,
+      })
+      .from(roles)
+      .leftJoin(roleHasPermissions, sql`${roleHasPermissions.roleId} = ${roles.id}`)
+      .where(eq(roles.doctorId, doctorId))
+      .groupBy(roles.id, roles.name, roles.doctorId)
+      .orderBy(asc(roles.id));
+    return rows.map((r) => ({ ...r, permissionCount: Number(r.permissionCount ?? 0) }));
+  }
+);
+
+/** Receptionists anchored to a practice via reference_role_id. */
+export const listPracticeReceptionistOptions = cache(async (doctorId: number) => {
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")))
+    .orderBy(asc(users.name));
+});
+
 /** Users eligible for role assignment inside a practice. */
 export const listAssignableStaff = cache(async (doctorId: number) => {
   return db
