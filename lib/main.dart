@@ -82,6 +82,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
   bool _busy = false;
   String? _error;
 
@@ -89,6 +91,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -112,6 +116,10 @@ class _LoginScreenState extends State<LoginScreen> {
       widget.onAuthenticated();
     } on ApiException catch (e) {
       setState(() => _error = e.isUnauthorized || e.isForbidden ? 'Invalid credentials.' : e.message);
+    } catch (e) {
+      // A non-Api failure (cast, network, keystore) used to escape silently and
+      // leave the user staring at the login form with no feedback.
+      if (mounted) setState(() => _error = 'Sign-in failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -135,16 +143,27 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 32),
                 TextField(
                   controller: _email,
+                  focusNode: _emailFocus,
                   keyboardType: TextInputType.emailAddress,
+                  // "Next" moves focus to the password field deterministically.
+                  // Without it some OEM keyboards (notably MIUI/Xiaomi) keep
+                  // focus in the first field, so typed credentials both land in
+                  // the email box and the login silently no-ops.
+                  textInputAction: TextInputAction.next,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     border: OutlineInputBorder(),
                   ),
+                  onSubmitted: (_) => _passwordFocus.requestFocus(),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _password,
+                  focusNode: _passwordFocus,
                   obscureText: true,
+                  textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
                     labelText: 'Password',
                     border: OutlineInputBorder(),

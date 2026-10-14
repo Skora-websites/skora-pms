@@ -35,6 +35,24 @@ const sosSchema = z.object({
   notes: z.string().trim().max(2000).optional().or(z.literal("")).or(z.null()),
 });
 
+/**
+ * Parse a stored latitude/longitude (Drizzle returns these as `string | null`
+ * from varchar columns).
+ *
+ * Returns null for null, empty and non-numeric input. `Number()` alone is not
+ * enough: `Number(null)` and `Number("")` are both `0`, which satisfies
+ * `Number.isFinite` and silently turns a missing coordinate into (0, 0) —
+ * billing a patient the haversine distance from the Gulf of Guinea.
+ */
+function parseCoord(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
 export type SosActionResult = {
   error: string | null;
   requestId?: number;
@@ -229,28 +247,36 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
     status: "open",
   });
 
-  // ── Arrival identity + fare basis (SOS parity) ──
+  // ── Arrival identity + fare basis ──
   // Departure point: the offered clinic when it has coordinates, otherwise the
   // doctor's own GPS (the mobile-fallback offer carries no clinic).
-  let originLat = Number(offer.clinicLatitude);
-  let originLng = Number(offer.clinicLongitude);
-  if (!Number.isFinite(originLat) || !Number.isFinite(originLng)) {
-    const [origin] = await db
-      .select({ latitude: users.latitude, longitude: users.longitude })
-      .from(users)
-      .where(eq(users.id, doctorId))
-      .limit(1);
-    originLat = Number(origin?.latitude);
-    originLng = Number(origin?.longitude);
-  }
+  //
+  // Number(null) is 0, which passes Number.isFinite — a missing coordinate
+  // would silently become (0,0) and bill the patient for the distance from
+  // the Gulf of Guinea. parseCoord rejects null/empty/non-numeric instead.
+  const originLat = parseCoord(offer.clinicLatitude);
+  const originLng = parseCoord(offer.clinicLongitude);
+
+  const [origin] =
+    originLat === null || originLng === null
+      ? await db
+          .select({ latitude: users.latitude, longitude: users.longitude })
+          .from(users)
+          .where(eq(users.id, doctorId))
+          .limit(1)
+      : [null];
+  const startLat = originLat ?? parseCoord(origin?.latitude);
+  const startLng = originLng ?? parseCoord(origin?.longitude);
 
   // The plaintext code is returned to the doctor's panel and never stored;
   // only the sha256 digest lands on the row the patient can also read.
   const otp = String(crypto.randomInt(100000, 999999));
   let distanceKm: number | null = null;
   let etaMinutes: number | null = null;
-  if (Number.isFinite(originLat) && Number.isFinite(originLng)) {
-    distanceKm = haversineKm(originLat, originLng, Number(req.latitude), Number(req.longitude));
+  const patientLat = parseCoord(req.latitude);
+  const patientLng = parseCoord(req.longitude);
+  if (startLat !== null && startLng !== null && patientLat !== null && patientLng !== null) {
+    distanceKm = haversineKm(startLat, startLng, patientLat, patientLng);
     // 30 km/h city average → minutes; at least 1 so the UI never shows 0.
     etaMinutes = Math.max(1, Math.round((distanceKm / 30) * 60));
   }
@@ -595,9 +621,13 @@ export async function updateDoctorLocation(
 
   let etaMinutes: number | null = null;
   if (caseRow) {
-    const dist = haversineKm(latitude, longitude, Number(caseRow.patientLatitude), Number(caseRow.patientLongitude));
-    // 30 km/h city average; 1-minute floor so the tracker never shows 0.
-    etaMinutes = Math.max(1, Math.round((dist / 30) * 60));
+    const patientLat = parseCoord(caseRow.patientLatitude);
+    const patientLng = parseCoord(caseRow.patientLongitude);
+    if (patientLat !== null && patientLng !== null) {
+      const dist = haversineKm(latitude, longitude, patientLat, patientLng);
+      // 30 km/h city average; 1-minute floor so the tracker never shows 0.
+      etaMinutes = Math.max(1, Math.round((dist / 30) * 60));
+    }
   }
 
   await db
