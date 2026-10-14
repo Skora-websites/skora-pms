@@ -47,11 +47,12 @@ test.describe("P2.2 Appointments", () => {
     // Be specific — /doctor/appointments/book also matches a loose /doctor/appointments/ regex.
     await page.waitForURL(/\/doctor\/appointments(?:\?created=\d+)?$/, { timeout: 30_000 });
 
-    // Find the row containing the patient name + time. The date filter uses
-    // the computed dateStr so reruns on different days still match. Locators
-    // re-resolve on every action, so no status filter here (it would stop
-    // matching after the cancel step flips the status).
+    // The list is newest-first and paginated; other specs book December dates,
+    // so this run's row is only guaranteed on the first page when the list is
+    // filtered to its own date (the view supports ?date=YYYY-MM-DD).
     const dateLabel = future.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    await page.goto(`/doctor/appointments?date=${dateStr}`);
+    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 });
     const row = page
       .locator("tr", { hasText: patientName })
       .filter({ hasText: timeLabel })
