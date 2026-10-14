@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Building2 } from "lucide-react";
-import { asc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { businesses, businessClinics, doctorClinics } from "@/lib/db/schema";
 import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
+import { listBusinessProfiles, scopeOrSentinel } from "@/lib/queries/admin";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { BusinessSettingsForm, type BusinessProfile } from "./settings-form";
 
@@ -19,25 +17,7 @@ export default async function AdminSettingsPage() {
   await requireAdminTier("/admin/settings");
   const scope = await getBusinessScope();
 
-  const rows = await db
-    .select({
-      id: businesses.id,
-      name: businesses.name,
-      slug: businesses.slug,
-      email: businesses.email,
-      phone: businesses.phone,
-      address: businesses.address,
-      isActive: businesses.isActive,
-      createdAt: businesses.createdAt,
-      clinicId: businessClinics.clinicId,
-      clinicName: doctorClinics.clinicName,
-      isPrimary: businessClinics.isPrimary,
-    })
-    .from(businesses)
-    .leftJoin(businessClinics, eq(businessClinics.businessId, businesses.id))
-    .leftJoin(doctorClinics, eq(doctorClinics.id, businessClinics.clinicId))
-    .where(inArray(businesses.id, scope.businessIds.length ? scope.businessIds : [-1]))
-    .orderBy(asc(businesses.id));
+  const rows = await listBusinessProfiles(scopeOrSentinel(scope.businessIds));
 
   // Collapse the joined rows into one block per business.
   const byBusiness = new Map<number, { profile: typeof rows[number]; clinics: { id: number; name: string | null; isPrimary: boolean | null }[] }>();

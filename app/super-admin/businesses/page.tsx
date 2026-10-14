@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Building2 } from "lucide-react";
-import { asc, eq, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { businesses, businessClinics, users } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth/guard";
+import { listAllBusinesses } from "@/lib/queries/admin";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 import { BusinessRowActions } from "./businesses-table";
@@ -13,25 +11,7 @@ export const metadata: Metadata = { title: "Businesses · Super Admin" };
 export default async function SuperAdminBusinessesPage() {
   await requireRole(["super_admin"]);
 
-  const rows = await db
-    .select({
-      id: businesses.id,
-      name: businesses.name,
-      slug: businesses.slug,
-      email: businesses.email,
-      phone: businesses.phone,
-      address: businesses.address,
-      isActive: businesses.isActive,
-      createdAt: businesses.createdAt,
-      ownerId: businesses.ownerId,
-      ownerName: users.name,
-      ownerEmail: users.email,
-      ownerStatus: users.status,
-      clinicCount: sql<number>`(SELECT count(*) FROM ${businessClinics} WHERE ${businessClinics.businessId} = ${businesses.id})`,
-    })
-    .from(businesses)
-    .innerJoin(users, eq(users.id, businesses.ownerId))
-    .orderBy(asc(businesses.id));
+  const rows = await listAllBusinesses();
 
   return (
     <div>

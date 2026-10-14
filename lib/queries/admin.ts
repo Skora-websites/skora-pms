@@ -5,6 +5,8 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   clinicDoctors,
+  businesses,
+  businessClinics,
   clinicManagers,
   companySettings,
   doctorClinics,
@@ -12,6 +14,8 @@ import {
   mailSettings,
   modelHasPermissions,
   modelHasRoles,
+  testBookings,
+  vendors,
   roleHasPermissions,
   permissions,
   roles,
@@ -289,7 +293,9 @@ export const listScopeDoctors = cache(async (doctorIds: number[]): Promise<Docto
     .orderBy(asc(users.id));
 });
 
-/** One patient by id, only when they belong to a scoped doctor. */
+/**
+ * One patient by id, only when they belong to a scoped doctor.
+ */
 export const getScopedPatient = cache(async (patientId: number, doctorIds: number[]) => {
   if (doctorIds.length === 0) return null;
   const [row] = await db
@@ -323,6 +329,63 @@ export const getScopedPatient = cache(async (patientId: number, doctorIds: numbe
     .limit(1);
   return row ?? null;
 });
+
+// ── Vendor upload (public token bearer) ─────────────────────────────
+
+export type VendorBookingRow = {
+  id: number;
+  patientId: number;
+  vendorId: number;
+  doctorId: number;
+  status: string | null;
+  uploadedFilePath: string | null;
+  tests: unknown;
+  uploadLinkToken: string | null;
+  updatedAt: Date | null;
+};
+
+/**
+ * Resolve a vendor upload link to its booking.
+ *
+ * The upload token IS the credential for this public route (it is an
+ * unguessable UUID shared with the lab), so there is no session check here.
+ * The caller still enforces the token TTL before rendering anything.
+ */
+export const getVendorBookingByToken = cache(async (token: string): Promise<VendorBookingRow | null> => {
+  const [row] = await db
+    .select({
+      id: testBookings.id,
+      patientId: testBookings.patientId,
+      vendorId: testBookings.vendorId,
+      doctorId: testBookings.doctorId,
+      status: testBookings.status,
+      uploadedFilePath: testBookings.uploadedFilePath,
+      tests: testBookings.tests,
+      uploadLinkToken: testBookings.uploadLinkToken,
+      updatedAt: testBookings.updatedAt,
+    })
+    .from(testBookings)
+    .where(eq(testBookings.uploadLinkToken, token))
+    .limit(1);
+  return row ?? null;
+});
+
+/** The parties attached to a vendor booking: patient, lab, ordering doctor. */
+export const getVendorBookingParties = cache(
+  async (patientId: number, vendorId: number, doctorId: number) => {
+    const [patient, vendor, doctor] = await Promise.all([
+      db.select({ name: users.name, phone: users.phone }).from(users).where(eq(users.id, patientId)).limit(1),
+      db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, vendorId)).limit(1),
+      db.select({ name: users.name }).from(users).where(eq(users.id, doctorId)).limit(1),
+    ]);
+    return {
+      patientName: patient[0]?.name ?? "Patient",
+      patientPhone: patient[0]?.phone ?? null,
+      vendorName: vendor[0]?.name ?? "Lab",
+      doctorName: doctor[0]?.name ?? "Doctor",
+    };
+  }
+);
 
 // ── Manager administration ──────────────────────────────────────────
 
@@ -442,4 +505,92 @@ export const listPermissionsByRole = cache(async (roleIds: number[]) => {
     out.set(r.roleId, list);
   }
   return out;
+});
+
+// ── Business profiles (owner settings) ──────────────────────────────
+
+export type BusinessProfileRow = {
+  id: number;
+  name: string;
+  slug: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  isActive: boolean | null;
+  createdAt: Date | null;
+  clinicId: number | null;
+  clinicName: string | null;
+  isPrimary: boolean | null;
+};
+
+/**
+ * Scoped businesses joined with their linked clinics. One row per
+ * business↔clinic pair — the caller collapses the duplicates, because the
+ * clinic grouping is view-shaping rather than data access.
+ */
+export const listBusinessProfiles = cache(async (businessIds: number[]): Promise<BusinessProfileRow[]> => {
+  if (businessIds.length === 0) return [];
+  return db
+    .select({
+      id: businesses.id,
+      name: businesses.name,
+      slug: businesses.slug,
+      email: businesses.email,
+      phone: businesses.phone,
+      address: businesses.address,
+      isActive: businesses.isActive,
+      createdAt: businesses.createdAt,
+      clinicId: businessClinics.clinicId,
+      clinicName: doctorClinics.clinicName,
+      isPrimary: businessClinics.isPrimary,
+    })
+    .from(businesses)
+    .leftJoin(businessClinics, eq(businessClinics.businessId, businesses.id))
+    .leftJoin(doctorClinics, eq(doctorClinics.id, businessClinics.clinicId))
+    .where(inArray(businesses.id, businessIds))
+    .orderBy(asc(businesses.id));
+});
+
+export type BusinessSummaryRow = {
+  id: number;
+  name: string;
+  slug: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  isActive: boolean | null;
+  createdAt: Date | null;
+  ownerId: number;
+  ownerName: string;
+  ownerEmail: string | null;
+  ownerStatus: string | null;
+  clinicCount: number;
+};
+
+/** Every business with its owner and clinic count (super-admin list). */
+export const listAllBusinesses = cache(async (): Promise<BusinessSummaryRow[]> => {
+  const rows = await db
+    .select({
+      id: businesses.id,
+      name: businesses.name,
+      slug: businesses.slug,
+      email: businesses.email,
+      phone: businesses.phone,
+      address: businesses.address,
+      isActive: businesses.isActive,
+      createdAt: businesses.createdAt,
+      ownerId: businesses.ownerId,
+      ownerName: users.name,
+      ownerEmail: users.email,
+      ownerStatus: users.status,
+      clinicCount: sql<number>`(
+        SELECT count(*) FROM ${businessClinics}
+        WHERE ${businessClinics.businessId} = ${businesses.id}
+      )`,
+    })
+    .from(businesses)
+    .innerJoin(users, eq(users.id, businesses.ownerId))
+    .orderBy(asc(businesses.id));
+  // MySQL returns count(*) as a string for DECIMAL/INT aggregates.
+  return rows.map((r) => ({ ...r, clinicCount: Number(r.clinicCount ?? 0) }));
 });

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { testBookings, users, vendors } from "@/lib/db/schema";
+import { getVendorBookingByToken, getVendorBookingParties } from "@/lib/queries/admin";
 import { UploadCloud, CheckCircle2 } from "lucide-react";
 import { VendorUploadForm } from "./upload-form";
 import { isVendorTokenExpired } from "./token-ttl";
@@ -14,21 +12,7 @@ type PageProps = { params: Promise<{ token: string }> };
 export default async function VendorUploadPage({ params }: PageProps) {
   const { token } = await params;
 
-  const [booking] = await db
-    .select({
-      id: testBookings.id,
-      patientId: testBookings.patientId,
-      vendorId: testBookings.vendorId,
-      doctorId: testBookings.doctorId,
-      status: testBookings.status,
-      uploadedFilePath: testBookings.uploadedFilePath,
-      tests: testBookings.tests,
-      uploadLinkToken: testBookings.uploadLinkToken,
-      updatedAt: testBookings.updatedAt,
-    })
-    .from(testBookings)
-    .where(eq(testBookings.uploadLinkToken, token));
-
+  const booking = await getVendorBookingByToken(token);
   if (!booking) notFound();
 
   // Expiry (audit F-11): an aged token can no longer view the booking's
@@ -36,11 +20,7 @@ export default async function VendorUploadPage({ params }: PageProps) {
   // "Regenerate upload link", which resets the TTL anchor.
   if (isVendorTokenExpired(booking.updatedAt)) notFound();
 
-  const [patient, vendor, doctor] = await Promise.all([
-    db.select({ name: users.name, phone: users.phone }).from(users).where(eq(users.id, booking.patientId)),
-    db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, booking.vendorId)),
-    db.select({ name: users.name }).from(users).where(eq(users.id, booking.doctorId)),
-  ]);
+  const parties = await getVendorBookingParties(booking.patientId, booking.vendorId, booking.doctorId);
 
   const testList = (booking.tests as { name: string; price: number }[] | null) ?? [];
 
@@ -72,15 +52,15 @@ export default async function VendorUploadPage({ params }: PageProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-xs font-medium text-slate-500">Doctor</p>
-                    <p className="mt-0.5 font-semibold text-slate-800">{doctor[0]?.name ?? "—"}</p>
+                    <p className="mt-0.5 font-semibold text-slate-800">{parties.doctorName}</p>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-slate-500">Vendor</p>
-                    <p className="mt-0.5 font-semibold text-slate-800">{vendor[0]?.name ?? "—"}</p>
+                    <p className="mt-0.5 font-semibold text-slate-800">{parties.vendorName}</p>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-slate-500">Patient</p>
-                    <p className="mt-0.5 font-semibold text-slate-800">{patient[0]?.name ?? "—"}</p>
+                    <p className="mt-0.5 font-semibold text-slate-800">{parties.patientName}</p>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-slate-500">Tests</p>
