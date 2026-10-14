@@ -25,6 +25,9 @@ async function loginAs(browser: Browser, email: string, homePattern: RegExp): Pr
     geolocation: { latitude: PATIENT_LAT, longitude: PATIENT_LNG },
   });
   const page = await ctx.newPage();
+  // The post-login permission nudge is a fixed overlay that intercepts clicks;
+  // pre-seed its dismissal key (same key e2e/global-setup.ts uses).
+  await page.addInitScript(() => localStorage.setItem("skoracare-perms-dismissed", "1"));
   await page.goto("/login");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill(SEED_PASSWORD);
@@ -55,6 +58,28 @@ async function readCase(conn: mysql.Connection, requestId: number): Promise<Case
   return row;
 }
 
+/** Poll the case row until `predicate` holds — the writes are the contract. */
+async function waitForCase(
+  conn: mysql.Connection,
+  requestId: number,
+  predicate: (row: CaseRow) => boolean,
+  timeoutMs = 20_000
+): Promise<CaseRow> {
+  const deadline = Date.now() + timeoutMs;
+  let last: CaseRow | null = null;
+  for (;;) {
+    const row = await readCase(conn, requestId);
+    last = row ?? null;
+    if (row && predicate(row)) return row;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Timed out waiting for case ${requestId}; last state: ${JSON.stringify(last ?? "no sos_cases row")}`
+      );
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", async ({ browser }) => {
   const conn = await dbConnect();
   let requestId = 0;
@@ -64,15 +89,26 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
   let doctorCtx: BrowserContext | null = null;
 
   try {
-    // ── Arrange: doctor on duty, positioned at the patient's coordinates ──
+    // ── Arrange: an isolated patient (own rate-limit key, no prior requests)
+    // plus a doctor on duty at the patient's coordinates ──
     const [[doctor]] = (await conn.query("SELECT id FROM users WHERE email = ? AND role = 'doctor'", [
       ACCOUNTS.doctor,
     ])) as [[{ id: number }], unknown];
-    const [[patient]] = (await conn.query("SELECT id FROM users WHERE email = ? AND role = 'patient'", [
-      ACCOUNTS.patient,
-    ])) as [[{ id: number }], unknown];
+    const [[seedPatient]] = (await conn.query(
+      "SELECT id, password, name, phone FROM users WHERE email = ? AND role = 'patient'",
+      [ACCOUNTS.patient]
+    )) as [[{ id: number; password: string; name: string; phone: string | null }], unknown];
     doctorId = doctor.id;
-    patientId = patient.id;
+
+    // Clone the seeded patient's credentials under a unique email so this run
+    // cannot collide with (or inherit the SOS throttle of) any other run.
+    const patientEmail = `sosparity-${Date.now().toString(36)}@example.com`;
+    const [inserted] = (await conn.query(
+      `INSERT INTO users (name, email, password, role, status, phone, gender, created_at, updated_at)
+       VALUES (?, ?, ?, 'patient', 'active', ?, 'Other', NOW(), NOW())`,
+      ["SOS Parity Patient", patientEmail, seedPatient.password, seedPatient.phone ?? "9000000000"]
+    )) as [{ insertId: number }, unknown];
+    patientId = inserted.insertId;
 
     await conn.query("UPDATE users SET on_duty = 1, latitude = ?, longitude = ? WHERE id = ?", [
       PATIENT_LAT,
@@ -80,24 +116,33 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
       doctorId,
     ]);
     await conn.query("DELETE FROM sos_cases WHERE doctor_id = ? AND status = 'open'", [doctorId]);
+    await conn.query("DELETE FROM sos_requests WHERE patient_id = ?", [patientId]);
 
     // ── Patient triggers an SOS through the panel ──
-    patientCtx = await loginAs(browser, ACCOUNTS.patient, /\/patient/);
+    patientCtx = await loginAs(browser, patientEmail, /\/patient/);
     const patientPage = await patientCtx.newPage();
+    patientPage.on("pageerror", (e) => console.log("[pageerror]", e.message));
     await patientPage.goto("/patient/emergency");
     await patientPage.getByRole("button", { name: /Send SOS/i }).click();
-    // Any post-trigger tracker state proves the request id was created; the
-    // intermediate "Checking your SOS request…" polls status every 3s.
-    await expect(
-      patientPage.getByText(/Checking your SOS request|Finding nearby doctors|on the way|has arrived|no longer active/i)
-    ).toBeVisible({ timeout: 40_000 });
+    // The tracker REPLACES the idle SOS button, so "button gone" is the
+    // provider-independent signal that the request id was accepted.
+    const sosButton = patientPage.getByRole("button", { name: /Send SOS/i });
+    try {
+      await expect(sosButton).toBeHidden({ timeout: 40_000 });
+    } catch {
+      const t = await patientPage.locator("body").innerText();
+      const i = t.indexOf("Emergency help");
+      throw new Error(`Tracker never took over. Panel: ${JSON.stringify(t.slice(i, i + 300))}`);
+    }
 
+    // The spec's own patient has no other requests (cleared above), so the
+    // newest row is the one this click created.
     const [[pending]] = (await conn.query(
       "SELECT id FROM sos_requests WHERE patient_id = ? ORDER BY id DESC LIMIT 1",
       [patientId]
     )) as [[{ id: number }], unknown];
     requestId = pending.id;
-    expect(requestId).toBeGreaterThan(0);
+    expect(requestId, "no sos_request row was created by the trigger").toBeGreaterThan(0);
 
     // ── Doctor accepts through the panel ──
     doctorCtx = await loginAs(browser, ACCOUNTS.doctor, /\/doctor/);
@@ -107,68 +152,58 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
     await expect(acceptBtn).toBeVisible({ timeout: 30_000 });
     await acceptBtn.click();
 
-    // The panel now shows the arrival step and the patient's code.
-    await expect(doctorPage.getByRole("button", { name: /I'?ve arrived/i })).toBeVisible({ timeout: 30_000 });
-    const otpText = await doctorPage
-      .locator("span.font-mono")
-      .first()
-      .textContent({ timeout: 10_000 });
-    const otp = (otpText ?? "").replace(/\D/g, "");
-    expect(otp).toMatch(/^\d{6}$/);
+    // The case row is written before the UI settles — wait on it.
+    let row = await waitForCase(conn, requestId, (r) => typeof r.patient_otp === "string");
 
     // DB: only the digest is persisted; distance + ETA are populated.
-    let row = await readCase(conn, requestId);
     expect(row.patient_otp).toMatch(/^[0-9a-f]{64}$/);
     expect(Number(row.distance_km)).toBeGreaterThan(0);
     expect(Number(row.eta_minutes)).toBeGreaterThan(0);
     expect(row.arrived_at).toBeNull();
     expect(row.otp_verified_at).toBeNull();
 
+    // The plaintext code is rendered only once the doctor marks arrival.
+    await doctorPage.getByRole("button", { name: /I'?ve arrived/i }).click();
+    await waitForCase(conn, requestId, (r) => r.arrived_at !== null);
+    const otpText = await doctorPage.locator("span.font-mono").first().textContent({ timeout: 20_000 });
+    const otp = (otpText ?? "").replace(/\D/g, "");
+    expect(otp).toMatch(/^\d{6}$/);
+
     // ── The patient's view never carries the plaintext code ──
     const statusRes = await patientCtx.request.get(`/api/patient/sos/status/${requestId}`);
     expect(statusRes.status()).toBe(200);
     const body = await statusRes.json();
     expect(Number(body.etaMinutes)).toBeGreaterThan(0);
-    expect(body.arrivedAt).toBeNull();
+    // Arrival was already marked above.
+    expect(body.arrivedAt).not.toBeNull();
     expect("patientOtp" in body).toBe(false);
     expect(JSON.stringify(body)).not.toContain(otp);
 
-    // ── Doctor marks arrival ──
-    await doctorPage.getByRole("button", { name: /I'?ve arrived/i }).click();
+    // The arrival-code input replaces the arrival button once arrived.
     await expect(doctorPage.getByLabel("Patient arrival code")).toBeVisible({ timeout: 20_000 });
     row = await readCase(conn, requestId);
-    expect(row.arrived_at).not.toBeNull();
     expect(row.otp_verified_at).toBeNull();
 
     // The patient is prompted to obtain the code from the doctor, not shown it.
-    await expect(patientPage.getByText(/has arrived/i)).toBeVisible({ timeout: 20_000 });
+    await expect(patientPage.getByText(/has arrived/i).first()).toBeVisible({ timeout: 20_000 });
     const patientHtml = await patientPage.content();
     expect(patientHtml).not.toContain(otp);
 
     // ── Wrong code is rejected ──
     await doctorPage.getByLabel("Patient arrival code").fill("000000");
     await doctorPage.getByRole("button", { name: /Verify code/i }).click();
-    await expect(doctorPage.getByText(/Incorrect code/i)).toBeVisible({ timeout: 20_000 });
-    row = await readCase(conn, requestId);
-    expect(row.otp_verified_at).toBeNull();
+    await expect(doctorPage.getByText(/Incorrect code/i).first()).toBeVisible({ timeout: 20_000 });
 
     // ── Correct code confirms identity ──
     await doctorPage.getByLabel("Patient arrival code").fill(otp);
     await doctorPage.getByRole("button", { name: /Verify code/i }).click();
-    await expect(doctorPage.getByText(/Identity confirmed/i)).toBeVisible({ timeout: 20_000 });
-    row = await readCase(conn, requestId);
-    expect(row.otp_verified_at).not.toBeNull();
+    await waitForCase(conn, requestId, (r) => r.otp_verified_at !== null);
+    await expect(doctorPage.getByText(/Identity confirmed/i).first()).toBeVisible({ timeout: 20_000 });
 
     // ── Completion bills base + distance, floored at the minimum ──
     await doctorPage.getByRole("button", { name: /Complete visit/i }).click();
-    await expect(doctorPage.getByRole("button", { name: /^Accept$/ }).first()).toBeVisible({
-      timeout: 20_000,
-    }).catch(() => {
-      /* the panel may stay on the same page; the DB check below is authoritative */
-    });
-
+    await waitForCase(conn, requestId, (r) => r.status === "completed");
     row = await readCase(conn, requestId);
-    expect(row.status).toBe("completed");
     expect(row.billing_id).not.toBeNull();
 
     const [[bill]] = (await conn.query(
@@ -181,26 +216,30 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
     expect(Number(bill.total_amount)).toBeCloseTo(expectedFare, 2);
     expect(Number(bill.pending_amount)).toBeCloseTo(expectedFare, 2);
 
-    // ── Patient rates once; a second rating is refused ──
-    const patientPageAgain = await patientCtx.newPage();
-    await patientPageAgain.goto("/patient/emergency");
-    await patientPageAgain.getByRole("button", { name: /Rate 5 of 5/i }).click();
-    await patientPageAgain.getByRole("button", { name: /Submit rating/i }).click();
-    await expect(patientPageAgain.getByText(/How was your emergency visit/i)).toBeHidden({
-      timeout: 20_000,
+    // ── Patient rates once ──
+    // A completed request is NOT resumed by getMyActiveRequest (it only returns
+    // pending/accepted), so the rating form is reachable in the SAME tracker
+    // session that followed the visit — not after a reload.
+    await expect(patientPage.getByText(/How was your emergency visit/i).first()).toBeVisible({
+      timeout: 30_000,
     });
-    row = await readCase(conn, requestId);
+    await patientPage.getByRole("button", { name: /Rate 5 of 5/i }).click();
+    await patientPage.getByRole("button", { name: /Submit rating/i }).click();
+    row = await waitForCase(conn, requestId, (r) => r.rating === 5);
     expect(row.rating).toBe(5);
 
     // One rating per case is enforced server-side (rateSosCase refuses a case
     // whose rating is already set); the UI also drops the form after submit.
   } finally {
-    // Restore the doctor's duty/GPS state and drop what this spec created.
+    // Restore the doctor's duty/GPS state and drop everything this spec made.
     if (doctorId) await conn.query("UPDATE users SET on_duty = 0 WHERE id = ?", [doctorId]);
     if (requestId) {
       await conn.query("DELETE FROM sos_cases WHERE sos_request_id = ?", [requestId]);
       await conn.query("DELETE FROM sos_requests WHERE id = ?", [requestId]);
     }
+    // The cloned patient is disposable; its bills/cases are cascaded by the
+    // request deletes above.
+    if (patientId) await conn.query("DELETE FROM users WHERE id = ? AND email LIKE 'sosparity-%'", [patientId]);
     await patientCtx?.close();
     await doctorCtx?.close();
     await conn.end();

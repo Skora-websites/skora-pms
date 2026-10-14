@@ -58,3 +58,12 @@ tmp-shot-*.png
 /qpid.mjs
 /.claude/
 /backups/
+
+# Capacitor + Android build output (machine-specific / regenerable)
+/android/app/build/
+/android/build/
+/android/.gradle/
+/android/local.properties
+/www/*
+!/www/.gitkeep
+!/www/index.html
