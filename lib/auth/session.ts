@@ -15,9 +15,45 @@ export const SESSION_COOKIE = "skora_session";
  */
 export const SESSION_MAX_AGE = SESSION_MAX_AGE_S;
 
-function getSecret() {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET env var is not set");
+/**
+ * Minimum secret length. HS256 signs with the raw key, so anything below this
+ * is brute-forceable offline against a captured token.
+ */
+const MIN_SECRET_LENGTH = 32;
+
+/**
+ * Known-weak secrets that must never reach production. Mirrors the placeholder
+ * shipped in .env.example so a copy-paste deployment fails loudly instead of
+ * signing sessions with a publicly documented value.
+ */
+const REJECTED_SECRETS = new Set([
+  "change-me-to-a-random-64-char-hex-string",
+  "change-me",
+  "secret",
+  "dev-secret",
+]);
+
+/**
+ * Resolves and validates the JWT signing secret.
+ *
+ * Throws on absent, short, or placeholder values. A weak secret is as bad as a
+ * missing one — an attacker who can forge a session for any user id owns the
+ * entire tenant, so validation is a hard failure, never a fallback.
+ */
+function getSecret(): Uint8Array {
+  const secret = process.env.AUTH_SECRET?.trim();
+  if (!secret) {
+    throw new Error("AUTH_SECRET env var is not set");
+  }
+  if (REJECTED_SECRETS.has(secret)) {
+    throw new Error(
+      "AUTH_SECRET is still the placeholder value from .env.example. " +
+        "Generate a real one with: openssl rand -hex 32"
+    );
+  }
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(`AUTH_SECRET must be at least ${MIN_SECRET_LENGTH} characters`);
+  }
   return new TextEncoder().encode(secret);
 }
 

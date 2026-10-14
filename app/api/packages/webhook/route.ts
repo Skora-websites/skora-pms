@@ -36,10 +36,19 @@ export async function POST(request: Request) {
         paymentId: entity.id,
         source: "webhook",
       });
-      if (!result.ok) console.error(`[packages/webhook] Fulfillment failed: ${result.error}`);
+      if (!result.ok) {
+        // Return 5xx so Razorpay retries. fulfillPackagePayment is
+        // idempotent (atomic created → paid claim), so a retry either
+        // completes the work or reports alreadyFulfilled — never a
+        // double-grant. A 200 here would silently deny the customer
+        // the access they paid for.
+        console.error(
+          `[packages/webhook] Fulfillment failed for order ${entity.order_id}: ${result.error}`
+        );
+        return NextResponse.json({ error: result.error }, { status: 500 });
+      }
     }
   }
 
-  // Always 200 so Razorpay stops retrying; failures are logged above.
   return NextResponse.json({ ok: true });
 }
