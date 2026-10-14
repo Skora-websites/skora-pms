@@ -59,6 +59,13 @@ export async function fulfillPackagePayment(input: {
   const pricing = getPackagePricing(payment.packageId, payment.period as PackagePeriod);
   if (!pricing) return { ok: false, error: "Unknown package." };
 
+  // Charged-amount verification: a valid HMAC proves Razorpay produced the
+  // event, not that the buyer paid the price the row claims. Both the webhook
+  // and the browser checkout converge here, so one assertion closes both.
+  if (payment.amount !== pricing.amount) {
+    return { ok: false, error: "Charged amount does not match the package price." };
+  }
+
   const [buyer] = await db
     .select({ id: users.id, role: users.role, trialEndsAt: users.trialEndsAt })
     .from(users)

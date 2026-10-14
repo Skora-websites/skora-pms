@@ -3,7 +3,7 @@ import React from "react";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { consultations } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiDoctorOnly, requireApiRole } from "@/lib/auth/guard";
 import { getConsultationForPdf } from "@/lib/queries/doctor";
 import { PrescriptionPdf } from "@/components/pdf/prescription-pdf";
 
@@ -13,28 +13,33 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ consultationId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  // Doctor-only panel (audit F-02): the layout blocks /doctor/consultations
+  // for receptionists and every non-doctor tier, so the data endpoint must
+  // too. Patients keep read access to their OWN prescription below.
+  let doctorId: number;
+  let patientId: number | null = null;
+  const doctor = await requireApiDoctorOnly();
+  if (doctor instanceof Response) {
+    const patient = await requireApiRole(["patient"]);
+    if (patient instanceof Response) return patient;
+    patientId = patient.id;
+    doctorId = 0; // resolved from the patient's own consultation below
+  } else {
+    doctorId = doctor.id;
+  }
 
   const { consultationId } = await params;
   const id = Number(consultationId);
   if (!Number.isInteger(id)) return new Response("Bad request", { status: 400 });
 
   // Doctors may download their own consultations; patients only their own.
-  // Receptionists are excluded outright — doctor-only panel (audit F-02):
-  // the layout blocks /doctor/consultations for them regardless of perms.
-  let doctorId: number;
-  if (user.role === "doctor") {
-    doctorId = user.id;
-  } else if (user.role === "patient") {
+  if (patientId !== null) {
     const [c] = await db
       .select({ doctorId: consultations.doctorId })
       .from(consultations)
-      .where(and(eq(consultations.id, id), eq(consultations.patientId, user.id)));
+      .where(and(eq(consultations.id, id), eq(consultations.patientId, patientId)));
     if (!c?.doctorId) return new Response("Not found", { status: 404 });
     doctorId = c.doctorId;
-  } else {
-    return new Response("Forbidden", { status: 403 });
   }
 
   const data = await getConsultationForPdf(doctorId, id);

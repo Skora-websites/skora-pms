@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
@@ -12,8 +12,9 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  // Matches /doctor/profile → "dashboard" module in DOCTOR_ROUTE_PERMISSIONS.
+  const user = await requireApiPermission(["doctor", "receptionist"], "dashboard");
+  if (user instanceof Response) return user;
   if (!user.signaturePath) return new Response("Not found", { status: 404 });
 
   const ext = path.extname(user.signaturePath).toLowerCase();

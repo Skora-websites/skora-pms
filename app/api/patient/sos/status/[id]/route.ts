@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { sosRequests, sosCases, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { sosRequests, sosCases, users, billings } from "@/lib/db/schema";
+import { requireApiRole } from "@/lib/auth/guard";
 import { expireStalePendingRequest } from "@/lib/dispatch/expiry";
 import { sweepPendingRequest } from "@/lib/dispatch/discovery";
 
@@ -22,10 +22,11 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user || user.role !== "patient") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Patient-only by role; ownership is checked against the request row below.
+  // requireApiPermission is wrong here — the patient owns the case and holds
+  // no module permissions.
+  const user = await requireApiRole(["patient"]);
+  if (user instanceof Response) return user;
   const { id } = await params;
   const requestId = Number(id);
   if (!Number.isInteger(requestId) || requestId <= 0) {
@@ -55,7 +56,16 @@ export async function GET(
   }
 
   let doctor = null;
-  if (req.status === "accepted" && req.acceptedBy) {
+  // Case-level parity fields (ETA, arrival, identity, rating, billing). The
+  // OTP hash is deliberately NOT re-served — `patientOtp` stays server-side.
+  let etaMinutes: number | null = null;
+  let distanceKm: string | null = null;
+  let arrivedAt: Date | null = null;
+  let otpVerifiedAt: Date | null = null;
+  let rating: number | null = null;
+  let billingId: number | null = null;
+  let fare: number | null = null;
+  if (req.acceptedBy) {
     const [d] = await db
       .select({
         name: users.name,
@@ -64,21 +74,36 @@ export async function GET(
         caseLongitude: sosCases.doctorLongitude,
         lastSeenAt: sosCases.doctorLastSeenAt,
         caseStatus: sosCases.status,
+        etaMinutes: sosCases.etaMinutes,
+        distanceKm: sosCases.distanceKm,
+        arrivedAt: sosCases.arrivedAt,
+        otpVerifiedAt: sosCases.otpVerifiedAt,
+        rating: sosCases.rating,
+        billingId: sosCases.billingId,
+        totalAmount: billings.totalAmount,
       })
       .from(users)
       .leftJoin(sosCases, and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, req.acceptedBy)))
+      .leftJoin(billings, eq(billings.id, sosCases.billingId))
       .where(eq(users.id, req.acceptedBy))
       .limit(1);
-    doctor = d
-      ? {
-          name: d.name,
-          phone: d.phone,
-          liveLatitude: d.caseLatitude ?? null,
-          liveLongitude: d.caseLongitude ?? null,
-          lastSeenAt: d.lastSeenAt ?? null,
-          caseStatus: d.caseStatus ?? null,
-        }
-      : null;
+    if (d) {
+      doctor = {
+        name: d.name,
+        phone: d.phone,
+        liveLatitude: d.caseLatitude ?? null,
+        liveLongitude: d.caseLongitude ?? null,
+        lastSeenAt: d.lastSeenAt ?? null,
+        caseStatus: d.caseStatus ?? null,
+      };
+      etaMinutes = d.etaMinutes ?? null;
+      distanceKm = d.distanceKm ?? null;
+      arrivedAt = d.arrivedAt ?? null;
+      otpVerifiedAt = d.otpVerifiedAt ?? null;
+      rating = d.rating ?? null;
+      billingId = d.billingId ?? null;
+      fare = d.totalAmount === null ? null : Number(d.totalAmount);
+    }
   }
 
   return NextResponse.json({
@@ -89,5 +114,12 @@ export async function GET(
     patientLatitude: req.latitude,
     patientLongitude: req.longitude,
     doctor,
+    etaMinutes,
+    distanceKm,
+    arrivedAt,
+    otpVerifiedAt,
+    rating,
+    billingId,
+    fare,
   });
 }

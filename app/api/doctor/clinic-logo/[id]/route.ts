@@ -4,7 +4,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorClinics } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
@@ -32,8 +32,12 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  // Matches /admin/schedule → "schedule" module in ADMIN_ROUTE_PERMISSIONS.
+  const user = await requireApiPermission(
+    ["doctor", "receptionist", "admin", "manager"],
+    "schedule"
+  );
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const clinicId = Number(id);

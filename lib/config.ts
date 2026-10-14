@@ -111,3 +111,14 @@ export const PUBLIC_API_REFERENCE_ENABLED = process.env.PUBLIC_API_REFERENCE_ENA
 export const PUBLIC_API_MEDICINES_ENABLED = process.env.PUBLIC_API_MEDICINES_ENABLED !== "0";
 /** Default Indian state code for holiday lookup (DL = Delhi). */
 export const HOLIDAY_STATE_DEFAULT = process.env.HOLIDAY_STATE_DEFAULT ?? "DL";
+
+// ── SOS emergency dispatch fare ─────────────────────────────────────────
+// Base + per-km, floored at a minimum. Per-minute is priced but not charged
+// yet: trip duration is not tracked, so completion bills distance + base only.
+export const SOS_FARE = {
+  baseFare: num(process.env.SOS_FARE_BASE, 100),
+  perKm: num(process.env.SOS_FARE_PER_KM, 25),
+  perMinute: num(process.env.SOS_FARE_PER_MINUTE, 2),
+  minFare: num(process.env.SOS_FARE_MIN, 100),
+  currency: "INR",
+} as const;

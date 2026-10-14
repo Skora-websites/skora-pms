@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
@@ -31,12 +31,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
   // Platform-operator only: "admin" is the business owner (a tenant principal).
-  if (user.role !== "super_admin") {
-    return new Response("Forbidden", { status: 403 });
-  }
+  const user = await requireApiRole(["super_admin"]);
+  if (user instanceof Response) return user;
 
   const segments = (await params).path;
   // Legacy DB rows store "uploads/clinic/x.jpg"; callers pass the raw value —

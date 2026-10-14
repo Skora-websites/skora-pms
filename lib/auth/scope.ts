@@ -26,7 +26,6 @@ import {
   clinicDoctors,
   clinicManagers,
   doctorClinics,
-  users,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "./user";
 
@@ -129,31 +128,3 @@ async function doctorIdsForClinics(clinicIds: number[]): Promise<number[]> {
   return [...ids];
 }
 
-/**
- * Can the current admin-tier viewer act on a specific clinic? Used by
- * server actions to prevent a manager of clinic A writing clinic B.
- */
-export async function canAccessClinic(clinicId: number): Promise<boolean> {
-  const scope = await getBusinessScope();
-  return scope.clinicIds.includes(clinicId);
-}
-
-/**
- * Guard for owner-only modules (managers assignment, business settings).
- * Managers are bounced to their home; admins pass through.
- */
-export async function requireOwnerViewer(): Promise<Exclude<BusinessScope["viewerRole"], "manager">> {
-  const scope = await getBusinessScope();
-  if (scope.viewerRole !== "owner") redirect("/admin");
-  return "owner";
-}
-
-/** Does the named user exist as an admin-tier account (admin or manager)? */
-export async function isAdminTierUser(userId: number): Promise<boolean> {
-  const [row] = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  return row?.role === "admin" || row?.role === "manager";
-}

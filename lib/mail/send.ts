@@ -121,20 +121,34 @@ export async function sendMail(opts: {
     });
 
     await smtpCommand(socket, null, "220");
-    await smtpCommand(socket, `EHLO ${config.host}`, "250");
+
+    let active: net.Socket = socket;
+    if (config.secure) {
+      // Implicit TLS: the greeting arrived inside the TLS session.
+      await smtpCommand(active, `EHLO ${config.host}`, "250");
+    } else {
+      // STARTTLS: upgrade the cleartext socket before AUTH, otherwise the
+      // password crosses the wire in the clear (the "tls" option used to
+      // fall straight through to AUTH LOGIN on the plain socket).
+      await smtpCommand(active, `EHLO ${config.host}`, "250");
+      await smtpCommand(active, "STARTTLS", "220");
+      active = await upgradeToTls(active, config.host);
+      // Re-negotiate capabilities over the encrypted channel.
+      await smtpCommand(active, `EHLO ${config.host}`, "250");
+    }
 
     if (config.user) {
-      await smtpCommand(socket, "AUTH LOGIN", "334");
-      await smtpCommand(socket, Buffer.from(config.user, "utf8").toString("base64"), "334");
-      await smtpCommand(socket, Buffer.from(config.pass, "utf8").toString("base64"), "235");
+      await smtpCommand(active, "AUTH LOGIN", "334");
+      await smtpCommand(active, Buffer.from(config.user, "utf8").toString("base64"), "334");
+      await smtpCommand(active, Buffer.from(config.pass, "utf8").toString("base64"), "235");
     }
 
-    await smtpCommand(socket, `MAIL FROM:<${config.from}>`, "250");
+    await smtpCommand(active, `MAIL FROM:<${config.from}>`, "250");
     for (const to of toList) {
-      await smtpCommand(socket, `RCPT TO:<${to}>`, "250");
+      await smtpCommand(active, `RCPT TO:<${to}>`, "250");
     }
 
-    await smtpCommand(socket, "DATA", "354");
+    await smtpCommand(active, "DATA", "354");
     const headers = [
       `From: ${fromName} <${config.from}>`,
       `To: ${toHeader}`,
@@ -144,14 +158,31 @@ export async function sendMail(opts: {
       "",
       opts.html ?? opts.text,
     ];
-    await smtpCommand(socket, headers.join("\r\n").replace(/\r?\n/g, "\r\n") + "\r\n.", "250");
+    await smtpCommand(active, headers.join("\r\n").replace(/\r?\n/g, "\r\n") + "\r\n.", "250");
 
-    await smtpCommand(socket, "QUIT", "221");
-    socket.end();
+    await smtpCommand(active, "QUIT", "221");
+    active.end();
     return true;
   } catch (err) {
     socket.destroy();
     console.error("[mail] send failed:", err instanceof Error ? err.message : err);
     return false;
   }
+}
+
+/**
+ * Wrap a established plaintext socket in TLS (STARTTLS). Node's
+ * `tls.connect({ socket })` hijacks the existing connection, so the
+ * server sees the upgrade without a new TCP handshake.
+ */
+function upgradeToTls(plain: net.Socket, servername: string): Promise<tls.TLSSocket> {
+  // Node rejects an IP literal as the TLS ServerName (SNI) — deployments that
+  // point SMTP at a bare address must send no servername at all.
+  const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(servername) || servername.includes(":");
+  const { promise, resolve, reject } = Promise.withResolvers<tls.TLSSocket>();
+  const secureSocket = tls.connect({ socket: plain, ...(isIpLiteral ? {} : { servername }) }, () =>
+    resolve(secureSocket)
+  );
+  secureSocket.once("error", reject);
+  return promise;
 }

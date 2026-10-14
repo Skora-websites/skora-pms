@@ -24,11 +24,6 @@ import { announceSosToDoctors } from "./hub";
 const SWEEP_INTERVAL_MS = 20_000;
 const lastSweepAt = new Map<number, number>();
 
-/** Reset the in-memory throttle (used by tests). */
-export function resetSweepThrottleForTests() {
-  lastSweepAt.clear();
-}
-
 /**
  * Re-run discovery for a pending request; returns true if any new doctor
  * was offered the request.

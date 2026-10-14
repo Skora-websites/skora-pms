@@ -115,9 +115,8 @@ export async function POST(req: NextRequest) {
       )
     )
     .orderBy(transactions.date);
-
-  void audit.transactionCreated(doctorId, { action: "export" });
-
+  // No finance audit event here — an export is not a transaction. The
+  // pdfDownloaded event above already records it.
   const incomeCats = await db
     .select({ id: incomeTypes.id, name: incomeTypes.name })
     .from(incomeTypes)

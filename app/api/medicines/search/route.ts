@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { like } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 
@@ -12,11 +12,8 @@ export const runtime = "nodejs";
  * Returns up to 20 matching medicines for the autocomplete dropdown.
  */
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["doctor", "receptionist"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const user = await requireApiRole(["doctor", "receptionist"]);
+  if (user instanceof Response) return user;
 
   const { searchParams } = request.nextUrl;
   const q = searchParams.get("q") ?? "";

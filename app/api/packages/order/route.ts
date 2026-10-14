@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { packagePayments } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
+import { isTrialExpired } from "@/lib/auth/user";
 import { getPackagePricing, type PackagePeriod } from "@/lib/packages/config";
 import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/packages/razorpay";
 
@@ -10,11 +11,12 @@ import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/packages/razorpay";
  * Body: { packageId, period }
  */
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  if (user.role !== "doctor") {
-    return NextResponse.json({ error: "Only doctors can purchase packages." }, { status: 403 });
-  }
+  // No "packages" module exists in DOCTOR_ROUTE_PERMISSIONS, so this gate is
+  // role + trial only. An expired trial must not be able to buy its way back
+  // in through the purchase path.
+  const user = await requireApiRole(["doctor"]);
+  if (user instanceof Response) return user;
+  if (isTrialExpired(user)) return NextResponse.json({ error: "Trial expired." }, { status: 403 });
 
   let body: { packageId?: unknown; period?: unknown };
   try {

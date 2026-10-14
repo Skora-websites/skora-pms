@@ -6,10 +6,6 @@ export const geocodeQuerySchema = z.object({
   address: z.string().trim().min(4).max(300),
 });
 
-export const reverseGeocodeQuerySchema = z.object({
-  lat: z.coerce.number().min(-90).max(90),
-  lon: z.coerce.number().min(-180).max(180),
-});
 
 export const pincodeQuerySchema = z.object({
   pincode: z.string().trim().regex(/^[1-9][0-9]{5}$/, "Pincode must be 6 digits"),

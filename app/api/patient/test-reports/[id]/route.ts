@@ -4,7 +4,7 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import { audit } from "@/lib/security/audit-log";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
@@ -25,9 +25,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
-  if (user.role !== "patient") return new Response("Forbidden", { status: 403 });
+  const user = await requireApiRole(["patient"]);
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const bookingId = Number(id);

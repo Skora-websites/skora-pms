@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import { getHolidays, isHolidayOn } from "@/lib/integrations/public-apis";
 import { HOLIDAY_STATE_DEFAULT, PUBLIC_API_HOLIDAY_ENABLED } from "@/lib/config";
 
@@ -59,11 +59,8 @@ function toDisplay(minutes: number): string {
  *   - past times are removed for today
  */
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "patient") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const user = await requireApiRole(["patient"]);
+  if (user instanceof Response) return user;
 
   const { searchParams } = request.nextUrl;
   const doctorId = Number(searchParams.get("doctor_id"));
@@ -161,7 +158,9 @@ export async function GET(request: NextRequest) {
       const min = parseTimeToMinutes(slot);
       return min !== null && min > nowMin;
     })
-    .sort();
+    // Chronological, not lexicographic ("9:00 AM" sorts before "10:00 AM"
+    // as text, which puts the morning's last slot first).
+    .sort((a, b) => (parseTimeToMinutes(a) ?? 0) - (parseTimeToMinutes(b) ?? 0));
 
   return NextResponse.json({ slots: free, message: null, holiday: await holidayAdvisoryFor(date) });
 }

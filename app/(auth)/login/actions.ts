@@ -37,6 +37,13 @@ export async function loginAction(
   // proxy header configured) — a shared "unknown" bucket would let one
   // client lock out every user on the deployment.
   const clientIp = await getClientIp();
+  if (clientIp === "unknown") {
+    // Per-IP throttling is inert without TRUSTED_PROXY_HEADER (the header is
+    // unset in the default deployment). Only per-email throttling applies.
+    console.warn(
+      "[login] client IP unresolved (TRUSTED_PROXY_HEADER unset?) — per-IP login throttling is disabled; per-email throttling still applies."
+    );
+  }
   const ipCheck = authRateLimit.loginIp(clientIp);
   if (!ipCheck.allowed) {
     const minutes = Math.ceil(ipCheck.retryAfterMs / 60_000);

@@ -2,16 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import crypto from "node:crypto";
 import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { sosRequests, sosOffers, sosCases, users } from "@/lib/db/schema";
+import {
+  sosRequests,
+  sosOffers,
+  sosCases,
+  users,
+  billings,
+  billingTypes,
+  doctorClinics,
+} from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
 import { sendPushToUser } from "@/lib/push/client";
-import { findNearbyOnDutyDoctors, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";
+import { SOS_FARE } from "@/lib/config";
+import { generateBillNumber } from "@/lib/utils";
+import { findNearbyOnDutyDoctors, haversineKm, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";
 import { broadcastToMany, announceSosToDoctors } from "./hub";
 import { expireStalePendingRequest } from "./expiry";
 
@@ -24,7 +35,13 @@ const sosSchema = z.object({
   notes: z.string().trim().max(2000).optional().or(z.literal("")).or(z.null()),
 });
 
-export type SosActionResult = { error: string | null; requestId?: number };
+export type SosActionResult = {
+  error: string | null;
+  requestId?: number;
+  /** Plaintext arrival code — returned to the doctor's panel only, never persisted. */
+  otp?: string;
+  etaMinutes?: number;
+};
 
 async function requirePatient() {
   const user = await getCurrentUser();
@@ -153,13 +170,20 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
   const doctorId = resolveDoctorId(doctor);
 
   // Doctor must have been offered this request (ownership + offer check).
+  // The clinic join supplies the doctor's departure point for distance/ETA
+  // (null clinic — the doctor-GPS fallback entry — resolves below).
   const [offer] = await db
-    .select()
+    .select({
+      offer: sosOffers,
+      clinicLatitude: doctorClinics.latitude,
+      clinicLongitude: doctorClinics.longitude,
+    })
     .from(sosOffers)
+    .leftJoin(doctorClinics, eq(doctorClinics.id, sosOffers.clinicId))
     .where(and(eq(sosOffers.sosRequestId, requestId), eq(sosOffers.doctorId, doctorId)))
     .limit(1);
   if (!offer) return { error: "This emergency request is not assigned to you." };
-  if (offer.status !== "broadcast") {
+  if (offer.offer.status !== "broadcast") {
     return { error: "This emergency request is no longer available." };
   }
 
@@ -188,7 +212,7 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
   await db
     .update(sosOffers)
     .set({ status: "accepted", respondedAt: new Date() })
-    .where(eq(sosOffers.id, offer.id));
+    .where(eq(sosOffers.id, offer.offer.id));
   await db
     .update(sosOffers)
     .set({ status: "declined", respondedAt: new Date() })
@@ -199,11 +223,46 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
     sosRequestId: requestId,
     patientId: req.patientId,
     doctorId,
-    clinicId: offer.clinicId,
+    clinicId: offer.offer.clinicId,
     patientSymptoms: req.complaint ?? null,
     notes: req.patientNotes ?? null,
     status: "open",
   });
+
+  // ── Arrival identity + fare basis (SOS parity) ──
+  // Departure point: the offered clinic when it has coordinates, otherwise the
+  // doctor's own GPS (the mobile-fallback offer carries no clinic).
+  let originLat = Number(offer.clinicLatitude);
+  let originLng = Number(offer.clinicLongitude);
+  if (!Number.isFinite(originLat) || !Number.isFinite(originLng)) {
+    const [origin] = await db
+      .select({ latitude: users.latitude, longitude: users.longitude })
+      .from(users)
+      .where(eq(users.id, doctorId))
+      .limit(1);
+    originLat = Number(origin?.latitude);
+    originLng = Number(origin?.longitude);
+  }
+
+  // The plaintext code is returned to the doctor's panel and never stored;
+  // only the sha256 digest lands on the row the patient can also read.
+  const otp = String(crypto.randomInt(100000, 999999));
+  let distanceKm: number | null = null;
+  let etaMinutes: number | null = null;
+  if (Number.isFinite(originLat) && Number.isFinite(originLng)) {
+    distanceKm = haversineKm(originLat, originLng, Number(req.latitude), Number(req.longitude));
+    // 30 km/h city average → minutes; at least 1 so the UI never shows 0.
+    etaMinutes = Math.max(1, Math.round((distanceKm / 30) * 60));
+  }
+
+  await db
+    .update(sosCases)
+    .set({
+      patientOtp: crypto.createHash("sha256").update(otp).digest("hex"),
+      distanceKm: distanceKm === null ? null : String(distanceKm),
+      etaMinutes: etaMinutes,
+    })
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
 
   // Tell other offered doctors it's taken (live + notification).
   const otherOffers = await db
@@ -242,7 +301,10 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
   });
 
   revalidatePath("/doctor/emergency");
-  return { error: null };
+  // The plaintext OTP and ETA go to the doctor's panel only. The patient is
+  // asked to obtain the code from the doctor verbally — that is the identity
+  // check, so it must never be served to the patient's own session.
+  return { error: null, otp, etaMinutes: etaMinutes ?? undefined };
 }
 
 /** Doctor declines their own offer (idempotent). */
@@ -275,7 +337,14 @@ export async function cancelSos(requestId: number): Promise<SosActionResult> {
   return { error: null };
 }
 
-/** Accepting doctor marks the case completed. */
+/**
+ * Accepting doctor marks the case completed. Generates the patient's bill
+ * (base + distance, floored at the minimum fare) and links it to the case.
+ *
+ * A billing failure never blocks completion: an un-billed completed case is
+ * recoverable from the case row, but a case stuck open because billing failed
+ * is not.
+ */
 export async function completeSos(requestId: number): Promise<SosActionResult> {
   const doctor = await requireDoctor();
   const doctorId = resolveDoctorId(doctor);
@@ -302,9 +371,192 @@ export async function completeSos(requestId: number): Promise<SosActionResult> {
       link: "/patient/emergency",
     });
   }
+
+  // ── Earnings ledger: bill the visit, then link the bill to the case ──
+  if (req) {
+    await billSosCase(requestId, req.patientId, doctorId);
+  }
+
   void auditLog({ userId: doctorId, action: "sos_completed", metadata: { requestId } });
   revalidatePath("/doctor/emergency");
+  revalidatePath("/patient/emergency");
   return { error: null };
+}
+
+/**
+ * Doctor marks arrival at the patient. Sets the arrival timestamp the patient
+ * tracker reads; separate from OTP verification so the two states are
+ * independently observable ("doctor is here" vs "identity confirmed").
+ */
+export async function markSosArrived(requestId: number): Promise<SosActionResult> {
+  const doctor = await requireDoctor();
+  const doctorId = resolveDoctorId(doctor);
+  const [caseRow] = await db
+    .select({ arrivedAt: sosCases.arrivedAt })
+    .from(sosCases)
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)))
+    .limit(1);
+  if (!caseRow) return { error: "Case not found." };
+  if (caseRow.arrivedAt) return { error: "Already marked as arrived." };
+  await db
+    .update(sosCases)
+    .set({ arrivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
+  revalidatePath("/doctor/emergency");
+  revalidatePath("/patient/emergency");
+  return { error: null };
+}
+
+const otpSchema = z.object({ otp: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code.") });
+
+/**
+ * Doctor confirms the patient's identity with the code from acceptSos. The
+ * row stores only the sha256 digest, compared in constant time; the plaintext
+ * never leaves the doctor's panel.
+ */
+export async function verifySosOtp(requestId: number, otp: string): Promise<SosActionResult> {
+  const doctor = await requireDoctor();
+  const doctorId = resolveDoctorId(doctor);
+  const parsed = otpSchema.safeParse({ otp });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid code." };
+
+  const [caseRow] = await db
+    .select({ patientOtp: sosCases.patientOtp })
+    .from(sosCases)
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)))
+    .limit(1);
+  if (!caseRow?.patientOtp) return { error: "No arrival code for this case." };
+
+  const candidate = crypto.createHash("sha256").update(parsed.data.otp).digest("hex");
+  // Both are 64-char hex digests, so the buffers are equal length.
+  const match = crypto.timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(caseRow.patientOtp, "hex"));
+  if (!match) return { error: "Incorrect code." };
+
+  await db
+    .update(sosCases)
+    .set({ otpVerifiedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
+  revalidatePath("/doctor/emergency");
+  revalidatePath("/patient/emergency");
+  return { error: null };
+}
+
+const ratingSchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+  note: z.string().trim().max(500).optional(),
+});
+
+/** Patient rates a completed SOS case (one rating per case). */
+export async function rateSosCase(
+  requestId: number,
+  rating: number,
+  note: string
+): Promise<SosActionResult> {
+  const user = await requirePatient();
+  const parsed = ratingSchema.safeParse({ rating, note });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid rating." };
+
+  const [caseRow] = await db
+    .select({
+      id: sosCases.id,
+      doctorId: sosCases.doctorId,
+      status: sosCases.status,
+      rating: sosCases.rating,
+    })
+    .from(sosCases)
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.patientId, user.id)))
+    .limit(1);
+  if (!caseRow) return { error: "Case not found." };
+  if (caseRow.status !== "completed") return { error: "This visit is not completed yet." };
+  if (caseRow.rating !== null) return { error: "You already rated this visit." };
+
+  await db
+    .update(sosCases)
+    .set({ rating: parsed.data.rating, ratingNote: parsed.data.note ?? null, updatedAt: new Date() })
+    .where(eq(sosCases.id, caseRow.id));
+
+  void notifyUser({
+    userId: caseRow.doctorId,
+    title: "New SOS rating",
+    message: `The patient rated the emergency visit ${parsed.data.rating}/5.`,
+    type: "success",
+    link: "/doctor/emergency",
+  });
+  revalidatePath("/patient/emergency");
+  return { error: null };
+}
+
+/**
+ * Bill a completed SOS case: base fare + distance, floored at the minimum.
+ * Resolves (or creates) the doctor's own "Emergency Home Visit" billing type
+ * — never the generic "Consultation" type, whose default amount would corrupt
+ * the ledger.
+ */
+async function billSosCase(requestId: number, patientId: number, doctorId: number): Promise<void> {
+  try {
+    const [caseRow] = await db
+      .select({
+        distanceKm: sosCases.distanceKm,
+        billingId: sosCases.billingId,
+        otpVerifiedAt: sosCases.otpVerifiedAt,
+      })
+      .from(sosCases)
+      .where(eq(sosCases.sosRequestId, requestId))
+      .limit(1);
+    if (!caseRow || caseRow.billingId !== null) return;
+
+    const distanceKm = Number(caseRow.distanceKm ?? 0);
+    const fare = Math.max(
+      SOS_FARE.minFare,
+      SOS_FARE.baseFare + distanceKm * SOS_FARE.perKm
+    );
+
+    let billingTypeId: number;
+    const [existing] = await db
+      .select({ id: billingTypes.id })
+      .from(billingTypes)
+      .where(and(eq(billingTypes.doctorId, doctorId), eq(billingTypes.name, "Emergency Home Visit")))
+      .limit(1);
+    if (existing) {
+      billingTypeId = existing.id;
+    } else {
+      const [created] = await db.insert(billingTypes).values({
+        doctorId,
+        name: "Emergency Home Visit",
+        defaultAmount: "0",
+        description: "SOS emergency dispatch",
+        isActive: true,
+      });
+      billingTypeId = Number(created.insertId);
+    }
+
+    const billNumber = generateBillNumber();
+    const [bill] = await db.insert(billings).values({
+      billNumber,
+      patientId,
+      doctorId,
+      billingTypeId,
+      totalAmount: String(fare),
+      receivedAmount: "0",
+      pendingAmount: String(fare),
+      paymentMethod: "cash",
+      status: "pending",
+      billDate: new Date().toISOString().slice(0, 10),
+      notes: `SOS emergency dispatch #${requestId}`,
+    });
+
+    await db
+      .update(sosCases)
+      .set({ billingId: Number(bill.insertId) })
+      .where(eq(sosCases.sosRequestId, requestId));
+  } catch (err) {
+    // Completing the case matters more than the bill; an un-billed case is
+    // recoverable, a case stuck open is not.
+    console.error(
+      `[sos] billing failed for request ${requestId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 /** Doctor toggles on-duty availability (opt-in for SOS dispatch). */
@@ -332,16 +584,33 @@ export async function updateDoctorLocation(
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return { error: "Invalid coordinates." };
 
   // Only the accepting doctor of an open case may update location.
+  // ETA is recomputed from the NEW coordinates against the patient's stored
+  // position, so the patient's countdown moves as the doctor drives.
+  const [caseRow] = await db
+    .select({ patientLatitude: sosRequests.latitude, patientLongitude: sosRequests.longitude })
+    .from(sosCases)
+    .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))
+    .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")))
+    .limit(1);
+
+  let etaMinutes: number | null = null;
+  if (caseRow) {
+    const dist = haversineKm(latitude, longitude, Number(caseRow.patientLatitude), Number(caseRow.patientLongitude));
+    // 30 km/h city average; 1-minute floor so the tracker never shows 0.
+    etaMinutes = Math.max(1, Math.round((dist / 30) * 60));
+  }
+
   await db
     .update(sosCases)
     .set({
       doctorLatitude: String(latitude),
       doctorLongitude: String(longitude),
       doctorLastSeenAt: new Date(),
+      etaMinutes: etaMinutes,
       updatedAt: new Date(),
     })
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")));
-  return { error: null };
+  return { error: null, etaMinutes: etaMinutes ?? undefined };
 }
 
 /** Doctor's own broadcast offers (initial load / polling fallback). */
@@ -402,6 +671,12 @@ export async function getMyActiveCase() {
       sosRequestId: sosCases.sosRequestId,
       patientLatitude: sosRequests.latitude,
       patientLongitude: sosRequests.longitude,
+      etaMinutes: sosCases.etaMinutes,
+      distanceKm: sosCases.distanceKm,
+      arrivedAt: sosCases.arrivedAt,
+      otpVerifiedAt: sosCases.otpVerifiedAt,
+      // patientOtp is deliberately NOT selected: it holds only the sha256
+      // digest and must never cross to the client.
     })
     .from(sosCases)
     .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))

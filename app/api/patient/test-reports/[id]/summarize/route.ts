@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 
 export const runtime = "nodejs";
 
@@ -18,9 +18,8 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
-  if (user.role !== "patient") return new Response("Forbidden", { status: 403 });
+  const user = await requireApiRole(["patient"]);
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const bookingId = Number(id);

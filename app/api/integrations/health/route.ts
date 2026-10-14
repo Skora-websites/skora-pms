@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import {
   HOLIDAY_STATE_DEFAULT,
   PUBLIC_API_ENABLED,
@@ -16,8 +16,14 @@ export const runtime = "nodejs";
 
 /** GET /api/integrations/health — integration flags for dashboards (any authenticated user). */
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireApiRole([
+    "doctor",
+    "receptionist",
+    "patient",
+    "admin",
+    "super_admin",
+  ]);
+  if (user instanceof Response) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return NextResponse.json({
     enabled: PUBLIC_API_ENABLED,
     domains: {

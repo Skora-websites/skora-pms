@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
+import { isTrialExpired } from "@/lib/auth/user";
 import { verifyRazorpaySignature } from "@/lib/packages/razorpay";
 import { fulfillPackagePayment } from "@/lib/packages/fulfillment";
 
@@ -8,8 +9,12 @@ import { fulfillPackagePayment } from "@/lib/packages/fulfillment";
  * access. Body: { razorpay_order_id, razorpay_payment_id, razorpay_signature }
  */
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  // Role + trial only (see the order route): no "packages" module exists in
+  // DOCTOR_ROUTE_PERMISSIONS, and an expired trial must not re-extend access
+  // through the purchase path.
+  const user = await requireApiRole(["doctor"]);
+  if (user instanceof Response) return user;
+  if (isTrialExpired(user)) return NextResponse.json({ error: "Trial expired." }, { status: 403 });
 
   let body: Record<string, unknown>;
   try {

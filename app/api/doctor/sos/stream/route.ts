@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   // Doctor-only panel (audit F-02): same boundary as /doctor/emergency.
   // The guard rejects BEFORE the stream is constructed, so no orphaned
   // SSE connection is left behind for an unauthorized caller.
-  const user = await requireApiDoctorOnly(["doctor", "receptionist"]);
+  const user = await requireApiDoctorOnly();
   if (user instanceof Response) return user;
   const doctorId = resolveDoctorId(user);
 

@@ -24,12 +24,7 @@ export default async function DoctorEmergencyPage() {
       <EmergencyPanel
         initialOffers={offers}
         initialOnDuty={Boolean(user.onDuty)}
-        initialActiveCase={activeCase?.sosRequestId ?? null}
-        initialCasePatient={
-          activeCase
-            ? { lat: activeCase.patientLatitude, lng: activeCase.patientLongitude }
-            : null
-        }
+        initialActiveCase={activeCase}
       />
 
       {/* Past emergency cases */}

@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
 export const runtime = "nodejs";
@@ -17,8 +17,8 @@ const CONTENT_TYPES: Record<string, string> = {
 type Props = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Props) {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  const user = await requireApiRole(["doctor", "receptionist", "admin", "patient", "super_admin"]);
+  if (user instanceof Response) return user;
 
   const { id } = await params;
   const doctorId = Number(id);

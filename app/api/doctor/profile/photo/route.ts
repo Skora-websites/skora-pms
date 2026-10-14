@@ -3,7 +3,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiPermission } from "@/lib/auth/guard";
 import { isPracticeDoctor } from "@/lib/queries/clinic";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
@@ -21,8 +21,9 @@ const CONTENT_TYPES: Record<string, string> = {
  * arbitrary users' photos.
  */
 export async function GET(request: Request) {
-  const viewer = await getCurrentUser();
-  if (!viewer) return new Response("Unauthorized", { status: 401 });
+  // Matches /doctor/profile → "dashboard" module in DOCTOR_ROUTE_PERMISSIONS.
+  const viewer = await requireApiPermission(["doctor", "receptionist"], "dashboard");
+  if (viewer instanceof Response) return viewer;
 
   const viewerDoctorId = viewer.role === "receptionist" ? (viewer.doctorId ?? viewer.id) : viewer.id;
   const requestedId = Number(new URL(request.url).searchParams.get("user_id") ?? "");

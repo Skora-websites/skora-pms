@@ -2,7 +2,7 @@ import "server-only";
 
 export { assertPublicApiEnabled, containsLikelyPhi } from "./client";
 export { cacheGet, cacheSet, cached, cacheKey } from "./cache";
-export { geocodeAddress, reverseGeocode, lookupPincode, lookupIp } from "./geo";
+export { geocodeAddress, lookupPincode } from "./geo";
 export { getHolidays, isHolidayOn, normalizeState } from "./holidays";
 export { getWeatherAdvisory } from "./weather";
 export { checkEmail, hintName } from "./validation";

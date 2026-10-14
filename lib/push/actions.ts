@@ -31,20 +31,30 @@ export async function subscribeToPush(
   if (!isAllowedPushEndpoint(endpoint)) {
     return { error: "Unsupported push service." };
   }
-  // Idempotent: if already subscribed, keep one row.
+  // Idempotent: if already subscribed, keep one row. The check-then-insert is
+  // racy, so the insert also treats a duplicate-key error as success — the
+  // unique index on endpoint (drizzle/0016) is the real guard.
   const existing = await db
     .select({ id: pushSubscriptions.id })
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.endpoint, endpoint))
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(pushSubscriptions).values({
-      userId: user.id,
-      endpoint,
-      auth,
-      p256dh,
-      createdAt: new Date(),
-    });
+    try {
+      await db.insert(pushSubscriptions).values({
+        userId: user.id,
+        endpoint,
+        auth,
+        p256dh,
+        createdAt: new Date(),
+      });
+    } catch (err) {
+      // ER_DUP_ENTRY (1062): a concurrent subscribe created the row first.
+      // mysql2 surfaces the code as `code` (string) or `errno` (number).
+      const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
+      const errno = err && typeof err === "object" && "errno" in err ? err.errno : undefined;
+      if (code !== "ER_DUP_ENTRY" && errno !== 1062) throw err;
+    }
   }
   return { error: null, ok: true };
 }

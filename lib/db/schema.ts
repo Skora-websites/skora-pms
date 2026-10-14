@@ -302,6 +302,9 @@ export const pushSubscriptions = mysqlTable(
   },
   (t) => [
     index("push_subscriptions_user_id_index").on(t.userId),
+    // One row per subscription: duplicate rows would deliver every SOS alert
+    // twice (see drizzle/0016_push_subscription_unique.sql).
+    uniqueIndex("push_subscriptions_endpoint_unique").on(t.endpoint),
     foreignKey({
       columns: [t.userId],
       foreignColumns: [users.id],
@@ -1676,16 +1679,33 @@ export const sosCases = mysqlTable(
     doctorLongitude: varchar("doctor_longitude", { length: 255 }),
     doctorLastSeenAt: timestamp("doctor_last_seen_at"),
     status: mysqlEnum("status", ["open", "completed", "cancelled"]).default("open").notNull(),
+    // ── SOS parity (Uber/Ola/Rapido) — see drizzle/0018_sos_parity.sql ──
+    /** Live ETA in minutes, refreshed as the doctor moves. */
+    etaMinutes: int("eta_minutes"),
+    /** Patient↔doctor straight-line distance, the fare basis. */
+    distanceKm: decimal("distance_km", { precision: 8, scale: 2 }),
+    /** Set when the doctor marks arrival. */
+    arrivedAt: timestamp("arrived_at"),
+    /** sha256 of the 6-digit code the patient must read out. Never the plaintext. */
+    patientOtp: varchar("patient_otp", { length: 64 }),
+    otpVerifiedAt: timestamp("otp_verified_at"),
+    /** The bill generated on completion (earnings ledger). */
+    billingId: bigint("billing_id", { mode: "number" }),
+    /** Patient's post-visit rating (1-5) and optional note. */
+    rating: tinyint("rating"),
+    ratingNote: varchar("rating_note", { length: 500 }),
     createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
     updatedAt: timestamp("updated_at"),
   },
   (t) => [
     index("sos_cases_doctor_id_index").on(t.doctorId),
     index("sos_cases_patient_id_index").on(t.patientId),
+    index("sos_cases_arrived_index").on(t.arrivedAt),
     foreignKey({ columns: [t.sosRequestId], foreignColumns: [sosRequests.id] }).onDelete("cascade"),
     foreignKey({ columns: [t.patientId], foreignColumns: [users.id] }).onDelete("cascade"),
     foreignKey({ columns: [t.doctorId], foreignColumns: [users.id] }).onDelete("cascade"),
     foreignKey({ columns: [t.clinicId], foreignColumns: [doctorClinics.id] }).onDelete("set null"),
+    foreignKey({ columns: [t.billingId], foreignColumns: [billings.id] }).onDelete("set null"),
   ]
 );
 

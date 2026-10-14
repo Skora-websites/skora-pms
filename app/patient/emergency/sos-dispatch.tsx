@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Loader2, MapPin, Phone, X } from "lucide-react";
-import { triggerSos, cancelSos } from "@/lib/dispatch/actions";
+import { cancelSos, rateSosCase, triggerSos } from "@/lib/dispatch/actions";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
 import { useWakeLock } from "@/components/sos/use-wake-lock";
 
@@ -21,6 +21,15 @@ type StatusPayload = {
     lastSeenAt: string | null;
     caseStatus: string | null;
   } | null;
+  // SOS parity fields. `patientOtp` is intentionally absent: only the doctor's
+  // panel ever holds the plaintext code.
+  etaMinutes: number | null;
+  distanceKm: string | null;
+  arrivedAt: string | null;
+  otpVerifiedAt: string | null;
+  rating: number | null;
+  billingId: number | null;
+  fare: number | null;
 };
 
 /**
@@ -38,6 +47,9 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [useGps, setUseGps] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [ratingBusy, setRatingBusy] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep the screen awake while the tracker is live so the patient keeps
@@ -109,22 +121,24 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
   };
 
   // Poll status while a request is active.
+  const pollOnce = useCallback(async () => {
+    if (!requestId) return;
+    try {
+      const r = await fetch(`/api/patient/sos/status/${requestId}`, { credentials: "include" });
+      if (r.ok) setStatus((await r.json()) as StatusPayload);
+    } catch {
+      /* retry on the next tick */
+    }
+  }, [requestId]);
+
   useEffect(() => {
     if (!requestId) return;
-    const tick = async () => {
-      try {
-        const r = await fetch(`/api/patient/sos/status/${requestId}`, { credentials: "include" });
-        if (r.ok) setStatus((await r.json()) as StatusPayload);
-      } catch {
-        /* retry */
-      }
-    };
-    tick();
-    pollRef.current = setInterval(tick, 3000);
+    void pollOnce();
+    pollRef.current = setInterval(() => void pollOnce(), 3000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [requestId]);
+  }, [requestId, pollOnce]);
 
   // Request dispatched but the first status poll hasn't returned yet — show a
   // neutral pending state instead of falling back to the idle SOS button
@@ -175,15 +189,34 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
     }
 
     if (status.status === "accepted" && status.doctor) {
+      // Arrival + identity states drive the banner copy; the map and Call
+      // button stay identical to before in every step.
+      const arrived = status.arrivedAt != null;
+      const identityConfirmed = status.otpVerifiedAt != null;
       return (
         <div className="overflow-hidden rounded-3xl border-2 border-emerald-300 bg-white shadow-lg">
           <div className="p-5">
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl">🚑</span>
               <div className="min-w-0 flex-1">
-                <p className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Dr. {status.doctor.name} is on the way</p>
+                <p className="text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                  {identityConfirmed
+                    ? "Visit in progress"
+                    : arrived
+                      ? `Dr. ${status.doctor.name} has arrived`
+                      : status.etaMinutes != null
+                        ? `Dr. ${status.doctor.name} is ${status.etaMinutes} min away`
+                        : `Dr. ${status.doctor.name} is on the way`}
+                </p>
                 <p className="text-xs text-slate-500">
-                  {dLat != null ? "En route — live tracking" : "Help has been dispatched"}
+                  {identityConfirmed
+                    ? "The doctor has confirmed your identity."
+                    : arrived
+                      ? "Show the doctor your arrival code so they can confirm it's you."
+                      : dLat != null
+                        ? "En route — live tracking"
+                        : "Help has been dispatched"}
+                  {status.distanceKm ? ` · ${status.distanceKm} km` : ""}
                 </p>
               </div>
               {status.doctor.phone && (
@@ -192,11 +225,60 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
                 </a>
               )}
             </div>
+            {arrived && !identityConfirmed && (
+              <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+                Ask the doctor for their arrival code and read it out to them — that is how they
+                confirm they are with the right patient.
+              </p>
+            )}
           </div>
           <SosLiveMap patientLat={pLat} patientLng={pLng} doctorLat={dLat} doctorLng={dLng} height={300} />
           <div className="p-4 text-center text-xs text-slate-500">
             {dLat != null ? "Tracking your doctor live" : "Waiting for the doctor to start moving…"}
           </div>
+        </div>
+      );
+    }
+
+    // Completed and not yet rated — the patient rates the visit.
+    if (status.status === "completed" && status.rating == null) {
+      return (
+        <div className="rounded-3xl border-2 border-emerald-300 bg-white p-6 text-center shadow-lg">
+          <p className="font-semibold text-ink">How was your emergency visit?</p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                aria-label={`Rate ${n} of 5`}
+                onClick={() => setRating(n)}
+                className={`text-3xl transition ${
+                  rating >= n ? "text-amber-500" : "text-slate-300"
+                } hover:text-amber-400`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+          {ratingError && <p className="mt-2 text-sm font-medium text-red-600">{ratingError}</p>}
+          <button
+            onClick={async () => {
+              if (rating === 0) {
+                setRatingError("Pick a rating from 1 to 5.");
+                return;
+              }
+              setRatingBusy(true);
+              setRatingError(null);
+              const res = await rateSosCase(requestId, rating, "");
+              if (res.error) setRatingError(res.error);
+              else await pollOnce();
+              setRatingBusy(false);
+            }}
+            disabled={ratingBusy}
+            className="btn-primary mt-4 justify-center"
+          >
+            {ratingBusy ? "Submitting…" : "Submit rating"}
+          </button>
         </div>
       );
     }

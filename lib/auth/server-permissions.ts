@@ -10,13 +10,8 @@ import "server-only";
  */
 
 import { redirect } from "next/navigation";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { permissions, modelHasPermissions, modelHasRoles, roles } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
-
-const USER_MODEL = "App\\Models\\User";
 
 /**
  * Default module permissions a brand-new doctor gets so the dashboard is
@@ -34,35 +29,6 @@ export const DEFAULT_DOCTOR_MODULE_PERMS = [
   "follow-up",
   "support",
 ] as const;
-
-/** Grant a user direct model permissions by name (no-ops when unknown). */
-export async function grantPermissionsByName(
-  userId: number,
-  names: readonly string[]
-): Promise<void> {
-  if (names.length === 0) return;
-  const rows = await db
-    .select({ id: permissions.id })
-    .from(permissions)
-    .where(inArray(permissions.name, names));
-  if (rows.length === 0) return;
-  await db.insert(modelHasPermissions).values(
-    rows.map((r) => ({ permissionId: r.id, modelType: USER_MODEL, modelId: userId }))
-  );
-}
-
-/** Attach a named system role (doctorId null) to a user, replacing any system roles. */
-export async function attachSystemRole(userId: number, roleName: string): Promise<void> {
-  const [systemRole] = await db
-    .select({ id: roles.id })
-    .from(roles)
-    .where(and(eq(roles.name, roleName), isNull(roles.doctorId)));
-  if (!systemRole) return;
-  await db
-    .delete(modelHasRoles)
-    .where(and(eq(modelHasRoles.modelId, userId), eq(modelHasRoles.modelType, USER_MODEL)));
-  await db.insert(modelHasRoles).values({ roleId: systemRole.id, modelId: userId, modelType: USER_MODEL });
-}
 
 /**
  * Server-action guard: resolves the acting doctor id (redirecting to /login

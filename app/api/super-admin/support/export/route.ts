@@ -1,18 +1,14 @@
 import { getAllSupportTickets } from "@/lib/queries/support";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireApiRole } from "@/lib/auth/guard";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
 /** GET /api/super-admin/support/export → CSV of all support tickets. */
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
   // Platform-operator only: "admin" is the business owner (a tenant principal).
-  // Admitting it here let a tenant export every ticket platform-wide.
-  if (user.role !== "super_admin") {
-    return new Response("Forbidden", { status: 403 });
-  }
+  const user = await requireApiRole(["super_admin"]);
+  if (user instanceof Response) return user;
 
   const tickets = await getAllSupportTickets();
   const header = ["ID", "Subject", "User", "Role", "Status", "Created At"];

@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=7776000, immutable",
+        // The text is caller-supplied and embeds PHI (bill QR codes carry the
+        // patient name + bill number) — never a shared/immutable cache entry.
+        "Cache-Control": "private, no-store",
         "X-QR-Cached": cached ? "1" : "0",
         "X-QR-Source": source,
       },
