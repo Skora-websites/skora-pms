@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toggleUserStatus } from "../actions";
+import { toggleUserStatus } from "../users/actions";
 
 export function DoctorStatusToggle({
   doctorId,

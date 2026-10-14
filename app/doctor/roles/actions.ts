@@ -198,7 +198,13 @@ export async function deleteRole(roleId: number): Promise<RoleActionResult> {
 // getAllPermissions / getUserPermissionNames moved to lib/actions/permissions.ts
 // — the super-admin doctor-permissions screen needs them too, and route groups
 // must not import each other's actions.
-export { getAllPermissions, getUserPermissionNames } from "@/lib/actions/permissions";
+import {
+  getAllPermissions,
+  getUserPermissionNames,
+} from "@/lib/actions/permissions";
+
+// Re-exported for the doctor roles page's own importers.
+export { getAllPermissions, getUserPermissionNames };
 
 export async function saveStaffPermissions(
   staffId: number,

@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Link2, Play, Plus, ShieldCheck, Trash2, Video, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteSupportVideo, storeSupportVideo } from "../actions";
+import { deleteSupportVideo, storeSupportVideo } from "../support/actions";
 
 const initialState = { error: null as string | null };
 

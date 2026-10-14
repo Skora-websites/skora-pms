@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { setTicketPriority } from "../actions";
+import { setTicketPriority } from "../support/actions";
 import { cn } from "@/lib/utils";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"] as const;

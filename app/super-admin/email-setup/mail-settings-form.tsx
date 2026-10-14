@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { Loader2, Mail, Save, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { saveMailSettings, testMailSettings } from "../actions";
+import { saveMailSettings, testMailSettings } from "../settings/actions";
 
 const initialState = { error: null as string | null };
 

@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { saveCompanySettings } from "../actions";
+import { saveCompanySettings } from "../settings/actions";
 
 const initialState = { error: null as string | null };
 

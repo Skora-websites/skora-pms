@@ -9,7 +9,7 @@ import {
   storeLandingItem,
   updateLandingItem,
   updateLandingSection,
-} from "../actions";
+} from "../landing/actions";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { publicUploadUrl } from "@/lib/utils/uploads";
 

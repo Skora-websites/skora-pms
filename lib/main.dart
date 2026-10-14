@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api.dart';
+import 'api_paths.dart';
 import 'session.dart';
 import 'sos_screen.dart';
 
@@ -97,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      final res = await Api.instance.post('/api/mobile/login', body: {
+      final res = await Api.instance.post(kMobileLoginPath, body: {
         'email': _email.text.trim(),
         'password': _password.text,
       }) as Map<String, dynamic>;

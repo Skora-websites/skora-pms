@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { closeTicket } from "../actions";
+import { closeTicket } from "../support/actions";
 
 export function TicketCloseButton({ ticketId }: { ticketId: number }) {
   const [pending, setPending] = useState(false);

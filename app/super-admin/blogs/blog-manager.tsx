@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useState } from "react";
 import { FolderPlus, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteBlog, storeBlog, updateBlog, storeCategory, updateCategory, deleteCategory } from "../actions";
+import { deleteBlog, storeBlog, updateBlog } from "../blogs/actions";
+import { storeCategory, updateCategory, deleteCategory } from "../categories/actions";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 

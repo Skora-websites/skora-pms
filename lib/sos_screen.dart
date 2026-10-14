@@ -19,6 +19,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'api.dart';
+import 'api_paths.dart';
 
 enum SosState { idle, locating, dispatching, enRoute, arrived, completed, failed }
 
@@ -73,7 +74,7 @@ class _SosScreenState extends State<SosScreen> {
       );
       setState(() => _state = SosState.dispatching);
 
-      final res = await Api.instance.post('/api/mobile/sos/trigger', body: {
+      final res = await Api.instance.post('$kMobileSosRoot/trigger', body: {
         'latitude': fix.latitude,
         'longitude': fix.longitude,
         'radiusKm': 10,
@@ -120,7 +121,7 @@ class _SosScreenState extends State<SosScreen> {
 
       if (_state != SosState.enRoute && _state != SosState.arrived) return;
       try {
-        await Api.instance.post('/api/mobile/sos/$requestId/location', body: {
+        await Api.instance.post(mobileSosLocation(requestId), body: {
           'latitude': fix.latitude,
           'longitude': fix.longitude,
         });
@@ -158,7 +159,7 @@ class _SosScreenState extends State<SosScreen> {
     final id = _requestId;
     if (id == null) return;
     try {
-      await Api.instance.post('/api/mobile/sos/$id/cancel');
+      await Api.instance.post(mobileSosCancel(id));
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }

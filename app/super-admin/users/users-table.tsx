@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Pencil, Plus, ShieldCheck, UserCheck, UserX, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { storeUser, toggleUserStatus, updateUser } from "../actions";
+import { storeUser, toggleUserStatus, updateUser } from "../users/actions";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { UsersList } from "@/components/mobile-view/users-list";
 import { formatDate, initials } from "@/lib/utils";

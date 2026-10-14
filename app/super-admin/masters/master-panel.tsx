@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Download, Loader2, Pencil, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteMasterItem, importMasterItems, storeMasterItem, updateMasterItem } from "../actions";
+import { deleteMasterItem, importMasterItems, storeMasterItem, updateMasterItem } from "../masters/actions";
 import type { MasterKind, MasterRow } from "@/lib/queries/super-admin";
 
 const initialState = { error: null as string | null };

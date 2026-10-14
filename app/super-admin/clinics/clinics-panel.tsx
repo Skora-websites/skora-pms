@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Building2, MapPin, Pencil, Phone, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteClinic, storeClinic, updateClinic } from "../actions";
+import { deleteClinic, storeClinic, updateClinic } from "../clinics/actions";
 import { StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatINR, formatDate } from "@/lib/utils";
 

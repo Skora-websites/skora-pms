@@ -4,7 +4,7 @@ import { useState } from "react";
 import { KeyRound, Loader2, Save, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getAllPermissions, getUserPermissionNames } from "@/app/doctor/roles/actions";
-import { saveDoctorPermissions } from "../actions";
+import { saveDoctorPermissions } from "../doctors/actions";
 
 export function DoctorPermissionsDialog({
   doctorId,
