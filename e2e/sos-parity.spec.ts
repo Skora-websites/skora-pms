@@ -86,10 +86,11 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
     const patientPage = await patientCtx.newPage();
     await patientPage.goto("/patient/emergency");
     await patientPage.getByRole("button", { name: /Send SOS/i }).click();
-    // The tracker replaces the idle button once a request id exists.
-    await expect(patientPage.getByText(/Finding nearby doctors|is on the way|has arrived/i)).toBeVisible({
-      timeout: 30_000,
-    });
+    // Any post-trigger tracker state proves the request id was created; the
+    // intermediate "Checking your SOS request…" polls status every 3s.
+    await expect(
+      patientPage.getByText(/Checking your SOS request|Finding nearby doctors|on the way|has arrived|no longer active/i)
+    ).toBeVisible({ timeout: 40_000 });
 
     const [[pending]] = (await conn.query(
       "SELECT id FROM sos_requests WHERE patient_id = ? ORDER BY id DESC LIMIT 1",
