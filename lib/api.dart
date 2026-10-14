@@ -35,7 +35,8 @@ class Api {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null) 'Cookie': 'session=$token',
+      // Must match SESSION_COOKIE in lib/auth/session.ts.
+      if (token != null) 'Cookie': 'skora_session=$token',
     };
   }
 
