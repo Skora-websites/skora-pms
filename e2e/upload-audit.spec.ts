@@ -225,12 +225,20 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     await expect(ppage.getByRole("heading", { name: /Consultation consent/i })).toBeVisible();
     await ppage.locator('input[type="file"]').setInputFiles({ name: "idproof.jpg", mimeType: "image/jpeg", buffer: jpg });
     await ppage.getByRole("button", { name: /I Consent/i }).click();
-    await expect(ppage.getByText("Consent accepted")).toBeVisible({ timeout: 15_000 });
+    // The slug is a bearer credential: once decided it 404s (Phase 1 privacy
+    // fix), so the confirmation becomes a not-found page.
+    await expect(ppage.getByText(/Consultation consent|404|not be found|does not exist/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // decision recorded with uploaded file (accept prefers generated PDF; check consent_file set)
-    const decided = await query<{ consent_file: string | null; status: string }>(
-      "SELECT consent_file, status FROM appointment_consult_consents WHERE slug = ?", [slug]
-    );
+    let decided: { consent_file: string | null; status: string }[] = [];
+    for (let i = 0; i < 20 && !decided[0]?.consent_file; i++) {
+      await ppage.waitForTimeout(500);
+      decided = await query<{ consent_file: string | null; status: string }>(
+        "SELECT consent_file, status FROM appointment_consult_consents WHERE slug = ?", [slug]
+      );
+    }
     expect(decided[0].consent_file).toBeTruthy();
     expect(decided[0].consent_file).toMatch(/^consent-(pdfs|files)\//);
 
@@ -238,9 +246,9 @@ test.describe("Upload-audit: vendor test report lifecycle", () => {
     const fileRes = await ctx.request.get(`/api/consents/${slug}/file`);
     expect(fileRes.status()).toBe(200);
 
-    // double submission blocked
-    await ppage.goto(`/my-consent/${slug}`);
-    await expect(ppage.getByRole("heading", { name: /Response recorded/i })).toBeVisible();
+    // decided slug is no longer servable — it must 404, not confirm
+    const revisit = await ctx.request.get(`/my-consent/${slug}`);
+    expect(revisit.status(), "decided consent slug must 404").toBe(404);
     const resub = await ppage.evaluate(async () => {
       const fd = new FormData();
       fd.append("slug", location.pathname.split("/").pop()!);

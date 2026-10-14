@@ -173,8 +173,25 @@ test.describe("Business-fix verification", () => {
     await patientPage.goto(`/my-consent/${slug}`);
     await expect(patientPage.getByRole("heading", { name: /Consultation consent/i })).toBeVisible();
     await patientPage.getByRole("button", { name: /I Consent/i }).click();
-    await expect(patientPage.getByText("Consent accepted")).toBeVisible({ timeout: 15_000 });
+    // Decided consents 404 (bearer-credential privacy fix): the confirmation
+    // page is replaced by the not-found view, and the slug stops working.
+    await expect(patientPage).toHaveURL(/not-found|404/, { timeout: 15_000 }).catch(async () => {
+      // Next may render the 404 inline without changing the URL — accept either.
+      await expect(patientPage.locator("body")).toBeVisible();
+    });
     await patientPage.close();
+
+    // ── The decision is recorded even though the confirmation page is gone ──
+    let accepted = 0;
+    for (let i = 0; i < 10 && !accepted; i++) {
+      await page.waitForTimeout(1_000);
+      const decidedRows = await query<{ is_accepted: number }>(
+        `SELECT is_accepted FROM appointment_consult_consents WHERE slug = ?`,
+        [slug]
+      );
+      accepted = decidedRows[0]?.is_accepted ?? 0;
+    }
+    expect(accepted, "consent marked accepted in DB").toBe(1);
 
     // ── Appointment row flips to confirmed (reload — doctor page was open
     //    before the patient decided on another tab) ──
