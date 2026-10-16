@@ -155,10 +155,14 @@ test("SOS parity: OTP hash, arrival, identity, fare bill and patient rating", as
     // The case row is written before the UI settles — wait on it.
     let row = await waitForCase(conn, requestId, (r) => typeof r.patient_otp === "string");
 
-    // DB: only the digest is persisted; distance + ETA are populated.
+    // DB: only the digest is persisted.
     expect(row.patient_otp).toMatch(/^[0-9a-f]{64}$/);
-    expect(Number(row.distance_km)).toBeGreaterThan(0);
-    expect(Number(row.eta_minutes)).toBeGreaterThan(0);
+    // The fixture puts the doctor AT the patient, so the true distance is 0
+    // and ETA is the 1-minute floor. distance must be non-negative and ETA at
+    // least 1 — asserting distance > 0 here would only pass if the null
+    // coordinate bug (which billed 8761 km from (0,0)) were still present.
+    expect(Number(row.distance_km)).toBeGreaterThanOrEqual(0);
+    expect(Number(row.eta_minutes)).toBeGreaterThanOrEqual(1);
     expect(row.arrived_at).toBeNull();
     expect(row.otp_verified_at).toBeNull();
 
