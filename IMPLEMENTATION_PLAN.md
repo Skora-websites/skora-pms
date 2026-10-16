@@ -4,6 +4,20 @@
 > **Source of truth:** Legacy Laravel app (`legacy/`) + Security Audit + Feature Parity Report
 > **Date:** 2026-08-14
 > **Current state:** 38% features implemented, 7% partial, 55% missing. Security fixes from the audit were reverted — this plan re-applies and extends them.
+>
+> **✅ RECONCILED 2026-10-16 — this plan is COMPLETE and now historical reference only.**
+> Every phase (S1–S5, P1–P8) was audited against the codebase and found implemented:
+> rate limiting (`lib/security/rate-limit.ts`), jti/sessions/revoke + signup OTP, ownership
+> scoping (`lib/auth/ownership.ts`), non-public uploads (+ `npm run check:storage`), mail
+> password encryption, security headers (`proxy.ts`), zod validation, audit log, error/not-found
+> boundaries, Excel export+import, consent flow, vendor upload (`app/vendor/upload-test/`),
+> transaction/category CRUD, medicine CRUD, staff/roles/permissions managers, all super-admin
+> panels, book-demo leads, trial-expired guard, and even the deferrable P8 extras
+> (faq, online-consultations, notifications).
+>
+> **Part D verification (2026-10-16):** lint 0 errors (31 unused-var warnings),
+> `next build` clean, db:check ✓ (72 tables), check:storage ✓, full Playwright e2e suite
+> **81 passed / 0 failed**. Unchecked boxes below are pre-existing documentation drift, not open work.
 
 ---
 
