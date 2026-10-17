@@ -54,22 +54,6 @@ tmp-shot-*.png
 /.claude/
 /backups/
 
-# Flutter / Dart build artifacts (flutter project root = /android)
-/android/.dart_tool/
-/android/.flutter-plugins
-/android/.flutter-plugins-dependencies
-/android/.metadata
-.flutter-plugins-dependencies
-/build/
-/android/pubspec.lock
-
-# Android (Flutter-generated project)
-/android/android/app/build/
-/android/build/
-/android/android/.gradle/
-/android/android/local.properties
-/android/android/.kotlin/
-
 # IDE
 .idea/
 *.iml

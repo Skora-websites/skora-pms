@@ -31,14 +31,6 @@ export async function requireApiRole(
   return user;
 }
 
-/** Same as requireRole but also requires a permission name. */
-export async function requireRoleWithPermission(roles: string[], permission: string) {
-  const user = await requireRole(roles);
-  const ok = await hasPermission(user.id, permission);
-  if (!ok) redirect(homePathForRole(user.role));
-  return user;
-}
-
 /**
  * API-route module-permission guard (audit F-01): authorizes on role AND the
  * module permission the layout already requires for the same feature, so a

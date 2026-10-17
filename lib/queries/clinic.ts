@@ -126,26 +126,6 @@ export const isPracticeDoctor = cache(
   }
 );
 
-/** Active members of one clinic (owner included via backfill/create-time row). */
-export const getClinicDoctors = cache(async (clinicId: number) => {
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      salutation: users.salutation,
-      qualification: users.qualification,
-      specialization: users.specialization,
-      registrationNumber: users.registrationNumber,
-      phone: users.phone,
-      email: users.email,
-      profilePhotoPath: users.profilePhotoPath,
-    })
-    .from(clinicDoctors)
-    .innerJoin(users, eq(users.id, clinicDoctors.doctorId))
-    .where(and(eq(clinicDoctors.clinicId, clinicId), eq(clinicDoctors.isActive, true)))
-    .orderBy(asc(clinicDoctors.id));
-});
-
 /**
  * Members + per-member OPD schedules + owner flag for a set of clinics, in
  * a constant number of queries (F-05: replaces the sequential per-clinic
@@ -248,41 +228,6 @@ export const getClinicMembersWithSchedules = cache(
   }
 );
 
-/** A doctor's weekly OPD slots at one clinic (for their profile card). */
-export const getClinicSchedulesOfDoctor = cache(
-  async (clinicId: number, doctorId: number) => {
-    return db
-      .select({
-        id: doctorSchedules.id,
-        dayOfWeek: doctorSchedules.dayOfWeek,
-        startTime: doctorSchedules.startTime,
-        endTime: doctorSchedules.endTime,
-        sessionType: doctorSchedules.sessionType,
-        is24Hours: doctorSchedules.is24Hours,
-      })
-      .from(doctorSchedules)
-      .where(
-        and(
-          eq(doctorSchedules.doctorClinicId, clinicId),
-          eq(doctorSchedules.doctorId, doctorId),
-          eq(doctorSchedules.isActive, true)
-        )
-      )
-      .orderBy(asc(doctorSchedules.id));
-  }
-);
-
-/** Clinics the doctor owns or is a member of, with their active schedules. */
-export const getClinicsWithMembership = cache(async (doctorId: number) => {
-  const clinicIds = await getClinicsOfDoctor(doctorId);
-  if (clinicIds.length === 0) return [];
-  return db
-    .select()
-    .from(doctorClinics)
-    .where(inArray(doctorClinics.id, clinicIds))
-    .orderBy(asc(doctorClinics.id));
-});
-
 /** Ensure the doctor can act on the clinic (owner or active member). */
 export async function ensureClinicAccess(clinicId: number, doctorId: number): Promise<boolean> {
   const [owned] = await db
@@ -346,22 +291,3 @@ export const getReceptionistClinicIds = cache(
     return [...new Set(owned.map((c) => c.id))];
   }
 );
-
-/** True when the receptionist may operate the given clinic. */
-export async function ensureReceptionistClinic(
-  receptionistId: number,
-  clinicId: number
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: receptionistClinics.id })
-    .from(receptionistClinics)
-    .where(
-      and(
-        eq(receptionistClinics.receptionistId, receptionistId),
-        eq(receptionistClinics.clinicId, clinicId),
-        eq(receptionistClinics.isActive, true)
-      )
-    )
-    .limit(1);
-  return !!row;
-}

@@ -9,8 +9,6 @@ import { MAX_CONSENT_FILE_BYTES, mbLabel } from "@/lib/config";
 // authenticated API routes only.
 const CONSENT_FILES_DIR = path.join(process.cwd(), "storage", "uploads", "consent-files");
 
-export { MAX_CONSENT_FILE_BYTES };
-
 /**
  * Consent links (and their files) live 7 days after creation — legacy
  * vendor-link parity. Shared by the write path (respondConsent's answer

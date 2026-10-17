@@ -19,15 +19,10 @@ export type ForgotState = { error: string | null; sent: boolean };
  * their password had no recovery path. Token lifecycle mirrors the OTP flow:
  * hashed at rest, single-use, 60-minute TTL, rate-limited per email.
  */
-const RESET_TTL_MS = 60 * 60 * 1000;
 
 const requestSchema = z.object({
   email: z.email("Enter a valid email address").trim().toLowerCase(),
 });
-
-/** Generic response for every path — never reveal whether the account exists. */
-const GENERIC_OK =
-  "If an account exists for that email, a password-reset link has been sent. It expires in 60 minutes.";
 
 export async function requestPasswordReset(
   _prev: ForgotState,

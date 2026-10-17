@@ -6,7 +6,8 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { redirect } from "next/navigation";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { symptoms, examinations, diagnoses, labTests, medicines } from "@/lib/db/schema"; import { MAX_IMAGE_BYTES, MAX_IMPORT_BYTES, mbLabel } from "@/lib/config";
+import { symptoms, examinations, diagnoses, labTests, medicines } from "@/lib/db/schema";
+import { MAX_IMPORT_BYTES, mbLabel } from "@/lib/config";
 
 import { audit } from "@/lib/security/audit-log";
 

@@ -39,7 +39,6 @@ grep -rl 'from "@/app/doctor/billing/actions"' app/doctor/billing app components
 | Module | Importers | Placement |
 |---|---|---|
 | `lib/actions/auth.ts` | 3 files across `(auth)` + `components/` | `lib/` — correct |
-| `lib/actions/duty.ts` | `components/doctor/duty-toggle.tsx` | `lib/` — correct |
 | `lib/actions/inventory.ts` | 2 shared components + shop | `lib/` — correct |
 | `lib/dispatch/actions.ts` | doctor + patient emergency panels | `lib/` — correct (a feature spanning two route groups) |
 | `lib/push/actions.ts` | doctor + patient panels, PWA setup | `lib/` — correct |

@@ -6,7 +6,6 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { landingSections, landingItems } from "@/lib/db/schema";
-import { MAX_IMAGE_BYTES } from "@/lib/config";
 import { audit } from "@/lib/security/audit-log";
 import { saveUploadedImage, deleteStoredUpload } from "@/lib/uploads/media";
 

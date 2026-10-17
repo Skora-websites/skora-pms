@@ -31,15 +31,9 @@ import {
   appointments,
   billings,
   billingTypes,
-  consultations,
   expenseTypes,
-  followUpReminders,
   incomeTypes,
-  tests,
-  testBookings,
-  transactions,
   users,
-  vendors,
 } from "@/lib/db/schema";
 import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
@@ -164,30 +158,6 @@ export async function ensureExpenseTypeInScope(typeId: number, scope: ActionScop
   return !!row;
 }
 
-export async function ensureVendorInScope(vendorId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: vendors.id })
-    .from(vendors)
-    .where(and(eq(vendors.id, vendorId), inArray(vendors.doctorId, scope.doctorIds)));
-  return !!row;
-}
-
-export async function ensureTestInScope(testId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: tests.id })
-    .from(tests)
-    .where(and(eq(tests.id, testId), inArray(tests.doctorId, scope.doctorIds)));
-  return !!row;
-}
-
-export async function ensureTestBookingInScope(bookingId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: testBookings.id })
-    .from(testBookings)
-    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, scope.doctorIds)));
-  return !!row;
-}
-
 export async function ensureBillInScope(billId: number, scope: ActionScope): Promise<boolean> {
   const [row] = await db
     .select({ id: billings.id })
@@ -196,26 +166,4 @@ export async function ensureBillInScope(billId: number, scope: ActionScope): Pro
   return !!row;
 }
 
-export async function ensureTransactionInScope(txId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: transactions.id })
-    .from(transactions)
-    .where(and(eq(transactions.id, txId), inArray(transactions.userId, scope.doctorIds)));
-  return !!row;
-}
-
-export async function ensureConsultationInScope(consultationId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: consultations.id })
-    .from(consultations)
-    .where(and(eq(consultations.id, consultationId), inArray(consultations.doctorId, scope.doctorIds)));
-  return !!row;
-}
-
-export async function ensureFollowUpReminderInScope(reminderId: number, scope: ActionScope): Promise<boolean> {
-  const [row] = await db
-    .select({ id: followUpReminders.id })
-    .from(followUpReminders)
-    .where(and(eq(followUpReminders.id, reminderId), inArray(followUpReminders.doctorId, scope.doctorIds)));
-  return !!row;
-}
+// (transaction/consultation/follow-up/vendor/test scope guards removed — dead)

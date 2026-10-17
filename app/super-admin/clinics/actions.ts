@@ -6,7 +6,6 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { users, doctorClinics, doctorSchedules } from "@/lib/db/schema";
-import { MAX_IMAGE_BYTES } from "@/lib/config";
 
 import { audit } from "@/lib/security/audit-log";
 

@@ -13,7 +13,6 @@ function num(value: string | undefined, fallback: number): number {
 }
 
 // ── App identity ─────────────────────────────────────────────────────────
-export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "SkoraCares";
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
 // ── Database (pool tuning; connection string lives in lib/db/index.ts) ───
@@ -91,9 +90,6 @@ export const RATE_LIMIT = {
 // hardcoded third-party endpoint shipped unmaintained. The "Send OTP
 // (WhatsApp)" label in the booking form is a UI option without a gateway
 // behind it — a product decision, not a code path.
-
-/** Web-push VAPID identity. */
-export const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? "mailto:admin@skoracare.com";
 
 // ── Free public APIs (no-key, public-apis/public-apis) ─────────────────
 // All calls are server-side only (Route Handler / server action), never with

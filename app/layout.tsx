@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { PwaSetup } from "@/components/pwa-setup";
+import { PwaSetup } from "@/components/pwa/pwa-setup";
 import { SplashScreen } from "@/components/pwa/splash-screen";
 import { AgentationDev } from "@/components/dev/agentation-dev";
 

@@ -3,9 +3,6 @@ import { db } from "@/lib/db";
 import {
   users,
   appointments,
-  billingTypes,
-  incomeTypes,
-  expenseTypes,
   supportTickets,
 } from "@/lib/db/schema";
 
@@ -47,50 +44,6 @@ export async function ensureAppointmentOfDoctor(
       and(eq(appointments.id, appointmentId), eq(appointments.doctorId, doctorId))
     );
   return !!appt;
-}
-
-/**
- * Verify that a billing type belongs to the given doctor.
- */
-export async function ensureBillingTypeOfDoctor(
-  billingTypeId: number,
-  doctorId: number
-): Promise<boolean> {
-  const [bt] = await db
-    .select({ id: billingTypes.id })
-    .from(billingTypes)
-    .where(
-      and(eq(billingTypes.id, billingTypeId), eq(billingTypes.doctorId, doctorId))
-    );
-  return !!bt;
-}
-
-/**
- * Verify that an income type belongs to the given user.
- */
-export async function ensureIncomeTypeOfUser(
-  typeId: number,
-  userId: number
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: incomeTypes.id })
-    .from(incomeTypes)
-    .where(and(eq(incomeTypes.id, typeId), eq(incomeTypes.userId, userId)));
-  return !!row;
-}
-
-/**
- * Verify that an expense type belongs to the given user.
- */
-export async function ensureExpenseTypeOfUser(
-  typeId: number,
-  userId: number
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: expenseTypes.id })
-    .from(expenseTypes)
-    .where(and(eq(expenseTypes.id, typeId), eq(expenseTypes.userId, userId)));
-  return !!row;
 }
 
 /**

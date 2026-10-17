@@ -19,7 +19,6 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
-import { sendPushToUser } from "@/lib/push/client";
 import { SOS_FARE } from "@/lib/config";
 import { generateBillNumber } from "@/lib/utils";
 import { findNearbyOnDutyDoctors, haversineKm, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";

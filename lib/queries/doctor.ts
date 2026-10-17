@@ -130,28 +130,6 @@ export const getPracticeTodaysAppointments = cache(async (doctorIds: number[]) =
   );
 });
 
-export const getAppointments = cache(
-  async (
-    doctorId: number,
-    filter: { status?: string; date?: string } = {},
-    page: ListPage = {}
-  ): Promise<{ rows: AppointmentRow[]; hasMore: boolean }> => {
-    const conds = [eq(appointments.doctorId, doctorId)];
-    if (filter.status && filter.status !== "all") conds.push(eq(appointments.status, filter.status as never));
-    if (filter.date) conds.push(eq(appointments.date, filter.date));
-    // Newest bookings first: upcoming dates on top, most recently created
-    // booking first within the same date.
-    const { offset, limit } = pageBounds(page);
-    // Fetch one extra row to detect a next page without a count query.
-    const rows = await appointmentRows(and(...conds), [
-      desc(appointments.date),
-      desc(appointments.createdAt),
-      desc(appointments.id),
-    ], limit + 1, offset);
-    return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
-  }
-);
-
 /** All practice doctors' appointments (receptionist view). */
 export const getPracticeAppointments = cache(
   async (
@@ -191,20 +169,6 @@ export const getPracticeRecentAppointments = cache(async (doctorIds: number[], l
     desc(appointments.id),
   ], limit);
 });
-
-export const getOnlineConsultations = cache(
-  async (
-    doctorId: number,
-    filter: { status?: string } = {},
-    page: ListPage = {}
-  ): Promise<{ rows: AppointmentRow[]; hasMore: boolean }> => {
-    const conds = [eq(appointments.doctorId, doctorId), eq(appointments.caseType, "online_visit")];
-    if (filter.status && filter.status !== "all") conds.push(eq(appointments.status, filter.status as never));
-    const { offset, limit } = pageBounds(page);
-    const rows = await appointmentRows(and(...conds), desc(appointments.date), limit + 1, offset);
-    return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
-  }
-);
 
 /** All practice doctors' online visits (receptionist view). */
 export const getPracticeOnlineConsultations = cache(
@@ -599,39 +563,6 @@ export const getAllTransactionsForExport = cache(async (
   return { rows, incomeTypes: incomeCats, expenseTypes: expenseCats };
 });
 
-/** Fetch a single transaction scoped to the doctor. */
-export const getTransactionById = cache(async (txId: number, doctorId: number) => {
-  const [row] = await db
-    .select({
-      id: transactions.id,
-      userId: transactions.userId,
-      type: transactions.type,
-      incomeTypeId: transactions.incomeTypeId,
-      expenseTypeId: transactions.expenseTypeId,
-      amount: transactions.amount,
-      date: transactions.date,
-      status: transactions.status,
-      billingId: transactions.billingId,
-      referenceNumber: transactions.referenceNumber,
-      paymentMethod: transactions.paymentMethod,
-      description: transactions.description,
-      filePath: transactions.filePath,
-      incomeType: incomeTypes.name,
-      expenseType: expenseTypes.name,
-    })
-    .from(transactions)
-    .leftJoin(incomeTypes, eq(incomeTypes.id, transactions.incomeTypeId))
-    .leftJoin(expenseTypes, eq(expenseTypes.id, transactions.expenseTypeId))
-    .where(
-      and(
-        eq(transactions.id, txId),
-        eq(transactions.userId, doctorId),
-        isNull(transactions.deletedAt)
-      )
-    );
-  return row ?? null;
-});
-
 /**
  * Follow-ups across one doctor or the whole practice (F-03).
  * Receptionists/admins pass getPracticeDoctorIds(); doctors pass [ownId].
@@ -914,22 +845,6 @@ export const getChatData = cache(async (userId: number) => {
   };
 });
 
-export const getChatMessagesSince = cache(async (roomId: number, sinceId: number) => {
-  const rows = await db
-    .select({
-      id: messages.id,
-      content: messages.content,
-      senderId: messages.senderId,
-      senderName: users.name,
-      timestamp: messages.timestamp,
-    })
-    .from(messages)
-    .innerJoin(users, eq(users.id, messages.senderId))
-    .where(and(eq(messages.chatRoomId, roomId), isNull(messages.deletedAt), sql`${messages.id} > ${sinceId}`))
-    .orderBy(asc(messages.timestamp));
-  return rows;
-});
-
 // ── Home visits ─────────────────────────────────────────────────────────────
 
 /** Home-visit appointments across one doctor or the whole practice (F-03). */
@@ -1091,85 +1006,9 @@ export const getDoctorConsultPdf = cache(async (doctorId: number) => {
   return row ?? null;
 });
 
-export const getDoctorStats = cache(async (doctorId: number) => {
-  const today = todayStr();
-  const monthStart = todayStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-
-  const [todayAppts, totalPatients, pendingFollowUps, monthIncome, monthExpense, weekAppts] =
-    await Promise.all([
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(appointments)
-        .where(and(eq(appointments.doctorId, doctorId), eq(appointments.date, today))),
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(users)
-        .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "patient"))),
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(consultations)
-        .where(
-          and(
-            eq(consultations.doctorId, doctorId),
-            eq(consultations.followUpStatus, "pending"),
-            gte(consultations.followUpDate, today)
-          )
-        ),
-      db
-        .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, doctorId),
-            eq(transactions.type, 1),
-            eq(transactions.status, "approved"),
-            isNull(transactions.deletedAt),
-            gte(transactions.date, monthStart)
-          )
-        ),
-      db
-        .select({ total: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, doctorId),
-            eq(transactions.type, 2),
-            eq(transactions.status, "approved"),
-            isNull(transactions.deletedAt),
-            gte(transactions.date, monthStart)
-          )
-        ),
-      db
-        .select({ date: appointments.date, count: sql<number>`count(*)` })
-        .from(appointments)
-        .where(
-          and(
-            eq(appointments.doctorId, doctorId),
-            gte(appointments.date, todayStr(new Date(Date.now() - 6 * 86400000))),
-            // Upper bound = today so the dashboard's 7-day "traffic" chart
-            // doesn't silently ingest future-dated bookings.
-            lte(appointments.date, today)
-          )
-        )
-        .groupBy(appointments.date),
-    ]);
-
-  return {
-    todayAppointments: Number(todayAppts[0]?.count ?? 0),
-    totalPatients: Number(totalPatients[0]?.count ?? 0),
-    pendingFollowUps: Number(pendingFollowUps[0]?.count ?? 0),
-    monthIncome: Number(monthIncome[0]?.total ?? 0),
-    monthExpense: Number(monthExpense[0]?.total ?? 0),
-    weekAppointments: weekAppts.map((w) => ({
-      date: w.date,
-      count: Number(w.count),
-    })),
-  };
-});
-
 /**
- * Practice-wide stats (manager/owner overview): same KPIs as getDoctorStats
- * but fanned out across the scope's doctor ids. Week/day counts are keyed by
+ * Practice-wide stats (manager/owner overview): the same KPIs fanned out
+ * across the scope's doctor ids. Week/day counts are keyed by
  * `date` so callers can map them onto local-day labels.
  */
 export const getPracticeStats = cache(async (doctorIds: number[]) => {
@@ -1306,33 +1145,3 @@ export const getPracticeFinanceTrend = cache(async (doctorIds: number[], months 
 });
 
 /** Income & expense totals per month for the last N months (dashboard chart). */
-export const getDoctorFinanceTrend = cache(async (doctorId: number, months = 6) => {
-  const rows = await db
-    .select({
-      date: transactions.date,
-      type: transactions.type,
-      amount: transactions.amount,
-    })
-    .from(transactions)
-    .where(and(eq(transactions.userId, doctorId), eq(transactions.status, "approved"), isNull(transactions.deletedAt)));
-
-  const buckets = new Map<string, { income: number; expense: number }>();
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    buckets.set(key, { income: 0, expense: 0 });
-  }
-
-  for (const r of rows) {
-    const key = r.date.slice(0, 7);
-    if (buckets.has(key)) {
-      const b = buckets.get(key)!;
-      if (r.type === 1) b.income += Number(r.amount);
-      else if (r.type === 2) b.expense += Number(r.amount);
-    }
-  }
-
-  return [...buckets.entries()].map(([label, { income, expense }]) => ({ label, income, expense }));
-});

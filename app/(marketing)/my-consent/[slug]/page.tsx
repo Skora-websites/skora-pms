@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CheckCircle2, FileText, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { getConsentBySlug } from "@/lib/queries/consent";
 import { ConsentForm } from "./consent-form";
 

@@ -410,9 +410,6 @@ export const getDormantAccounts = cache(
   }
 );
 
-// Re-export for callers that want the window constant.
-export { windowStart, RANGE_DAYS };
-
 export type DoctorHomeStats = {
   todayCount: number;
   completedWeek: number;

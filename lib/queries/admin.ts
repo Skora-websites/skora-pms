@@ -192,23 +192,6 @@ export const listClinicMembers = cache(async (clinicIds: number[]) => {
     .orderBy(asc(clinicDoctors.id));
 });
 
-/** Receptionist accounts reachable through the scoped doctors. */
-export const listScopedReceptionists = cache(async (doctorIds: number[]) => {
-  if (doctorIds.length === 0) return [];
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      status: users.status,
-      doctorId: users.doctorId,
-    })
-    .from(users)
-    .where(and(eq(users.role, "receptionist"), inArray(users.doctorId, doctorIds)))
-    .orderBy(asc(users.id));
-});
-
 /**
  * Every receptionist with the ownership column needed to filter by scope.
  *
@@ -571,24 +554,6 @@ export const getMailSettings = cache(async () => {
 
 // ── Roles & permissions (practice roster) ───────────────────────────
 
-/** Roles belonging to one practice, with their member count. */
-export const listPracticeRoles = cache(async (doctorId: number) => {
-  const rows = await db
-    .select({
-      id: roles.id,
-      name: roles.name,
-      doctorId: roles.doctorId,
-      userCount: sql<number>`(
-        SELECT count(*) FROM ${modelHasRoles}
-        WHERE ${modelHasRoles.roleId} = ${roles.id}
-      )`,
-    })
-    .from(roles)
-    .where(eq(roles.doctorId, doctorId))
-    .orderBy(asc(roles.id));
-  return rows.map((r) => ({ ...r, userCount: Number(r.userCount ?? 0) }));
-});
-
 export type RoleWithPermissionCount = {
   id: number;
   name: string;
@@ -628,36 +593,6 @@ export const listPracticeReceptionistOptions = cache(async (doctorId: number) =>
     .from(users)
     .where(and(eq(users.referenceRoleId, doctorId), eq(users.role, "receptionist")))
     .orderBy(asc(users.name));
-});
-
-/** Users eligible for role assignment inside a practice. */
-export const listAssignableStaff = cache(async (doctorId: number) => {
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      role: users.role,
-      status: users.status,
-    })
-    .from(users)
-    .where(eq(users.doctorId, doctorId))
-    .orderBy(asc(users.id));
-});
-
-/** Full permission catalogue plus a role's current grants. */
-export const getPermissionMatrix = cache(async (roleId: number) => {
-  const [all, granted] = await Promise.all([
-    db
-      .select({ id: permissions.id, name: permissions.name })
-      .from(permissions)
-      .orderBy(asc(permissions.id)),
-    db
-      .select({ permissionId: roleHasPermissions.permissionId })
-      .from(roleHasPermissions)
-      .where(eq(roleHasPermissions.roleId, roleId)),
-  ]);
-  return { all, grantedIds: new Set(granted.map((g) => g.permissionId)) };
 });
 
 /** Permission names per role, scoped to the given role ids. */

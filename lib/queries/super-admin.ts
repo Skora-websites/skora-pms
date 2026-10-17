@@ -17,7 +17,6 @@ import {
   medicines,
   landingSections,
   landingItems,
-  type User,
 } from "@/lib/db/schema";
 
 export type MasterKind = "symptoms" | "examinations" | "diagnoses" | "lab-tests" | "medicines";
@@ -406,22 +405,4 @@ export const getDoctorOptions = cache(async () => {
     .orderBy(asc(users.name));
 });
 
-export const getUserForEdit = cache(async (userId: number) => {
-  const [row] = await db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      role: users.role,
-      status: users.status,
-      qualification: users.qualification,
-      registrationNumber: users.registrationNumber,
-      trialEndsAt: users.trialEndsAt,
-      referenceRoleId: users.referenceRoleId,
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-  return row as Pick<User, "id" | "name" | "email" | "phone" | "role" | "status"> &
-    Pick<User, "qualification" | "registrationNumber" | "trialEndsAt" | "referenceRoleId"> | null;
-});
+

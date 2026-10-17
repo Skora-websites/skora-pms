@@ -131,14 +131,6 @@ export const ADMIN_ROUTE_PERMISSIONS: { prefix: string; perm: AdminNavPerm; owne
   { prefix: "/admin", perm: "dashboard" },
 ];
 
-/** Module permission required for an admin-tier pathname (or null). */
-export function adminPermissionForPath(pathname: string): AdminNavPerm | null {
-  for (const { prefix, perm } of ADMIN_ROUTE_PERMISSIONS) {
-    if (pathname === prefix || pathname.startsWith(prefix + "/")) return perm;
-  }
-  return null;
-}
-
 /**
  * Admin-tier page access: owners pass everything; managers need the module
  * perm (owner-only modules always fail for them).

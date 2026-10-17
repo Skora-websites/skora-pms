@@ -52,8 +52,3 @@ export function decryptSecret(stored: string | null | undefined): string {
     return "";
   }
 }
-
-/** True when the value was encrypted by this module. */
-export function isEncryptedSecret(stored: string | null | undefined): boolean {
-  return !!stored && stored.startsWith(PREFIX);
-}

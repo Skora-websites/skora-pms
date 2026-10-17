@@ -173,9 +173,8 @@ export function EmergencyPanel({
   // When an active case exists, share live GPS every 5s (Uber-style tracking)
   // and track own position for the doctor-side map.
   //
-  // The native client is the Flutter app (lib/ + android/), which talks to the
-  // server directly — this web panel only ever runs in a browser, so there is
-  // no native bridge to consult here.
+  // This panel only ever runs in a browser; live tracking goes through the
+  // browser's own geolocation — there is no native bridge to consult here.
   useEffect(() => {
     if (activeCase == null) return;
     if (!navigator.geolocation) return;

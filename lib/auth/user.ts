@@ -3,7 +3,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
-  roles,
   modelHasRoles,
   roleHasPermissions,
   permissions,
@@ -156,11 +155,6 @@ export async function hasPermission(userId: number, permission: string) {
   return perms.has(permission);
 }
 
-export async function hasAnyPermission(userId: number, names: string[]) {
-  const perms = await getUserPermissions(userId);
-  return names.some((n) => perms.has(n));
-}
-
 /**
  * Trial gating (audit F-03). The doctor layout's expiry check only guards
  * page renders — server actions and API routes never traverse it, so an
@@ -198,18 +192,4 @@ export const ROLE_HOME: Record<UserRole, string> = {
 
 export function homePathForRole(role: string): string {
   return ROLE_HOME[role as UserRole] ?? "/";
-}
-
-export async function roleNames(userId: number) {
-  const rows = await db
-    .select({ name: roles.name })
-    .from(roles)
-    .innerJoin(modelHasRoles, eq(modelHasRoles.roleId, roles.id))
-    .where(
-      and(
-        eq(modelHasRoles.modelId, userId),
-        eq(modelHasRoles.modelType, USER_MODEL)
-      )
-    );
-  return rows.map((r) => r.name);
 }

@@ -83,7 +83,9 @@ export function Pricing({ items, checkoutPlans }: { items: LandingItem[]; checko
               {original > price && (
                 <p className="mt-1 text-sm text-ink-muted">
                   <span className="line-through">₹{original.toLocaleString("en-IN")}</span>{" "}
-                  <span className="font-semibold text-accent-700">You save {yearly ? 16.6 : 0}%</span>
+                  <span className="font-semibold text-accent-700">
+                    You save {Math.round((1 - price / original) * 1000) / 10}%
+                  </span>
                 </p>
               )}
               <ul className="mt-7 space-y-3">
@@ -123,7 +125,7 @@ export function Pricing({ items, checkoutPlans }: { items: LandingItem[]; checko
                 </div>
               ) : (
                 <a
-                  href={plan.link ?? "/signup"}
+                  href={plan.link && !plan.link.startsWith("#") ? plan.link : "/signup"}
                   className={cn(
                     "mt-8 block rounded-full py-3 text-center text-sm font-semibold transition-all",
                     featured

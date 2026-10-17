@@ -57,8 +57,6 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export type SessionPayload = { userId: number; jti: string };
-
 export async function signSessionToken(userId: number, jti = randomUUID()) {
   return new SignJWT({ userId, jti })
     .setProtectedHeader({ alg: "HS256" })

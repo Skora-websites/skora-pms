@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { medicines } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
@@ -201,12 +201,4 @@ export async function deleteMedicine(medicineId: number): Promise<StockActionRes
 
   revalidatePath("/doctor/shop");
   return { error: null };
-}
-
-/** Total units available across the catalogue (for the inventory header). */
-export async function getTotalStockUnits(): Promise<number> {
-  const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${medicines.quantityAvailable}), 0)` })
-    .from(medicines);
-  return Number(row?.total ?? 0);
 }

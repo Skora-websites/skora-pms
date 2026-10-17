@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import { requireApiPermission } from "@/lib/auth/guard";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 import { getDoctorConsultPdf } from "@/lib/queries/doctor";

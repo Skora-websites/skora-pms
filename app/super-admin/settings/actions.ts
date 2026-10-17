@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { mailSettings, companySettings } from "@/lib/db/schema";
-import { MAX_IMAGE_BYTES, MAX_BRAND_BYTES } from "@/lib/config";
+import { MAX_BRAND_BYTES } from "@/lib/config";
 
 import { audit } from "@/lib/security/audit-log";
 import { encryptSecret } from "@/lib/security/crypto";
