@@ -5,7 +5,7 @@ import { getBusinessScope } from "@/lib/auth/scope";
 import {
   listDirectManagerPermissions,
   listManagerAssignments,
-  listManagerUsers,
+  listManagerUsersInScope,
   listScopedClinics,
   scopeOrSentinel,
 } from "@/lib/queries/admin";
@@ -22,8 +22,10 @@ export default async function AdminManagersPage() {
   const [assignments, clinics, managerUserRows, catalog, permRows] = await Promise.all([
     listManagerAssignments(scopeOrSentinel(scope.businessIds)),
     listScopedClinics(scopeOrSentinel(scope.clinicIds)),
-    listManagerUsers(),
+    listManagerUsersInScope(scopeOrSentinel(scope.clinicIds)),
     getManagerModuleCatalog(),
+    // Unscoped, but the page filters it down to the scoped manager ids below
+    // (audit M6) — so a foreign business's grants are read then discarded.
     listDirectManagerPermissions(),
   ]);
 

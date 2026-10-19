@@ -54,10 +54,38 @@ export const getPracticeDoctorIds = cache(async (doctorId: number): Promise<numb
   const clinicIds = await getClinicsOfDoctor(doctorId);
   if (clinicIds.length === 0) return [doctorId];
   const rows = await db
-    .select({ doctorId: clinicDoctors.doctorId })
+    .selectDistinct({ doctorId: clinicDoctors.doctorId })
     .from(clinicDoctors)
     .where(and(inArray(clinicDoctors.clinicId, clinicIds), eq(clinicDoctors.isActive, true)));
   return [...new Set([...rows.map((r) => r.doctorId), doctorId])];
+});
+
+/**
+ * Doctor ids whose data belongs to the given clinics: every ACTIVE member of
+ * `clinic_doctors` PLUS each clinic's owner. Mirrors `doctorIdsForClinics` in
+ * `lib/auth/scope.ts` (kept separate because importing that module drags
+ * `next/*` through React and breaks under `--conditions react-server`).
+ *
+ * This is the receptionist read scope (role model G4): an arbitrary clinic set,
+ * not the anchor doctor's whole practice. Empty input yields no ids rather than
+ * silently widening to everything.
+ */
+export const getDoctorIdsAtClinics = cache(async (clinicIds: number[]): Promise<number[]> => {
+  if (clinicIds.length === 0) return [];
+  const [members, owners] = await Promise.all([
+    db
+      .selectDistinct({ id: clinicDoctors.doctorId })
+      .from(clinicDoctors)
+      .where(and(inArray(clinicDoctors.clinicId, clinicIds), eq(clinicDoctors.isActive, true))),
+    db
+      .selectDistinct({ id: doctorClinics.doctorId })
+      .from(doctorClinics)
+      .where(inArray(doctorClinics.id, clinicIds)),
+  ]);
+  const ids = [...members.map((m) => m.id), ...owners.map((o) => o.id)];
+  // A doctor can be a member of several of these clinics. The list is a
+  // handful of ids, so an indexOf dedup is cheaper than a Set for one use.
+  return ids.filter((id, index) => ids.indexOf(id) === index);
 });
 
 /**
@@ -79,18 +107,26 @@ export const isClinicOwnerDoctor = cache(async (doctorId: number): Promise<boole
 });
 
 /**
- * Doctor-id scope for practice listings: the whole practice for owners and
- * their staff (receptionists resolve to the owner via resolvePracticeDoctorId),
- * strictly [ownId] for member doctors (privacy: no peer visibility).
+ * Doctor-id scope for practice listings: the assigned clinics for
+ * receptionists (role model G4 — NOT the anchor doctor's whole practice), the
+ * whole practice for clinic owners, strictly [ownId] for member doctors
+ * (privacy rule D4: no peer visibility).
  */
-export const listDoctorIdsFor = cache(async (
-  viewer: { role: string; id: number; doctorId: number | null },
-  resolvedDoctorId: number
-): Promise<number[]> => {
-  if (viewer.role === "receptionist") return getPracticeDoctorIds(resolvedDoctorId);
-  if (await isClinicOwnerDoctor(resolvedDoctorId)) return getPracticeDoctorIds(resolvedDoctorId);
-  return [resolvedDoctorId];
-});
+export const listDoctorIdsFor = cache(
+  async (
+    viewer: { role: string; id: number; doctorId: number | null },
+    resolvedDoctorId: number
+  ): Promise<number[]> => {
+    if (viewer.role === "receptionist") {
+      const assigned = await getReceptionistClinicIds(viewer.id);
+      return getDoctorIdsAtClinics(assigned);
+    }
+    if (await isClinicOwnerDoctor(resolvedDoctorId)) {
+      return getPracticeDoctorIds(resolvedDoctorId);
+    }
+    return [resolvedDoctorId];
+  }
+);
 
 /** Doctor profiles visible in a practice's booking dropdown. */
 export type PracticeDoctor = {
@@ -260,18 +296,18 @@ export async function ensureClinicOwner(clinicId: number, doctorId: number): Pro
 /**
  * Clinics a receptionist is assigned to operate (role model G4). An empty
  * result means "no assignment yet" → the receptionist sees no clinic data
- * (mirrors a manager with zero clinic_managers rows). Callers that need the
- * legacy practice-wide behavior pass `fallbackToPractice: true`, which
- * resolves the anchoring doctor's clinics — used only where the assignment
- * table hasn't been populated.
+ * (mirrors a manager with zero clinic_managers rows).
+ *
+ * There is deliberately no practice-wide fallback. The previous one was
+ * unreachable-by-design dead code: it queried `doctor_clinics` by the
+ * receptionist's own id (a user id, never a doctor id) so it could only ever
+ * return [], turning "no assignment" into a silent empty dashboard with no
+ * explanation. Ownership now comes from the assignment table or not at all.
  */
 export const getReceptionistClinicIds = cache(
-  async (
-    receptionistId: number,
-    opts: { fallbackToPractice?: boolean } = {}
-  ): Promise<number[]> => {
+  async (receptionistId: number): Promise<number[]> => {
     const rows = await db
-      .select({ clinicId: receptionistClinics.clinicId })
+      .selectDistinct({ clinicId: receptionistClinics.clinicId })
       .from(receptionistClinics)
       .where(
         and(
@@ -279,15 +315,6 @@ export const getReceptionistClinicIds = cache(
           eq(receptionistClinics.isActive, true)
         )
       );
-    if (rows.length > 0 || !opts.fallbackToPractice) {
-      return [...new Set(rows.map((r) => r.clinicId))];
-    }
-    // Legacy fallback: anchoring doctor's owned + joined clinics.
-    const anchorId = rows.length === 0 ? receptionistId : receptionistId;
-    const owned = await db
-      .select({ id: doctorClinics.id })
-      .from(doctorClinics)
-      .where(eq(doctorClinics.doctorId, anchorId));
-    return [...new Set(owned.map((c) => c.id))];
+    return rows.map((r) => r.clinicId);
   }
 );

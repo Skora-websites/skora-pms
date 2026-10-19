@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, getUserPermissions } from "@/lib/auth/user";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 
 import { audit } from "@/lib/security/audit-log";
@@ -237,7 +237,22 @@ export async function saveStaffPermissions(
     );
   if (!staff) return { error: "Staff member not found." };
 
-  const permissionIds = await parsePermissionInput(permissionNames);
+  let permissionIds = await parsePermissionInput(permissionNames);
+
+  // Privilege-escalation bound (audit F-05): the granted set must be a
+  // subset of what the GRANTOR themselves holds. Any catalog permission could
+  // previously be handed to a peer — a receptionist with roles-edit could
+  // mint themselves (via another account) a full super-admin set. Bounding
+  // happens after parsePermissionInput so the implied parent modules are
+  // checked too, and the self-targeting refusal above stays in force.
+  if (me && permissionIds.length > 0) {
+    const grantorPerms = await getUserPermissions(me.id);
+    const held = await db
+      .select({ id: permissions.id, name: permissions.name })
+      .from(permissions)
+      .where(inArray(permissions.id, permissionIds));
+    permissionIds = held.filter((row) => grantorPerms.has(row.name)).map((row) => row.id);
+  }
 
   // Replace permissions atomically — a crash between delete and insert would
   // leave the staff member with no direct permissions at all.

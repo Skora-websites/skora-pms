@@ -80,6 +80,14 @@ export async function updateAppointmentStatus(appointmentId: number, status: str
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
   revalidatePath("/admin/appointments");
+
+  // Status transitions are patient-facing lifecycle events on a clinical
+  // record; they were leaving no audit trail (FR-022).
+  void audit.appointmentUpdated(scope.callerId, {
+    appointmentId,
+    statusFrom: current.status,
+    statusTo: status,
+  });
 }
 
 // Billing lives in app/doctor/billing/actions.ts (the older duplicate here was
@@ -357,6 +365,17 @@ export async function saveConsultation(
 
   revalidatePath("/doctor");
   revalidatePath("/doctor/appointments");
+
+  // Clinical record writes MUST be auditable (audit finding FR-022): the
+  // consultation carries the patient's symptoms, diagnosis and medications,
+  // and it used to reach the database with no audit row at all — unlike the
+  // billing flow, which has always logged.
+  void audit.consultationSaved(user?.id ?? doctorId, {
+    appointmentId,
+    consultationId,
+    doctorId,
+  });
+
   return { error: null, consultationId };
 }
 
@@ -385,6 +404,13 @@ export async function updateFollowUpStatus(consultationId: number, status: strin
 
   revalidatePath("/doctor/follow-ups");
   revalidatePath("/admin/follow-ups");
+
+  // Follow-up status changes are clinical workflow events; unaudited before FR-022.
+  void audit.followUpStatusChanged(scope.callerId, {
+    consultationId,
+    from,
+    to: status,
+  });
 }
 
 // ── Support ──────────────────────────────────────────────────────────────

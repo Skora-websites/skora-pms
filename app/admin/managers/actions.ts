@@ -5,20 +5,36 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { clinicManagers, modelHasPermissions, permissions, users } from "@/lib/db/schema";
 import { requireAdminPermission } from "@/lib/auth/guard";
+import { ADMIN_ROUTE_PERMISSIONS, type AdminNavPerm } from "@/lib/auth/permissions";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
+import { hashPassword } from "@/lib/auth/password";
 
-const USER_MODEL = "App\\Models\User";
+const USER_MODEL = "App\\Models\\User";
 
 /**
- * Module perms an owner may delegate to a manager: the shared clinic-ops
- * modules ONLY. Owner-only modules (managers/clinics/business-settings) and
- * doctor-only extras are excluded by design — they can never be delegated
- * (lib/auth/permissions.ts invariant).
+ * Modules an owner may delegate to a clinic manager: every module except the
+ * three owner-only ones (`managers`, `clinics`, `business-settings`), which
+ * `hasAdminModuleAccess` enforces on `viewerRole` rather than on a permission.
  *
- * Not exported: "use server" files may only export async functions.
+ * Derived from the route map instead of restated, so a new `/admin` module
+ * becomes delegable the moment it appears in ADMIN_ROUTE_PERMISSIONS and the
+ * two lists can never drift. The previous hand-written list stopped at eight
+ * modules, so the owner-parity modules (`home-visit`, `chat`, `shop`,
+ * `support`, `consultations`, `online-consultations`) could never be granted —
+ * contradicting ADMIN_ROUTE_PERMISSIONS' own comment (audit M2).
  */
-const DELEGABLE_MANAGER_MODULES = [
+const DELEGABLE_MANAGER_MODULES: readonly AdminNavPerm[] = ADMIN_ROUTE_PERMISSIONS.filter(
+  (entry) => !entry.ownerOnly
+).map((entry) => entry.perm);
+
+/**
+ * Modules a brand-new manager starts with (role model D2: the clinic-ops core
+ * plus finance). Everything else stays opt-in through the permissions editor,
+ * so a new manager is useful on day one without inheriting the wider modules
+ * (chat, shop, consultations, clinic staff) they may not be meant to open.
+ */
+const DEFAULT_MANAGER_MODULES: readonly AdminNavPerm[] = [
   "dashboard",
   "schedule",
   "registrations",
@@ -27,7 +43,11 @@ const DELEGABLE_MANAGER_MODULES = [
   "income-expense",
   "test-booking",
   "billing",
-] as const;
+];
+
+/** `name -> true` membership index over DELEGABLE_MANAGER_MODULES. */
+const DELEGABLE_MODULE_INDEX: Record<string, true> = {};
+for (const name of DELEGABLE_MANAGER_MODULES) DELEGABLE_MODULE_INDEX[name] = true;
 
 /**
  * Readable module catalog for the editor: module rows plus their child
@@ -38,7 +58,7 @@ export async function getManagerModuleCatalog() {
   if (!guard) return [];
   const all = await db.select().from(permissions);
   const modules = all
-    .filter((p) => p.parentId === null && (DELEGABLE_MANAGER_MODULES as readonly string[]).includes(p.name))
+    .filter((p) => p.parentId === null && DELEGABLE_MODULE_INDEX[p.name] === true)
     .map((m) => ({
       id: m.id,
       name: m.name,
@@ -165,27 +185,46 @@ export async function createManager(
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
   if (existing) return { error: "A user with this email already exists." };
 
-  const { hashPassword } = await import("@/lib/auth/password");
-  const [created] = await db
-    .insert(users)
-    .values({
-      name,
-      email,
-      phone: phone || null,
-      password: await hashPassword(password),
-      role: "manager",
-      status: "active",
-      emailVerifiedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .$returningId();
-  const managerId = Number(created.id);
+  // Resolve the documented default set (clinic-ops core + finance) against the
+  // live catalog before opening the write, so an unknown module name can't
+  // abort a user insert with a dangling foreign key.
+  const defaults = DEFAULT_MANAGER_MODULES as readonly string[];
+  const defaultRows = defaults.length > 0
+    ? await db.select({ id: permissions.id }).from(permissions).where(inArray(permissions.name, defaults))
+    : [];
+
+  // User row + its default grants in one transaction: a crash in between would
+  // otherwise leave a grant-less manager, which requireAdminTier could only
+  // bounce to the public marketing site (audit L5).
+  const managerId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(users)
+      .values({
+        name,
+        email,
+        phone: phone || null,
+        password: await hashPassword(password),
+        role: "manager",
+        status: "active",
+        emailVerifiedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .$returningId();
+    const id = Number(created.id);
+    if (defaultRows.length > 0) {
+      await tx
+        .insert(modelHasPermissions)
+        .values(defaultRows.map((p) => ({ permissionId: p.id, modelType: USER_MODEL, modelId: id })));
+    }
+    return id;
+  });
 
   audit.settingsUpdated(guard.user.id, {
     action: "manager_created",
     managerId,
     email,
+    modules: defaultRows.length,
   });
 
   revalidatePath("/admin/managers");
@@ -238,16 +277,19 @@ export async function saveManagerPermissions(
   // Only delegable modules and their children may be granted — strip
   // anything else (owner-only/unknown names can never arrive legitimately).
   const all = await db.select().from(permissions);
-  const delegable = new Set<string>(DELEGABLE_MANAGER_MODULES);
+  const delegable = DELEGABLE_MODULE_INDEX;
   const childOfDelegable = new Set(
-    all.filter((p) => p.parentId !== null && delegable.has(all.find((m) => m.id === p.parentId)?.name ?? "")).map((p) => p.name)
+    all.filter((p) => p.parentId !== null && delegable[all.find((m) => m.id === p.parentId)?.name ?? ""] === true).map((p) => p.name)
   );
-  const allowed = new Set([...delegable, ...childOfDelegable]);
+  const allowed = new Set<string>([
+    ...DELEGABLE_MANAGER_MODULES.map((name) => name as string),
+    ...childOfDelegable,
+  ]);
   const names = new Set(selectedNames.filter((n) => allowed.has(n)));
 
   // Child implies module (same normalization as saveDoctorPermissions).
   for (const m of all) {
-    if (m.parentId === null && !delegable.has(m.name)) continue;
+    if (m.parentId === null && !delegable[m.name]) continue;
     if (m.parentId === null && names.size) {
       const children = all.filter((c) => c.parentId === m.id);
       if (children.some((c) => names.has(c.name))) names.add(m.name);

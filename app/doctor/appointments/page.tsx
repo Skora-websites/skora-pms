@@ -57,10 +57,12 @@ export default async function AppointmentsPage({
         action={
           <div className="flex items-center gap-2">
             <ExportAppointmentsButton status={params.status} />
-            <Link href="/doctor/appointments/book" className="btn-primary">
-              <CalendarPlus className="h-4 w-4" />
-              Book appointment
-            </Link>
+            {user.role !== "doctor" && (
+              <Link href="/doctor/appointments/book" className="btn-primary">
+                <CalendarPlus className="h-4 w-4" />
+                Book appointment
+              </Link>
+            )}
           </div>
         }
       />
@@ -106,7 +108,11 @@ export default async function AppointmentsPage({
           icon={CalendarDays}
           title="No appointments here"
           description="Try a different filter or book a new appointment."
-          action={{ href: "/doctor/appointments/book", label: "Book appointment" }}
+          action={
+            user.role === "doctor"
+              ? undefined
+              : { href: "/doctor/appointments/book", label: "Book appointment" }
+          }
         />
       ) : (
         <>

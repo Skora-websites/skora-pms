@@ -41,6 +41,7 @@ export type AuditAction =
   | "appointment_created"
   | "appointment_updated"
   | "appointment_cancelled"
+  | "consultation_saved"
   | "patient_created"
   | "patient_updated"
   | "patient_deleted"
@@ -71,21 +72,38 @@ export interface AuditLogEntry {
 /**
  * Persist an audit-log entry to the database.
  *
- * Errors are silently caught so audit-log failures never block the
- * caller's operation.
+ * Errors are logged and never re-thrown: callers use `void audit.x(...)`, so a
+ * throwing audit write would take down the operation it was recording. But the
+ * failure MUST be visible — this used to swallow everything ("Table may not
+ * exist yet"), which made a broken audit trail indistinguishable from a working
+ * one. That is how a false-pass verification slipped through: an audit helper
+ * called outside a request context wrote nothing and reported nothing.
+ *
+ * `getClientIp()` needs a request context, so it degrades independently: an
+ * unavailable IP yields `null` (the column is nullable) rather than losing the
+ * whole audit row.
  */
 export async function auditLog(entry: AuditLogEntry): Promise<void> {
+  let ipAddress: string | null = null;
   try {
-    const ip = await getClientIp();
+    ipAddress = await getClientIp();
+  } catch {
+    ipAddress = null;
+  }
+
+  try {
     await db.insert(schema.auditLogs).values({
       userId: entry.userId ?? null,
       action: entry.action,
-      ipAddress: ip,
+      ipAddress,
       metadata: entry.metadata ?? null,
       createdAt: new Date(),
     });
-  } catch {
-    // Table may not exist yet; silently ignore.
+  } catch (err) {
+    console.error(
+      `[audit] FAILED to write ${entry.action} for user ${entry.userId ?? "unknown"}:`,
+      err instanceof Error ? err.message : err
+    );
   }
 }
 
@@ -148,6 +166,18 @@ export const audit = {
 
   appointmentCancelled: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "appointment_cancelled", metadata }),
+
+  /**
+   * A consultation record was written (symptoms, diagnosis, medications,
+   * follow-up). Kept distinct from `appointment_updated`: this is the clinical
+   * record itself, and it carries the PHI that most needs an audit trail.
+   */
+  consultationSaved: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "consultation_saved", metadata }),
+
+  /** A consultation's follow-up status moved through the workflow. */
+  followUpStatusChanged: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "follow_up_status_changed", metadata }),
 
   fileUploaded: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "file_uploaded", metadata }),

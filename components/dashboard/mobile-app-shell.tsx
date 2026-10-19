@@ -7,6 +7,7 @@ import { Bell, Grid2x2, LogOut, UserRound, X } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 import { initials, cn } from "@/lib/utils";
 import { ICON_MAP, type NavItem } from "./sidebar";
+import { normalizeShell, notificationsPath, profilePath } from "@/lib/auth/shell-paths";
 
 /**
  * Mobile app shell (lg:hidden only).
@@ -33,9 +34,14 @@ export function MobileAppShell({
   const [profileOpen, setProfileOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
 
-  // Pick 4 primary tabs by priority, per role.
+  // Pick 4 primary tabs by priority, per shell.
   const primary = pickPrimary(navItems, user.role);
   const moreItems = navItems.filter((n) => !primary.some((p) => p.href === n.href));
+
+  // Links that must resolve inside the caller's own panel — see shell-paths.ts.
+  const shell = normalizeShell(user.role);
+  const notificationsHref = notificationsPath(shell);
+  const profileHref = profilePath(shell);
 
   const isActive = (href: string) =>
     pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -71,9 +77,9 @@ export function MobileAppShell({
         <div className="flex h-14 items-center gap-1.5 px-3">
           <span className="truncate font-display text-[15px] font-bold text-ink">{pageTitle}</span>
           <div className="ml-auto flex items-center gap-1">
-            {user.role !== "patient" && user.role !== "super_admin" && (
+            {notificationsHref && (
               <Link
-                href="/doctor/notifications"
+                href={notificationsHref}
                 aria-label="Notifications"
                 className="relative flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 active:bg-slate-100"
               >
@@ -123,13 +129,15 @@ export function MobileAppShell({
               </button>
             </div>
             <div className="mt-3 space-y-1">
-              <Link
-                href={user.role === "super_admin" ? "/super-admin/settings" : user.role === "patient" ? "/patient" : user.role === "receptionist" ? "/receptionist/profile" : "/doctor/profile"}
-                onClick={closeAll}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-50"
-              >
-                <UserRound className="h-4 w-4" /> Profile
-              </Link>
+              {profileHref && (
+                <Link
+                  href={profileHref}
+                  onClick={closeAll}
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-50"
+                >
+                  <UserRound className="h-4 w-4" /> Profile
+                </Link>
+              )}
               <form action={logoutAction}>
                 <button type="submit" className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 active:bg-red-50">
                   <LogOut className="h-4 w-4" /> Log out
@@ -218,14 +226,19 @@ export function MobileAppShell({
 
 /** Role-aware primary tabs (max 4) — the destinations used most on the go. */
 function pickPrimary(items: NavItem[], role: string): NavItem[] {
+  // Keys are the caller's SHELL, not the raw `user.role` string: the admin
+  // shell passes "Business Owner"/"Clinic Manager" and the super-admin shell
+  // passes "PMS Admin", so a role-keyed lookup fell through to the doctor
+  // default and produced tabs pointing at /doctor/* for owners (audit M10).
+  const shell = normalizeShell(role);
   const order: Record<string, string[]> = {
     doctor: ["/doctor", "/doctor/appointments", "/doctor/billing", "/doctor/patients"],
     receptionist: ["/receptionist", "/receptionist/appointments", "/receptionist/patients", "/receptionist/schedule"],
-    admin: ["/doctor", "/doctor/appointments", "/doctor/billing", "/doctor/patients"],
+    admin: ["/admin", "/admin/appointments", "/admin/billing", "/admin/patients"],
     patient: ["/patient", "/patient/appointments", "/patient/prescriptions", "/patient/find-doctor"],
     super_admin: ["/super-admin", "/super-admin/doctors", "/super-admin/users", "/super-admin/clinics"],
   };
-  const wanted = order[role] ?? order.doctor!;
+  const wanted = order[shell] ?? order.doctor!;
   const picked: NavItem[] = [];
   for (const href of wanted) {
     const found = items.find((i) => i.href === href);

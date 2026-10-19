@@ -275,6 +275,15 @@ export const getPatientById = cache(async (doctorId: number, patientId: number) 
   return { patient, appointments: appts, consultations: consults };
 });
 
+/**
+ * Storage path of a patient's photo, by patient id ONLY.
+ *
+ * Callers MUST enforce ownership first: this is unscoped by design because the
+ * page path resolves the patient through `getPatientById` (doctor-scoped) and
+ * the API path calls `ensurePatientOfDoctor` before this
+ * (app/api/doctor/patients/[id]/photo/route.ts). Do not call it directly with
+ * an id taken from a request.
+ */
 export const getPatientPhotoPath = cache(async (patientId: number) => {
   const [row] = await db
     .select({ profilePhotoPath: users.profilePhotoPath })
@@ -880,45 +889,66 @@ export const getHomeVisits = cache(async (doctorIds: number[]) => {
   }));
 });
 
-/** Full patient details + appointment history for the home-visits drawer (legacy `patientDetailshowing`). */
-export const getHomeVisitPatientDetail = cache(async (doctorId: number, patientId: number) => {
-  const [patient] = await db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      gender: users.gender,
-      dob: users.dob,
-      address: users.address,
-      streetAddress: users.streetAddress,
-      city: users.city,
-      state: users.state,
-      pincode: users.pincode,
-      registrationId: users.registrationId,
-      referredBy: users.referredBy,
-    })
-    .from(users)
-    .where(and(eq(users.id, patientId), eq(users.referenceRoleId, doctorId), eq(users.role, "patient")));
-  if (!patient) return null;
+/**
+ * Full patient details + appointment history for the home-visits drawer.
+ *
+ * `doctorIds` is the CALLER's read scope, not a practice anchor: every
+ * appointment row returned must belong to one of those doctors. It used to be
+ * a single `doctorId` that the appointment query ignored entirely (only
+ * `patient_id` was filtered), so any doctor admitted by the patient lookup saw
+ * every practice appointment for that patient — including peer doctors'
+ * free-text `note` (audit C1). Doctors pass strictly `[ownId]` (rule D4);
+ * staff tiers pass their practice set.
+ */
+export const getHomeVisitPatientDetail = cache(
+  async (doctorIds: number[], patientId: number) => {
+    if (doctorIds.length === 0) return null;
+    const [patient] = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        gender: users.gender,
+        dob: users.dob,
+        address: users.address,
+        streetAddress: users.streetAddress,
+        city: users.city,
+        state: users.state,
+        pincode: users.pincode,
+        registrationId: users.registrationId,
+        referredBy: users.referredBy,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(users.id, patientId),
+          inArray(users.referenceRoleId, doctorIds),
+          eq(users.role, "patient")
+        )
+      );
+    if (!patient) return null;
 
-  const apptRows = await db
-    .select({
-      id: appointments.id,
-      date: appointments.date,
-      time: appointments.time,
-      status: appointments.status,
-      caseType: appointments.caseType,
-      note: appointments.note,
-      doctorName: users.name,
-    })
-    .from(appointments)
-    .innerJoin(users, eq(users.id, appointments.doctorId))
-    .where(eq(appointments.patientId, patientId))
-    .orderBy(desc(appointments.date));
+    const apptRows = await db
+      .select({
+        id: appointments.id,
+        date: appointments.date,
+        time: appointments.time,
+        status: appointments.status,
+        caseType: appointments.caseType,
+        note: appointments.note,
+        doctorName: users.name,
+      })
+      .from(appointments)
+      .innerJoin(users, eq(users.id, appointments.doctorId))
+      .where(
+        and(eq(appointments.patientId, patientId), inArray(appointments.doctorId, doctorIds))
+      )
+      .orderBy(desc(appointments.date));
 
-  return { patient, appointments: apptRows };
-});
+    return { patient, appointments: apptRows };
+  }
+);
 
 // ── Shop / medicine inventory ───────────────────────────────────────────────
 

@@ -26,12 +26,6 @@ export async function GET(request: NextRequest) {
   );
   if (user instanceof Response) return user;
   const isAdminTier = user.role === "admin" || user.role === "manager";
-  // Admin tier: resolve the practice/business scope (in-scope doctor ids);
-  // doctor/receptionist keep the practice-anchor semantics.
-  const scopeDoctorIds = isAdminTier ? (await getBusinessScope()).doctorIds : null;
-  const resolvedDoctorId =
-    user.role === "receptionist" ? (user.doctorId ?? user.id) : isAdminTier ? (scopeDoctorIds?.[0] ?? user.id) : user.id;
-
   const { searchParams } = request.nextUrl;
   const date = searchParams.get("date") ?? "";
   const clinicIdRaw = searchParams.get("clinic_id");
@@ -42,15 +36,41 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
 
+  // Admin tier: resolve the practice/business scope (in-scope doctor ids);
+  // doctor/receptionist keep the practice-anchor semantics.
+  const scopeDoctorIds = isAdminTier ? (await getBusinessScope()).doctorIds : null;
+  // A manager/admin with zero clinics has no doctor to resolve. Falling back to
+  // `user.id` pointed at a USER id, not a doctor id, and silently reported
+  // "no booked times" — so staff offered already-taken slots. Surface the
+  // no-access state instead of inventing a doctor.
+  if (isAdminTier && (scopeDoctorIds?.length ?? 0) === 0 && !doctorIdRaw) {
+    return NextResponse.json(
+      { error: "No clinic is assigned to your account", booked_times: [], schedules: [] },
+      { status: 403 }
+    );
+  }
+  const resolvedDoctorId =
+    user.role === "receptionist"
+      ? (user.doctorId ?? user.id)
+      : isAdminTier
+        ? (scopeDoctorIds?.[0] ?? 0)
+        : user.id;
+
   let doctorId = resolvedDoctorId;
   if (doctorIdRaw) {
     const requested = Number(doctorIdRaw);
     if (!Number.isInteger(requested) || requested <= 0) {
       return NextResponse.json({ error: "Invalid doctor_id" }, { status: 400 });
     }
+    // Rule D4: a doctor may only ever ask about their own slots — probing a
+    // peer through the practice set is a cross-doctor leak. Receptionists
+    // (front desk for the practice) and the admin tier keep their wider,
+    // explicitly-scoped membership.
     const inScope = isAdminTier
       ? (scopeDoctorIds?.includes(requested) ?? false)
-      : requested === resolvedDoctorId || (await isPracticeDoctor(resolvedDoctorId, requested));
+      : user.role === "doctor"
+        ? requested === user.id
+        : requested === resolvedDoctorId || (await isPracticeDoctor(resolvedDoctorId, requested));
     if (!inScope) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

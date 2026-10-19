@@ -98,6 +98,7 @@ export default async function AdminAppointmentsPage({
                         status={a.status}
                         consentFile={a.consentFile}
                         editBaseHref="/admin/appointments"
+                        consultBaseHref="/admin/consultations"
                       />
                     </td>
                   </tr>

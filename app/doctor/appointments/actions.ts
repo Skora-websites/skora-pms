@@ -130,23 +130,42 @@ async function resolveTargetDoctor(
 }
 
 /**
+ * Result of clinic resolution. `rejected` carries the reason the caller must
+ * surface — it used to be `null`, which both call sites passed straight into
+ * `getSchedulesForDay` and then wrote an appointment with `clinic_id = NULL`
+ * (nine such rows existed in the live database).
+ */
+type ClinicResolution =
+  | { ok: true; clinicId: number | null }
+  | { ok: false; error: string };
+
+/**
  * Effective clinic for the appointment: chosen clinic if accessible, else —
  * when booking on behalf of another practice doctor — a clinic SHARED by the
  * caller's practice and the target doctor (so the booking lands at the clinic
  * the receptionist's practice actually knows, not the target's unrelated own
  * clinic), else the target's first active clinic.
  */
-async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, callerScope: ActionScope) {
+async function resolveClinic(
+  effectiveDoctorId: number,
+  clinicIdRaw: string,
+  callerScope: ActionScope
+): Promise<ClinicResolution> {
   const clinicId = Number(clinicIdRaw);
   if (clinicId && Number.isInteger(clinicId) && (await ensureClinicAccess(clinicId, effectiveDoctorId))) {
     // Receptionist tier: the clinic must also be one the receptionist is
     // assigned to operate (role model G4) — a per-clinic front desk can't
     // book at a clinic outside their assignment.
     if (callerScope.callerRole === "receptionist") {
-      const assigned = await getReceptionistClinicIds(callerScope.callerId, { fallbackToPractice: true });
-      if (!assigned.includes(clinicId)) return null;
+      const assigned = await getReceptionistClinicIds(callerScope.callerId);
+      if (assigned.length === 0) {
+        return { ok: false, error: "No clinic is assigned to this account. Ask the business owner to assign one." };
+      }
+      if (!assigned.includes(clinicId)) {
+        return { ok: false, error: "The selected clinic is not assigned to this account." };
+      }
     }
-    return clinicId;
+    return { ok: true, clinicId };
   }
   const targetClinics = await getActiveClinics(effectiveDoctorId);
   if (effectiveDoctorId !== callerScope.anchorDoctorId) {
@@ -156,9 +175,9 @@ async function resolveClinic(effectiveDoctorId: number, clinicIdRaw: string, cal
       await Promise.all(callerScope.doctorIds.map((id) => getClinicsOfDoctor(id)))
     ).flat();
     const shared = targetClinics.find((c) => callerClinics.includes(c.id));
-    if (shared) return shared.id;
+    if (shared) return { ok: true, clinicId: shared.id };
   }
-  return targetClinics[0]?.id ?? null;
+  return { ok: true, clinicId: targetClinics[0]?.id ?? null };
 }
 
 /** Does the time fall inside the schedule (handles overnight ranges)? */
@@ -204,6 +223,13 @@ export async function createAppointment(
 ): Promise<AppointmentActionResult> {
   const scope = await requireWriteScope("appointments-create");
   if (!scope) return { error: "You don't have permission to book appointments." };
+  // Doctors must never create appointments (product boundary): receptionists,
+  // managers and owners book on their behalf. The permission grant was
+  // revoked for the Doctor role, but this re-check keeps the rule enforced
+  // for any account still holding it via direct grants or a custom role.
+  if (scope.callerRole === "doctor") {
+    return { error: "Doctors cannot book appointments. Ask reception to schedule it." };
+  }
   const now = new Date();
 
   // Staff tiers may book for any in-scope doctor; doctors book for self.
@@ -299,7 +325,9 @@ export async function createAppointment(
 
   // ── Schedule containment (mirrors legacy store) — per SELECTED doctor ──
   const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
-  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
+  const clinicResolution = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
+  if (!clinicResolution.ok) return { error: clinicResolution.error };
+  const clinicId = clinicResolution.clinicId;
   const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));
@@ -562,7 +590,9 @@ export async function updateAppointment(
 
   // ── Schedule containment — per (possibly reassigned) doctor ──
   const requestedClinicId = String(formData.get("clinic_id") ?? "").trim();
-  const clinicId = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
+  const clinicResolution = await resolveClinic(effectiveDoctorId, requestedClinicId, scope);
+  if (!clinicResolution.ok) return { error: clinicResolution.error };
+  const clinicId = clinicResolution.clinicId;
   const { clinics, schedules } = await getSchedulesForDay(effectiveDoctorId, date, clinicId);
   if (clinics.length > 0 && schedules.length > 0) {
     const matching = schedules.find((s) => timeInSchedule(tMin, s));

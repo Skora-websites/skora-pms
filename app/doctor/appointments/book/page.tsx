@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/guard";
 import { getDoctorPatients, resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { getPracticeDoctors } from "@/lib/queries/clinic";
@@ -13,6 +14,10 @@ export default async function BookAppointmentPage({
   searchParams: Promise<{ patient?: string }>;
 }) {
   const user = await requireRole(["doctor", "receptionist"]);
+  // Booking is a staff-tier flow: doctors never create appointments. The
+  // /doctor/* path space is shared with /receptionist/* (proxy rewrite),
+  // so bounce only the doctor role and leave receptionists on the page.
+  if (user.role === "doctor") redirect("/doctor/appointments");
   // Patients are registered under the practice owner (referenceRoleId),
   // which resolvePracticeDoctorId already maps staff users to.
   const doctorId = resolvePracticeDoctorId(user);

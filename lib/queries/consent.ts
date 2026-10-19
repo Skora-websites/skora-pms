@@ -2,6 +2,7 @@ import { cache } from "react";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointmentConsultConsents, users, appointments } from "@/lib/db/schema";
+import { CONSENT_TTL_MS } from "@/lib/files/consent-upload";
 
 export type ConsentDetails = {
   slug: string;
@@ -25,6 +26,7 @@ export const getConsentBySlug = cache(async (slug: string): Promise<ConsentDetai
       isAccepted: appointmentConsultConsents.isAccepted,
       isRejected: appointmentConsultConsents.isRejected,
       consentFile: appointmentConsultConsents.consentFile,
+      createdAt: appointmentConsultConsents.createdAt,
       doctorId: appointmentConsultConsents.doctorId,
       patientId: appointmentConsultConsents.patientId,
       appointmentId: appointmentConsultConsents.appointmentId,
@@ -38,6 +40,17 @@ export const getConsentBySlug = cache(async (slug: string): Promise<ConsentDetai
   // responded, so neither the names nor the appointment details may be
   // exposed again. Mirrors the read policy in the consent-file route.
   if (consent.isAccepted || consent.isRejected) return null;
+
+  // Retention window: a link (and its names/details) dies on the same schedule
+  // the answer window and the file download use. The three paths share
+  // CONSENT_TTL_MS so they cannot drift (audit M5 / FR-019) — an out-of-window
+  // slug is indistinguishable from a non-existent one.
+  if (
+    consent.createdAt &&
+    Date.now() - new Date(consent.createdAt).getTime() > CONSENT_TTL_MS
+  ) {
+    return null;
+  }
 
   const [doctor] = await db
     .select({ name: users.name, qualification: users.qualification })

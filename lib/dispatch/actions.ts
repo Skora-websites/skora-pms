@@ -70,7 +70,11 @@ async function requirePatient() {
 async function requireDoctor() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist"].includes(user.role)) redirect("/doctor");
+  // Doctor tier only (audit H12). Receptionists previously passed here and
+  // were then resolved to the practice OWNER's doctor id, which let a
+  // front-desk account accept the owner's emergency case and read the
+  // patient's PHI through the dispatch panel.
+  if (user.role !== "doctor") redirect("/doctor");
   return user;
 }
 

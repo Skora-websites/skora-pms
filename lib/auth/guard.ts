@@ -101,8 +101,9 @@ export async function requireAdminTier(pathname?: string) {
       const target = firstPermittedAdminPath(perms, viewerRole);
       // Avoid a redirect loop when the fallback is the page itself (a manager
       // with zero modules landing on /admin) — same escape as the doctor
-      // layout: bounce to the public site instead of looping forever.
-      redirect(target === pathname ? "/" : target);
+      // layout, but land on an ADMIN-scoped explanation instead of the public
+      // marketing site, which told the manager nothing (audit L5).
+      redirect(target === pathname ? "/admin/no-access" : target);
     }
   }
 

@@ -94,8 +94,19 @@ async function resolveManagerScope(managerId: number): Promise<BusinessScope> {
     return { viewerRole: "manager", businessIds: [], clinicIds: [], doctorIds: [] };
   }
 
-  const businessIds = [...new Set(assignmentRows.map((r) => r.businessId))];
-  const clinicIds = [...new Set(assignmentRows.map((r) => r.clinicId))];
+  // A deactivated clinic must not keep feeding its doctors into the manager's
+  // scope: only clinics that are still active count (audit M4).
+  const activeClinicRows = await db
+    .select({ id: doctorClinics.id, businessId: businessClinics.businessId })
+    .from(doctorClinics)
+    .innerJoin(businessClinics, eq(businessClinics.clinicId, doctorClinics.id))
+    .where(and(inArray(doctorClinics.id, assignmentRows.map((r) => r.clinicId)), eq(doctorClinics.isActive, true)));
+  if (activeClinicRows.length === 0) {
+    return { viewerRole: "manager", businessIds: [], clinicIds: [], doctorIds: [] };
+  }
+
+  const businessIds = [...new Set(activeClinicRows.map((r) => r.businessId))];
+  const clinicIds = [...new Set(activeClinicRows.map((r) => r.id))];
   const doctorIds = await doctorIdsForClinics(clinicIds);
   return { viewerRole: "manager", businessIds, clinicIds, doctorIds };
 }
@@ -106,7 +117,7 @@ async function resolveManagerScope(managerId: number): Promise<BusinessScope> {
  * itself — the owner keeps a member row via migration 0004, but guard
  * against legacy gaps by unioning the owner id).
  */
-async function doctorIdsForClinics(clinicIds: number[]): Promise<number[]> {
+export async function doctorIdsForClinics(clinicIds: number[]): Promise<number[]> {
   if (clinicIds.length === 0) return [];
 
   const [memberRows, ownerRows] = await Promise.all([

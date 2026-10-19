@@ -6,11 +6,15 @@ import { users, doctorClinics } from "@/lib/db/schema";
 export const SOS_TTL_MIN = 5;
 
 /**
- * The dispatch-owning doctor for a staff member: receptionists act on
- * behalf of their linked doctor; everyone else acts as themselves.
+ * The doctor a dispatch action acts as.
+ *
+ * Always the acting user's own id. Receptionists are NOT resolved to their
+ * linked practice owner (audit H12): doing so let a front-desk account act as
+ * the owner on emergency cases and read the patient's PHI. Receptionists are
+ * refused by the action's tier guard before this is ever reached.
  */
 export function resolveDoctorId(user: { role: string; id: number; doctorId?: number | null }): number {
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  return user.id;
 }
 
 /** Privacy-first masking until a doctor accepts: show initials only. */

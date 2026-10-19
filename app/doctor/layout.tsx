@@ -1,11 +1,9 @@
 import { requireRole } from "@/lib/auth/guard";
 import { getUserPermissions } from "@/lib/auth/user";
 import {
-  DOCTOR_ONLY_PATHS,
   doctorPathToReceptionist,
-  firstPermittedDoctorPath,
-  hasDoctorModuleAccess,
   receptionistPathToDoctor,
+  resolveDoctorPanelRedirect,
 } from "@/lib/auth/permissions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DoctorPermissionGate } from "@/components/doctor/permission-gate";
@@ -46,23 +44,17 @@ export default async function DoctorLayout({
   }
 
   // Server-side page guard: redirect before the page component runs, so a
-  // restricted URL never executes its data queries or renders. The client
-  // <DoctorPermissionGate> mirrors this for client-side navigation.
-  // Doctor-only modules: bounce receptionists off them first (regardless of
-  // module permissions) — Emergency dispatch and the Consultation features
-  // (consultation records + online consultations) belong to the doctor, not
-  // the front desk.
+  // restricted URL never executes its data queries or renders. The boundary
+  // rule is shared with the client <DoctorPermissionGate> via
+  // resolveDoctorPanelRedirect, so the two cannot drift (audit M7).
   const isReceptionistPanel = user.role === "receptionist";
-  if (isReceptionistPanel && DOCTOR_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    redirect("/receptionist");
-  }
-  if (!hasDoctorModuleAccess(perms, pathname)) {
-    const target = firstPermittedDoctorPath(perms);
+  const redirected = resolveDoctorPanelRedirect(pathname, isReceptionistPanel, perms);
+  if (redirected !== null) {
     // Receptionists speak /receptionist/*; keep everyone on their own prefix.
-    const friendly = user.role === "receptionist" ? doctorPathToReceptionist(target) : target;
+    const friendly = isReceptionistPanel ? doctorPathToReceptionist(redirected) : redirected;
     // Avoid a redirect loop when the fallback is the page itself (e.g. a
     // user with no permissions landing on /doctor).
-    redirect(target === pathname ? (user.role === "receptionist" ? "/receptionist" : "/") : friendly);
+    redirect(redirected === pathname ? (isReceptionistPanel ? "/receptionist" : "/") : friendly);
   }
 
   // Shared route→permission map (lib/auth/permissions.ts) — the same map the
@@ -126,7 +118,7 @@ export default async function DoctorLayout({
       footerLabel="View public site"
       searchHref="/doctor/patients"
       promo
-      dutyMode={dutyModeOf(user.clinicOnDuty, user.homeVisitOnDuty)}
+      dutyMode={dutyModeOf(user.onDuty)}
     >
       <DoctorPermissionGate perms={[...perms]} isReceptionist={isReceptionistPanel} />
       {children}

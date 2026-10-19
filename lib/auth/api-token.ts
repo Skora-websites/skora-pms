@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { and, eq, isNull, or, gt } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { personalAccessTokens, users } from "@/lib/db/schema";
 
@@ -46,12 +46,30 @@ function extractBearer(header: string | null): string | null {
 }
 
 /**
- * Resolve the user behind an `Authorization: Bearer <token>` header.
- * Returns null for missing/invalid/expired tokens or deactivated accounts.
+ * Outcome of presenting a bearer token.
+ *
+ * `authenticated` — a live token for an active account (the holder follows).
+ * `deactivated`   — the token itself is valid but its owner account is gone
+ *                   or deactivated: a refusal (403), NOT an authentication
+ *                   failure (401).
+ * `unauthenticated` — no token, a malformed header, an unknown/expired token,
+ *                   or a hash mismatch: 401.
+ *
+ * The endpoint's docstring has always promised this split; collapsing both
+ * failure modes into `null` made every refusal a 401 (audit FR-018).
  */
-export async function getUserByApiTokenHeader(header: string | null): Promise<ApiTokenUser | null> {
+export type ApiTokenResolution =
+  | { kind: "authenticated"; user: ApiTokenUser }
+  | { kind: "deactivated" }
+  | { kind: "unauthenticated" };
+
+/**
+ * Resolve the account behind an `Authorization: Bearer <token>` header.
+ * Never throws for a bad token — the outcome distinguishes the failure modes.
+ */
+export async function resolveApiTokenHeader(header: string | null): Promise<ApiTokenResolution> {
   const plaintext = extractBearer(header);
-  if (!plaintext) return null;
+  if (!plaintext) return { kind: "unauthenticated" };
 
   const hashed = hashApiToken(plaintext);
   const [token] = await db
@@ -67,10 +85,10 @@ export async function getUserByApiTokenHeader(header: string | null): Promise<Ap
       )
     )
     .limit(1);
-  if (!token) return null;
+  if (!token) return { kind: "unauthenticated" };
 
   // Defense-in-depth: constant-time compare even though the WHERE matched.
-  if (!hashesMatch(token.token, hashed)) return null;
+  if (!hashesMatch(token.token, hashed)) return { kind: "unauthenticated" };
 
   const [user] = await db
     .select({ id: users.id, name: users.name, email: users.email, role: users.role, status: users.status })
@@ -78,9 +96,10 @@ export async function getUserByApiTokenHeader(header: string | null): Promise<Ap
     .where(eq(users.id, token.tokenableId))
     .limit(1);
   // Deactivated accounts lose API access immediately (same rule as sessions).
-  if (!user || (user.status && user.status !== "active")) return null;
+  // A missing row is the same case: the account behind a valid token is gone.
+  if (!user || (user.status && user.status !== "active")) return { kind: "deactivated" };
 
-  return user;
+  return { kind: "authenticated", user };
 }
 
 /** Record token usage (mirrors Sanctum's last_used_at bookkeeping). Fire-and-forget. */
@@ -92,3 +111,20 @@ export async function touchApiToken(header: string | null): Promise<void> {
     .set({ lastUsedAt: new Date() })
     .where(eq(personalAccessTokens.token, hashApiToken(plaintext)));
 }
+
+/**
+ * Tiers allowed to read the clinic directory at all.
+ *
+ * Tokens are per-user, so the holder's ROLE is the first tenancy gate: a
+ * patient token qualifies as far as authentication is concerned but must not
+ * enumerate practitioners — names, emails, phones and registration numbers
+ * included (audit H4 / FR-017).
+ */
+export const API_STAFF_TIERS: readonly string[] = ["admin", "manager", "doctor"];
+
+/**
+ * Doctor ids an integration caller may see, derived from the holder's own
+ * scope, lives in `./integration-scope` (it imports `lib/queries/clinic`, and
+ * the token-auth module stays free of tenancy queries).
+ */
+

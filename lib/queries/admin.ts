@@ -501,12 +501,38 @@ export const getVendorBookingParties = cache(
 
 // ── Manager administration ──────────────────────────────────────────
 
-/** Every manager-role user (candidates for clinic assignment). */
-export const listManagerUsers = cache(async () => {
+/**
+ * Manager-role users the CALLER may see in the assignment picker: those
+ * assigned to one of the caller's clinics, PLUS managers with no assignment
+ * at all. Unassigned managers MUST appear or the assignment form cannot
+ * offer them — a newly created manager would otherwise be invisible and
+ * permanently un-assignable (found during the 2026-10-20 clean-slate retest).
+ *
+ * Replaces the unscoped `listManagerUsers`, which returned every manager on
+ * the platform and left every future caller of it inheriting that leak
+ * (audit M6). Managers assigned to ANOTHER business stay excluded.
+ */
+export const listManagerUsersInScope = cache(async (clinicIds: number[]) => {
+  if (clinicIds.length === 0) return [];
+
+  const [assignedIds, allManagerIds] = await Promise.all([
+    db
+      .selectDistinct({ userId: clinicManagers.userId })
+      .from(clinicManagers)
+      .where(and(inArray(clinicManagers.clinicId, clinicIds), eq(clinicManagers.isActive, true))),
+    db.selectDistinct({ id: users.id }).from(users).where(eq(users.role, "manager")),
+  ]);
+
+  const visible = assignedIds.map((r) => r.userId);
+  const allManagers = allManagerIds.map((r) => r.id);
+  const unassigned = allManagers.filter((id) => !assignedIds.some((a) => a.userId === id));
+  const ids = [...new Set([...visible, ...unassigned])];
+
+  if (ids.length === 0) return [];
   return db
     .select({ id: users.id, name: users.name, email: users.email })
     .from(users)
-    .where(eq(users.role, "manager"))
+    .where(inArray(users.id, ids))
     .orderBy(asc(users.name));
 });
 

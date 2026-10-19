@@ -5,6 +5,7 @@ import { listAllBusinesses } from "@/lib/queries/admin";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 import { BusinessRowActions } from "./businesses-table";
+import { CreateOwnerForm } from "./create-owner-form";
 
 export const metadata: Metadata = { title: "Businesses · Super Admin" };
 
@@ -20,11 +21,15 @@ export default async function SuperAdminBusinessesPage() {
         subtitle="Organizations owned by business admins — deactivating a business hides its owner's admin views"
       />
 
+      <div className="mb-8">
+        <CreateOwnerForm />
+      </div>
+
       {rows.length === 0 ? (
         <EmptyState
           icon={Building2}
           title="No businesses registered"
-          description="Businesses appear here when business admins are onboarded."
+          description="Use the form above to onboard a business owner and their first clinic."
         />
       ) : (
         <div className="table-shell">

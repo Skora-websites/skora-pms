@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getUserByApiTokenHeader, touchApiToken } from "@/lib/auth/api-token";
+import { API_STAFF_TIERS, resolveApiTokenHeader, touchApiToken } from "@/lib/auth/api-token";
+import { resolveVisibleDoctorIds } from "@/lib/auth/integration-scope";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { getClientIp } from "@/lib/security/ip";
 
@@ -26,8 +27,11 @@ export const runtime = "nodejs";
  *   ]
  * }
  *
- * Errors: 401 invalid/missing token · 403 deactivated account · 429 rate limited
- * Only active doctors are listed; no patient or clinical data is exposed.
+ * Errors: 401 invalid/missing token · 403 non-staff tier or deactivated
+ *         account · 404 unknown doctor id · 429 rate limited
+ * Only active doctors are listed; no patient or clinical data is exposed, and
+ * only those inside the token holder's own scope (their business, their
+ * assigned clinics, or their practice) — never every tenant.
  */
 
 // Shule polls this endpoint — keep the limit generous but bounded.
@@ -48,17 +52,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const user = await getUserByApiTokenHeader(authHeader);
-  if (!user) {
+  // A valid token whose owner account is gone/deactivated is a refusal (403),
+  // not an authentication failure (401) — the documented contract (FR-018).
+  const resolution = await resolveApiTokenHeader(authHeader);
+  if (resolution.kind === "deactivated") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (resolution.kind !== "authenticated") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const user = resolution.user;
+
+  // Tokens are per-user, so the holder's tier is the second gate: only staff
+  // operate a clinic directory. A patient token must not enumerate
+  // practitioners — names, emails, phones and registration numbers included
+  // (audit H4 / FR-017).
+  if (!API_STAFF_TIERS.includes(user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   void touchApiToken(authHeader);
+
+  const visibleDoctorIds = await resolveVisibleDoctorIds(user);
 
   const { searchParams } = request.nextUrl;
   const search = searchParams.get("search")?.trim() ?? "";
   const idRaw = searchParams.get("id")?.trim() ?? "";
 
   const conds = [eq(users.role, "doctor"), eq(users.status, "active")];
+  // The tenant filter. There is no business_id on `users`, so the holder's
+  // scope resolves to concrete doctor ids first and is applied here: an empty
+  // scope matches NOTHING, never silently falling back to the global table.
+  conds.push(visibleDoctorIds.length > 0 ? inArray(users.id, visibleDoctorIds) : sql`false`);
+
   if (/^\d+$/.test(idRaw)) {
     conds.push(eq(users.id, Number(idRaw)));
   } else if (search) {
@@ -81,6 +106,15 @@ export async function GET(request: NextRequest) {
     .where(and(...conds))
     .orderBy(asc(users.name))
     .limit(200);
+
+  // An explicit ?id= that resolved to nothing inside the caller's scope is
+  // reported as "not found" rather than an empty list — the caller asked about
+  // one doctor, and reporting absence both inside and outside the tenant
+  // would confirm which ids exist elsewhere (audit edge case: ?id= for a
+  // doctor outside the caller's tenant).
+  if (rows.length === 0 && /^\d+$/.test(idRaw)) {
+    return NextResponse.json({ error: "Doctor not found" }, { status: 404 });
+  }
 
   return NextResponse.json(
     {

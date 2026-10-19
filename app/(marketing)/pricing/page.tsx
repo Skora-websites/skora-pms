@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { Check } from "lucide-react";
 import { PageHeader } from "@/components/marketing/page-header";
-import { Pricing } from "@/components/marketing/pricing";
+import { PricingWithCheckout } from "./checkout-resolver";
 import { getLandingData } from "@/lib/queries/landing";
-import { getCurrentUser } from "@/lib/auth/user";
-import { isRazorpayConfigured } from "@/lib/packages/razorpay";
-import { PACKAGE_PLANS } from "@/lib/packages/config";
 
 export const metadata: Metadata = { title: "Pricing" };
 
@@ -14,19 +11,6 @@ export const dynamic = "force-dynamic";
 export default async function PricingPage() {
   const data = await getLandingData();
   const pricing = data.get("pricing");
-  // Doctors see live checkout buttons on the pricing cards (Razorpay); every
-  // other visitor keeps the marketing links — same rule as the landing page.
-  const user = await getCurrentUser();
-  const checkoutPlans =
-    user?.role === "doctor" && isRazorpayConfigured()
-      ? PACKAGE_PLANS.map((p) => ({
-          title: p.name,
-          packageId: p.id,
-          buyerName: user.name,
-          buyerEmail: user.email,
-          buyerPhone: user.phone,
-        }))
-      : undefined;
 
   return (
     <>
@@ -39,7 +23,7 @@ export default async function PricingPage() {
       <section className="py-20">
         <div className="mx-auto max-w-7xl px-5 lg:px-8">
           {pricing ? (
-            <Pricing items={pricing.items} checkoutPlans={checkoutPlans} />
+            <PricingWithCheckout items={pricing.items} />
           ) : (
             <p className="text-center text-ink-muted">
               Plans are being updated — please check back shortly or{" "}

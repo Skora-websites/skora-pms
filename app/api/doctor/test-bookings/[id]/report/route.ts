@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
@@ -27,9 +28,22 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   // Module permission matches the /doctor/test-bookings page (audit F-01).
-  const user = await requireApiPermission(["doctor", "receptionist"], "test-booking");
+  // The admin tier (owner/manager) shares that page's UI, so it must be able
+  // to download its own business's reports — it previously got a hard 403.
+  const user = await requireApiPermission(
+    ["doctor", "receptionist", "admin", "manager"],
+    "test-booking"
+  );
   if (user instanceof Response) return user;
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+
+  // Row-level scope: staff act as one doctor; the admin tier acts across the
+  // doctors of the businesses it owns/is assigned to.
+  const doctorIds =
+    user.role === "receptionist"
+      ? [user.doctorId ?? user.id]
+      : user.role === "doctor"
+        ? [user.id]
+        : (await getBusinessScope()).doctorIds;
 
   const { id } = await params;
   const bookingId = Number(id);
@@ -38,10 +52,9 @@ export async function GET(
   const [booking] = await db
     .select({ uploadedFilePath: testBookings.uploadedFilePath, doctorId: testBookings.doctorId })
     .from(testBookings)
-    .where(eq(testBookings.id, bookingId));
+    .where(and(eq(testBookings.id, bookingId), inArray(testBookings.doctorId, doctorIds)));
 
   if (!booking?.uploadedFilePath) return new Response("Not found", { status: 404 });
-  if (booking.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
 
   const ext = path.extname(booking.uploadedFilePath).toLowerCase();
   const contentType = CONTENT_TYPES[ext];

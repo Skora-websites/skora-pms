@@ -1,11 +1,31 @@
 /**
- * Seeds the SkoraCares database with:
- *  - Spatie-compatible roles & permissions
- *  - Demo users (admin / doctor / patient / receptionist)
- *  - Master data (symptoms, examinations, diagnoses, lab tests, medicines)
- *  - Landing page CMS content (mirrors LandingPageSeeder)
- *  - Company settings, chat room, blog category + posts
- *  - Realistic demo records for the doctor dashboard
+ * Minimal environment seeder — reference data + one operator account.
+ *
+ * Seeds ONLY:
+ *  - Permission catalog + role grants. Signup, staff creation and every login
+ *    resolve roles/permissions BY NAME (lib/auth, app/(auth)/signup), so an
+ *    empty catalog silently locks all module access.
+ *  - Company settings (id 1) — read by every page via lib/queries/admin.
+ *  - Starter master catalogs (symptoms / examinations / diagnoses / lab tests /
+ *    medicines) — owned by the super-admin masters CRUD, seeded empty-friendly
+ *    but a few rows make fresh installs usable.
+ *  - Landing page CMS — the marketing homepage, pricing and doctor FAQ are all
+ *    DB-driven (lib/queries/landing.ts); without rows the homepage is blank.
+ *  - ONE super-admin operator account, configured through the environment:
+ *      SEED_ADMIN_EMAIL  (required)
+ *      SEED_PASSWORD     (required, min 8 chars)
+ *
+ * Deliberately NOT seeded: demo users, demo patients, demo appointments,
+ * consultations, bills, transactions, chat rooms/messages, blog fixtures,
+ * demo clinics/schedules/businesses. Demo records belong to a test
+ * environment, never to this script.
+ *
+ * Idempotency: run once against a fresh database (after migrations). The
+ * operator account is checked first — an existing account is reported and
+ * left untouched, never deleted (a colliding real account must not be
+ * destroyed). Reference rows (permissions, roles, catalogs, CMS) are inserted
+ * unconditionally: re-running against an already-seeded DB fails on unique
+ * keys — reset the database and re-run instead.
  *
  * Run with: npx tsx scripts/seed.ts
  */
@@ -22,51 +42,24 @@ import {
   permissions,
   modelHasRoles,
   roleHasPermissions,
-  modelHasPermissions,
-  businesses,
-  businessClinics,
-  clinicManagers,
-  clinicDoctors,
-  landingSections,
-  landingItems,
+  companySettings,
   symptoms,
   examinations,
   diagnoses,
   labTests,
   medicines,
-  companySettings,
-  chatRooms,
-  messages,
-  categories,
-  blogs,
-  appointments,
-  consultations,
-  consultationMedications,
-  doctorClinics,
-  doctorSchedules,
-  billingTypes,
-  billings,
-  transactions,
-  incomeTypes,
-  expenseTypes,
-  vendors,
-  tests,
-  receptionistClinics,
+  landingSections,
+  landingItems,
 } from "../lib/db/schema";
 import { hashPassword } from "../lib/auth/password";
 import { eq, inArray } from "drizzle-orm";
 
 const now = () => new Date();
-const daysFromNow = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d;
-};
 
 async function main() {
   const connection = mysql.createPool({ uri: process.env.DATABASE_URL, connectionLimit: 5 });
   const db = drizzle(connection, { schema, mode: "default" });
-  console.log("🌱 Seeding SkoraCares…");
+  console.log("🌱 Seeding SkoraCares (reference data + operator account)…");
 
   // ── Roles & Permissions ────────────────────────────────────────────────
   const modules: Record<string, string[]> = {
@@ -88,6 +81,10 @@ async function main() {
     ],
     appointments: [
       "appointments-list",
+      // The doctor role carries this and drizzle/0019 revokes it from that
+      // role (product boundary: doctors treat, reception books). The row must
+      // still exist in the catalog — the doctor-role template below validates
+      // for it, and the revoke is a role grant, not a catalog entry.
       "appointments-create",
       "appointments-edit",
       "appointments-delete",
@@ -109,6 +106,11 @@ async function main() {
     chat: ["chat-view", "chat-send", "chat-delete"],
     shop: ["shop-view"],
     "follow-up": ["follow-up-list", "follow-up-status-update"],
+    // Owner-parity modules gated by ADMIN_ROUTE_PERMISSIONS — the names MUST
+    // exist in the catalogue or the routes are only reachable via the owner
+    // role bypass (enforced by `npm run check:permissions`).
+    consultations: ["consultations-view", "consultations-create", "consultations-edit", "consultations-delete"],
+    "online-consultations": ["online-consultations-view", "online-consultations-create", "online-consultations-edit", "online-consultations-delete"],
     "roles-permissions": [
       "roles-permissions-view",
       "roles-create",
@@ -120,248 +122,129 @@ async function main() {
     ],
   };
 
+  // Idempotent by NAME: a fresh database gets the full catalogue, while an
+  // existing one (or one already migrated by drizzle/0020_permission_rows.sql,
+  // which adds consultations/online-consultations) must not collide on the
+  // (name, guard_name) unique index. Skip anything already present and reuse
+  // its id so role grants still resolve.
+  const existing = await db.select().from(permissions);
+  const idByName = new Map(existing.map((p) => [p.name, p.id]));
+
   const allPermissions: number[] = [];
   for (const [moduleName, subs] of Object.entries(modules)) {
-    const [parent] = await db
-      .insert(permissions)
-      .values({ name: moduleName, guardName: "web", createdAt: now(), updatedAt: now() });
-    const parentId = Number(parent.insertId);
-    allPermissions.push(parentId);
-    for (const sub of subs) {
-      const [r] = await db
+    let parentId = idByName.get(moduleName);
+    if (parentId === undefined) {
+      const [parent] = await db
         .insert(permissions)
-        .values({
-          name: sub,
-          guardName: "web",
-          parentId,
-          createdAt: now(),
-          updatedAt: now(),
-        });
-      allPermissions.push(Number(r.insertId));
+        .values({ name: moduleName, guardName: "web", createdAt: now(), updatedAt: now() });
+      parentId = Number(parent.insertId);
+      idByName.set(moduleName, parentId);
+    }
+    allPermissions.push(parentId);
+
+    for (const sub of subs) {
+      let subId = idByName.get(sub);
+      if (subId === undefined) {
+        const [r] = await db
+          .insert(permissions)
+          .values({
+            name: sub,
+            guardName: "web",
+            parentId,
+            createdAt: now(),
+            updatedAt: now(),
+          });
+        subId = Number(r.insertId);
+        idByName.set(sub, subId);
+      }
+      allPermissions.push(subId);
     }
   }
 
-  const [superAdminRole] = await db
-    .insert(roles)
-    .values({ name: "Super Admin", guardName: "web", createdAt: now(), updatedAt: now() });
-  const [doctorRole] = await db
-    .insert(roles)
-    .values({ name: "Doctor", guardName: "web", createdAt: now(), updatedAt: now() });
-  const [receptionistRole] = await db
-    .insert(roles)
-    .values({ name: "Receptionist", guardName: "web", createdAt: now(), updatedAt: now() });
-  await db
-    .insert(roles)
-    .values({ name: "Nurse", guardName: "web", createdAt: now(), updatedAt: now() });
-  const [accountantRole] = await db
-    .insert(roles)
-    .values({ name: "Accountant", guardName: "web", createdAt: now(), updatedAt: now() });
-
-  await db.insert(roleHasPermissions).values(
-    allPermissions.map((permissionId) => ({
-      permissionId,
-      roleId: Number(superAdminRole.insertId),
-    }))
-  );
-
-  const findPerm = (name: string) => db.query.permissions.findFirst({ where: (p, { eq }) => eq(p.name, name) });
-  const accountantPerms = ["income-expense", "income-expense-list", "income-expense-export", "billing", "billing-list", "billing-print"];
-  // Receptionist panel: dashboard + Schedule, Registration, Appointment,
-  // Test, Follow-up only (drizzle/0005_receptionist_scope.sql).
-  const receptionistPerms = [
-    "dashboard", "dashboard-view",
-    "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
-    "registrations", "registrations-list", "registrations-create", "registrations-edit", "registrations-delete",
-    "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
-    "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
-    "follow-up", "follow-up-list", "follow-up-status-update",
-  ];
-
-  for (const name of accountantPerms) {
-    const p = await findPerm(name);
-    if (p) await db.insert(roleHasPermissions).values({ permissionId: p.id, roleId: Number(accountantRole.insertId) });
-  }
-  for (const name of receptionistPerms) {
-    const p = await findPerm(name);
-    if (p) await db.insert(roleHasPermissions).values({ permissionId: p.id, roleId: Number(receptionistRole.insertId) });
-  }
-
-  // Manager template (admin tier): full clinic operations INCLUDING finance
-  // (D2) — billing + income & expense — without staff administration or the
-  // owner-only modules. The owner can trim any manager via the manager
-  // permissions editor (app/admin/managers).
-  const managerTemplatePerms = [
-    "dashboard", "dashboard-view",
-    "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
-    "registrations", "registrations-list", "registrations-create", "registrations-edit", "registrations-delete",
-    "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
-    "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
-    "follow-up", "follow-up-list", "follow-up-status-update",
-    "billing", "billing-list", "billing-create", "billing-edit", "billing-delete", "billing-print",
-    "income-expense", "income-expense-list", "income-expense-create", "income-expense-edit", "income-expense-delete", "income-expense-export",
-  ];
-
-  // ── Users ──────────────────────────────────────────────────────────────
-  // Account emails + shared password are env-configurable so the seed,
-  // verification scripts and e2e suite always agree (SEED_* vars — see
-  // scripts/env.mjs). Defaults keep the historical demo values.
-  const SEED_PASSWORD_RAW = process.env.SEED_PASSWORD ?? "Admin@123";
-  const emails = {
-    superAdmin: process.env.SEED_SUPER_ADMIN_EMAIL ?? "admin@gmail.com",
-    doctor: process.env.SEED_DOCTOR_EMAIL ?? "doctor@gmail.com",
-    patient: process.env.SEED_PATIENT_EMAIL ?? "patient@gmail.com",
-    receptionist: process.env.SEED_RECEPTIONIST_EMAIL ?? "receptionist@gmail.com",
-    owner: process.env.SEED_OWNER_EMAIL ?? "owner@gmail.com",
-    manager1: process.env.SEED_MANAGER1_EMAIL ?? "manager1@gmail.com",
-    manager2: process.env.SEED_MANAGER2_EMAIL ?? "manager2@gmail.com",
-  };
-  const adminPassword = await hashPassword(SEED_PASSWORD_RAW);
-  const [admin] = await db
-    .insert(users)
-    .values({
-      name: "Super Admin",
-      email: emails.superAdmin,
-      password: adminPassword,
-      role: "super_admin",
-      status: "active",
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const adminId = Number(admin.insertId);
-
-  const [doctor] = await db
-    .insert(users)
-    .values({
-      name: "Dr. Aarav Sharma",
-      email: emails.doctor,
-      password: adminPassword,
-      role: "doctor",
-      status: "active",
-      qualification: "MBBS, MD (General Medicine)",
-      registrationNumber: "DEL-MC-20451",
-      salutation: "Dr.",
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const doctorId = Number(doctor.insertId);
-
-  const [patient] = await db
-    .insert(users)
-    .values({
-      name: "Priya Verma",
-      email: emails.patient,
-      password: adminPassword,
-      role: "patient",
-      status: "active",
-      phone: "9812345670",
-      gender: "female",
-      dob: "1992-04-18",
-      city: "Delhi",
-      state: "Delhi",
-      // Ownership semantic parity with createPatient: patients belong to
-      // their doctor via reference_role_id (users.doctor_id is for staff).
-      referenceRoleId: doctorId,
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const patientId = Number(patient.insertId);
-
-  const [receptionist] = await db
-    .insert(users)
-    .values({
-      name: "Reception Desk",
-      email: emails.receptionist,
-      password: adminPassword,
-      role: "receptionist",
-      status: "active",
-      // Write BOTH link columns, matching createStaff (audit F-06): every
-      // staff read path filters on reference_role_id, so seeding doctor_id
-      // alone made the seeded practice's staff roster permanently empty.
-      referenceRoleId: doctorId,
-      doctorId,
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const receptionistId = Number(receptionist.insertId);
-
-  // ── Admin tier (Phase 2 hierarchy demo) ────────────────────────────
-  // Owner of a multi-clinic business + two clinic managers. The owner keeps
-  // the existing doctor clinic as clinic #1; adds a second clinic so the
-  // cross-clinic views have data to compare.
-  const [owner] = await db
-    .insert(users)
-    .values({
-      name: "Rohan Malhotra",
-      email: emails.owner,
-      password: adminPassword,
-      role: "admin",
-      status: "active",
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const ownerId = Number(owner.insertId);
-
-  const [managerOne] = await db
-    .insert(users)
-    .values({
-      name: "Kavita Singh",
-      email: emails.manager1,
-      password: adminPassword,
-      role: "manager",
-      status: "active",
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const managerOneId = Number(managerOne.insertId);
-
-  const [managerTwo] = await db
-    .insert(users)
-    .values({
-      name: "Dev Patel",
-      email: emails.manager2,
-      password: adminPassword,
-      role: "manager",
-      status: "active",
-      emailVerifiedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const managerTwoId = Number(managerTwo.insertId);
-
-  // Extra patients for demo
-  const demoPatients = [
-    { name: "Rohit Malhotra", phone: "9876501234", gender: "male", dob: "1985-09-12", city: "Delhi", state: "Delhi" },
-    { name: "Sneha Iyer", phone: "9876505678", gender: "female", dob: "1998-02-03", city: "Noida", state: "UP" },
-    { name: "Arjun Kapoor", phone: "9876509012", gender: "male", dob: "1976-11-27", city: "Gurugram", state: "Haryana" },
-    { name: "Meera Nair", phone: "9876503456", gender: "female", dob: "2001-07-08", city: "Delhi", state: "Delhi" },
-  ];
-  const patientIds: number[] = [patientId];
-  // Legacy-parity registration IDs (PAT+7digit) — some e2e specs key on the
-  // third demo patient's ID, so assign them deterministically here.
-  const patientRegIds = ["PAT8702578", "PAT8702579", "PAT8702580", "PAT8702581"];
-  let regIdx = 0;
-  for (const p of demoPatients) {
+  // Idempotent by NAME for the same reason as the catalog above: re-running
+  // the seed (or running it after a migration that added role rows) must not
+  // collide on the (name, guard_name) unique index.
+  const existingRoles = await db.select().from(roles);
+  const roleIdByName = new Map(existingRoles.map((r) => [r.name, r.id]));
+  const ensureRole = async (name: string): Promise<number> => {
+    const existingId = roleIdByName.get(name);
+    if (existingId !== undefined) return existingId;
     const [r] = await db
-      .insert(users)
-      .values({ ...p, password: adminPassword, role: "patient", status: "active", referenceRoleId: doctorId, registrationId: patientRegIds[regIdx++] ?? null, createdAt: now(), updatedAt: now() });
-    patientIds.push(Number(r.insertId));
+      .insert(roles)
+      .values({ name, guardName: "web", createdAt: now(), updatedAt: now() });
+    const id = Number(r.insertId);
+    roleIdByName.set(name, id);
+    return id;
+  };
+
+  const superAdminRoleId = await ensureRole("Super Admin");
+  const doctorRoleId = await ensureRole("Doctor");
+  const receptionistRoleId = await ensureRole("Receptionist");
+  const accountantRoleId = await ensureRole("Accountant");
+  await ensureRole("Nurse");
+
+  // Grants: only add missing pairs, never duplicate them on a re-run.
+  const existingGrants = await db
+    .select({ roleId: roleHasPermissions.roleId, permissionId: roleHasPermissions.permissionId })
+    .from(roleHasPermissions);
+  const grantKey = (r: number, p: number) => `${r}:${p}`;
+  const granted = new Set(existingGrants.map((g) => grantKey(Number(g.roleId), Number(g.permissionId))));
+  const toGrant = allPermissions
+    .map((permissionId) => ({ permissionId, roleId: superAdminRoleId }))
+    .filter((g) => !granted.has(grantKey(g.roleId, g.permissionId)));
+  if (toGrant.length > 0) {
+    await db.insert(roleHasPermissions).values(toGrant);
   }
 
-  await db.insert(modelHasRoles).values([
-    { roleId: Number(superAdminRole.insertId), modelType: "App\\Models\\User", modelId: adminId },
-    { roleId: Number(doctorRole.insertId), modelType: "App\\Models\\User", modelId: doctorId },
-    { roleId: Number(receptionistRole.insertId), modelType: "App\\Models\\User", modelId: receptionistId },
-  ]);
+  /**
+   * Grant a role a set of permissions, skipping pairs already present so a
+   * re-run cannot collide on the primary key. Every seed path that writes
+   * role_has_permissions goes through here.
+   */
+  const grantedKeys = new Set(
+    (
+      await db
+        .select({ roleId: roleHasPermissions.roleId, permissionId: roleHasPermissions.permissionId })
+        .from(roleHasPermissions)
+    ).map((g) => `${Number(g.roleId)}:${Number(g.permissionId)}`)
+  );
+  async function grantRole(roleId: number, names: string[]): Promise<void> {
+    const missing = names.filter((name) => {
+      const p = idByName.get(name);
+      return p !== undefined && !grantedKeys.has(`${roleId}:${p}`);
+    });
+    if (missing.length === 0) return;
+    const values = missing.map((name) => ({ permissionId: idByName.get(name)!, roleId }));
+    await db.insert(roleHasPermissions).values(values);
+    for (const v of values) grantedKeys.add(`${roleId}:${v.permissionId}`);
+  }
+  // Accountant: finance read/print only. Receptionist panel: dashboard +
+  // Schedule, Registration, Appointment, Test, Follow-up only
+  // (drizzle/0005_receptionist_scope.sql).
+  const rolePermTemplates: [number, string[]][] = [
+    [
+      accountantRoleId,
+      ["income-expense", "income-expense-list", "income-expense-export", "billing", "billing-list", "billing-print"],
+    ],
+    [
+      receptionistRoleId,
+      [
+        "dashboard", "dashboard-view",
+        "schedule", "schedule-list", "schedule-create", "schedule-edit", "schedule-delete",
+        "registrations", "registrations-list", "registrations-create", "registrations-edit", "registrations-delete",
+        "appointments", "appointments-list", "appointments-create", "appointments-edit", "appointments-delete", "appointments-cancel", "appointments-complete",
+        "test-booking", "test-booking-list", "test-booking-create", "test-booking-edit", "test-booking-delete",
+        "follow-up", "follow-up-list", "follow-up-status-update",
+      ],
+    ],
+  ];
+  for (const [roleId, names] of rolePermTemplates) {
+    await grantRole(roleId, names);
+  }
 
-  // Doctor role = clinical core (D3, ROLE_MODEL_PLAN.md): dashboard,
-  // appointments, schedule, follow-up, support. Server actions check child
-  // perms ("appointments-create", "schedule-edit", …) while
+  // Doctor role = clinical core (D3, docs/planning/ROLE_MODEL_PLAN.md):
+  // dashboard, appointments, schedule, follow-up, support. Server actions
+  // check child perms ("appointments-create", "schedule-edit", …) while
   // getUserPermissions only expands child→parent, so the role must carry
   // both the parents and their action children. Every doctor created by the
   // app (signup / super-admin / clinic staff) attaches this role, so this
@@ -386,12 +269,7 @@ async function main() {
       `Doctor clinical-core permissions missing from catalog: found ${doctorPerms.length}/${doctorRolePerms.length}`
     );
   }
-  await db.insert(roleHasPermissions).values(
-    doctorPerms.map((p) => ({
-      permissionId: p.id,
-      roleId: Number(doctorRole.insertId),
-    }))
-  );
+  await grantRole(doctorRoleId, doctorRolePerms);
 
   // ── Company settings ───────────────────────────────────────────────────
   await db.insert(companySettings).values({
@@ -408,10 +286,6 @@ async function main() {
     createdAt: now(),
     updatedAt: now(),
   });
-
-  // ── Chat room ──────────────────────────────────────────────────────────
-  const [room] = await db.insert(chatRooms).values({ name: "Doctors Group", type: "group", createdAt: now(), updatedAt: now() });
-  const roomId = Number(room.insertId);
 
   // ── Master data ────────────────────────────────────────────────────────
   const symptomNames = ["Fever", "Cough", "Headache", "Fatigue", "Nausea", "Body Ache", "Sore Throat", "Dizziness"];
@@ -529,282 +403,51 @@ async function main() {
 
   await section("cta", "CTA Banner", "Ready to Transform Your Clinic?", "Join 2,000+ healthcare providers who've already made the switch. Start your free 14-day trial.", { primary_btn_text: "Start Free Trial", primary_btn_link: "/contact", secondary_btn_text: "Request a Demo", secondary_btn_link: "#demo" });
 
-  // ── Blog ────────────────────────────────────────────────────────────────
-  const [cat] = await db.insert(categories).values({ name: "Clinic Management", slug: "clinic-management", createdAt: now(), updatedAt: now() });
-  const catId = Number(cat.insertId);
-  await db.insert(blogs).values([
-    {
-      categoryId: catId, title: "5 Ways Digital Prescriptions Transform Your Clinic",
-      slug: "digital-prescriptions-transform-clinic", shortcontent: "Moving from paper to digital prescriptions saves time, reduces errors, and keeps records organized. Here's how.",
-      content: "Digital prescriptions are no longer a luxury — they are becoming the standard of care. By switching to an electronic prescribing system, clinics eliminate illegible handwriting, reduce transcription errors, and make every medication record instantly searchable. Patients appreciate receiving a clean, legible prescription they can share with any pharmacy. Practices also gain a complete audit trail of what was prescribed, when, and by whom. In this article we explore five practical ways digital prescriptions improve daily clinic operations and patient outcomes.",
-      image: null, status: true, createdAt: now(), updatedAt: now(),
-    },
-    {
-      categoryId: catId, title: "Scheduling Home Visits with Map Integration",
-      slug: "home-visits-map-integration", shortcontent: "Home visits are back — and map integration makes them precise, safe, and time-efficient for doctors.",
-      content: "Home visits offer patients convenience and doctors a deeper understanding of living conditions that influence health. The challenge has always been logistics. With map-integrated scheduling, doctors can see exactly where each patient lives, cluster visits by proximity, and get turn-by-turn navigation without leaving the booking screen. Clinics can also share live visit status with patients so families know when to expect the doctor. This article walks through best practices for running a smooth home-visit service powered by location-aware scheduling.",
-      image: null, status: true, createdAt: now(), updatedAt: now(),
-    },
-  ]);
-
-  // ── Doctor demo records ─────────────────────────────────────────────────
-  const [clinic] = await db.insert(doctorClinics).values({
-    doctorId, clinicName: "SkoraCares Wellness Clinic", addressType: "manual" as never,
-    address: "24, Green Park Extension, New Delhi", phone: "011-46190000",
-    consultationFee: "500", isActive: true, createdAt: now(), updatedAt: now(),
-  });
-  const clinicId = Number(clinic.insertId);
-
-  // Invariant from migration 0004: the clinic OWNER always holds a member
-  // row, so "doctors of a clinic" is one query with no owner special case.
-  // (Migration 0004 backfilled existing clinics; the seed must uphold it
-  // for the rows it creates.)
-  await db.insert(clinicDoctors).values({
-    clinicId,
-    doctorId,
-    isActive: true,
-    createdAt: now(),
-    updatedAt: now(),
-  });
-
-  const daySeeds: [string, string, string, string][] = [
-    ["monday", "09:00", "14:00", "morning"],
-    ["monday", "16:00", "20:00", "evening"],
-    ["tuesday", "09:00", "14:00", "morning"],
-    ["wednesday", "09:00", "14:00", "morning"],
-    ["wednesday", "16:00", "20:00", "evening"],
-    ["thursday", "09:00", "14:00", "morning"],
-    ["friday", "09:00", "14:00", "morning"],
-    ["friday", "16:00", "20:00", "evening"],
-    ["saturday", "10:00", "13:00", "morning"],
-  ];
-  for (const [dow, st, et, stype] of daySeeds) {
-    await db.insert(doctorSchedules).values({
-      doctorClinicId: clinicId, doctorId, dayOfWeek: dow as never, startTime: st, endTime: et,
-      sessionType: stype as never, maxPatients: 10, slotDuration: 15, gapDuration: 5,
-      isActive: true, createdAt: now(), updatedAt: now(),
-    });
+  // ── Operator account (one super admin, from env) ───────────────────────
+  const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.SEED_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error(
+      "SEED_ADMIN_EMAIL and SEED_PASSWORD must be set — the seed creates exactly one operator account and ships no credentials."
+    );
+  }
+  if (adminPassword.length < 8) {
+    throw new Error("SEED_PASSWORD must be at least 8 characters.");
   }
 
-  // Chat messages (demo conversation between the doctor and the admin)
-  const chatSeeds = [
-    "Welcome to the Doctors Group chat! 🎉",
-    "Quick reminder: the quarterly CME workshop is on Friday at 7 PM at the conference hall.",
-    "Has anyone tried the new lab vendor integration for CBC reports? Much faster turnaround.",
-    "Yes — results now land in the patient record within 2 hours. Highly recommended.",
-    "I'll be on leave next Monday. Happy to cover any on-call patients from Tuesday onward.",
-  ];
-  for (let i = 0; i < chatSeeds.length; i++) {
-    const t = new Date();
-    t.setMinutes(t.getMinutes() - (chatSeeds.length - i) * 23);
-    await db.insert(messages).values({
-      chatRoomId: roomId,
-      senderId: i % 2 === 0 ? adminId : doctorId,
-      doctorId: i % 2 === 0 ? adminId : doctorId,
-      content: chatSeeds[i],
-      timestamp: t,
-      createdAt: t,
-      updatedAt: t,
+  const [existingAdmin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, adminEmail))
+    .limit(1);
+  if (existingAdmin) {
+    console.log(`ℹ️  Operator account ${adminEmail} already exists (id ${existingAdmin.id}) — left untouched.`);
+  } else {
+    const [admin] = await db
+      .insert(users)
+      .values({
+        name: "Super Admin",
+        email: adminEmail,
+        password: await hashPassword(adminPassword),
+        role: "super_admin",
+        status: "active",
+        emailVerifiedAt: now(),
+        createdAt: now(),
+        updatedAt: now(),
+      });
+    await db.insert(modelHasRoles).values({
+      roleId: superAdminRoleId,
+      modelType: "App\\Models\\User",
+      modelId: Number(admin.insertId),
     });
+    console.log(`✅ Operator account created: ${adminEmail}`);
   }
 
-  // Appointments across today / upcoming / past
-  const dateStr = (d: Date) => d.toISOString().slice(0, 10);
-  const apptRows: { patientId: number; date: string; time: string; caseType: string; status: string; note?: string }[] = [
-    { patientId, date: dateStr(daysFromNow(0)), time: "10:00 AM", caseType: "clinical_visit", status: "confirmed" },
-    { patientId: patientIds[1], date: dateStr(daysFromNow(0)), time: "11:30 AM", caseType: "home_visit", status: "pending_consent", note: "Patient requested evening visit — family will be home after 6 PM." },
-    { patientId: patientIds[2], date: dateStr(daysFromNow(0)), time: "04:00 PM", caseType: "online_visit", status: "confirmed" },
-    { patientId: patientIds[3], date: dateStr(daysFromNow(1)), time: "10:30 AM", caseType: "clinical_visit", status: "pending" },
-    { patientId: patientIds[4], date: dateStr(daysFromNow(1)), time: "12:00 PM", caseType: "clinical_visit", status: "confirmed" },
-    { patientId: patientIds[2], date: dateStr(daysFromNow(2)), time: "05:00 PM", caseType: "home_visit", status: "confirmed", note: "Post-surgery follow-up at residence." },
-    { patientId, date: dateStr(daysFromNow(-3)), time: "09:30 AM", caseType: "clinical_visit", status: "completed" },
-    { patientId: patientIds[2], date: dateStr(daysFromNow(-6)), time: "05:30 PM", caseType: "online_visit", status: "completed" },
-    { patientId: patientIds[4], date: dateStr(daysFromNow(-8)), time: "11:00 AM", caseType: "home_visit", status: "completed", note: "Routine check-up — vitals stable." },
-  ];
-  const apptIds: number[] = [];
-  for (const a of apptRows) {
-    const [r] = await db.insert(appointments).values({
-      doctorId, patientId: a.patientId, date: a.date, time: a.time,
-      caseType: a.caseType as never, status: a.status as never, note: a.note ?? null, createdAt: now(), updatedAt: now(),
-    });
-    apptIds.push(Number(r.insertId));
-  }
-
-  // One completed consultation with medications
-  const [consult] = await db.insert(consultations).values({
-    patientId, doctorId, appointmentId: apptIds[6],
-    consultationDate: daysFromNow(-3),
-    symptomsNote: "Fever for 3 days, mild cough, body ache",
-    examinationNote: "Temperature 101.2°F, throat congested",
-    diagnosisNote: "Upper Respiratory Infection",
-    labNote: "CBC recommended if fever persists beyond 5 days",
-    medicalHistory: "No known allergies. Non-smoker.",
-    medicationsNote: "Take paracetamol only after food.",
-    followUpDate: daysFromNow(4).toISOString().slice(0, 10),
-    followUpStatus: "pending",
-    createdAt: now(), updatedAt: now(),
-  });
-  const consultId = Number(consult.insertId);
-  await db.insert(consultationMedications).values([
-    { consultationId: consultId, medicineName: "Paracetamol 500mg", dose: "1 tab", frequency: "3 times a day", whenToTake: "After food", duration: "5 days", order: 0, createdAt: now(), updatedAt: now() },
-    { consultationId: consultId, medicineName: "Cetirizine 10mg", dose: "1 tab", frequency: "Once at night", whenToTake: "After food", duration: "5 days", order: 1, createdAt: now(), updatedAt: now() },
-    { consultationId: consultId, medicineName: "Warm saline gargles", dose: "-", frequency: "3 times a day", whenToTake: "Anytime", duration: "5 days", order: 2, createdAt: now(), updatedAt: now() },
-  ]);
-
-  // Billing types + a bill
-  const [billingType] = await db.insert(billingTypes).values({
-    doctorId, name: "Consultation", defaultAmount: "500", description: "Standard OPD consultation", isActive: true, createdAt: now(), updatedAt: now(),
-  });
-  const billingTypeId = Number(billingType.insertId);
-  await db.insert(billings).values({
-    billNumber: `INV-${Date.now().toString().slice(-6)}`,
-    patientId, doctorId, billingTypeId, appointmentId: apptIds[6], consultationId: consultId,
-    totalAmount: "500", receivedAmount: "500", pendingAmount: "0", paymentMethod: "upi",
-    status: "paid", billDate: daysFromNow(-3).toISOString().slice(0, 10), createdAt: now(), updatedAt: now(),
-  });
-
-  // Income & expense types + transactions
-  const [incomeType] = await db.insert(incomeTypes).values({ name: "Consultation Fees", userId: doctorId, createdAt: now(), updatedAt: now() });
-  const incomeTypeId = Number(incomeType.insertId);
-  const [expenseType] = await db.insert(expenseTypes).values({ name: "Clinic Rent", userId: doctorId, createdAt: now(), updatedAt: now() });
-  const expenseTypeId = Number(expenseType.insertId);
-
-  const txSeeds: { amount: string; date: string; type: number; incomeTypeId?: number; expenseTypeId?: number; description: string }[] = [
-    { amount: "3500", date: dateStr(daysFromNow(-1)), type: 1, incomeTypeId, description: "OPD consultation earnings" },
-    { amount: "1200", date: dateStr(daysFromNow(-2)), type: 1, incomeTypeId, description: "Home visit fee" },
-    { amount: "800", date: dateStr(daysFromNow(-3)), type: 1, incomeTypeId, description: "Online consultation" },
-    { amount: "2500", date: dateStr(daysFromNow(-2)), type: 2, expenseTypeId, description: "Medical supplies" },
-    { amount: "1500", date: dateStr(daysFromNow(-4)), type: 1, incomeTypeId, description: "Consultation fees" },
-    { amount: "4000", date: dateStr(daysFromNow(-5)), type: 2, expenseTypeId, description: "Staff salaries advance" },
-  ];
-  for (const t of txSeeds) {
-    await db.insert(transactions).values({
-      userId: doctorId, type: t.type, incomeTypeId: t.incomeTypeId ?? null, expenseTypeId: t.expenseTypeId ?? null,
-      amount: t.amount, date: t.date, status: "approved", description: t.description,
-      createdBy: "Dr. Aarav Sharma", createdAt: now(), updatedAt: now(),
-    });
-  }
-
-  // Vendor + test
-  await db.insert(vendors).values({ doctorId, name: "PathLab Diagnostics", mobile: "9811122233", email: "info@pathlab.example", address: "Connaught Place, New Delhi", status: true, createdAt: now(), updatedAt: now() });
-  await db.insert(tests).values({ doctorId, name: "Complete Blood Count", description: "CBC with ESR", price: "450", status: true, createdAt: now(), updatedAt: now() });
-
-  // ── Business hierarchy (admin tier) ─────────────────────────────────
-  // One business owning both clinics. Clinic #1 is the doctor's seeded
-  // clinic; clinic #2 is a second location owned by the same doctor so its
-  // schedules/membership work with the existing doctor-scoped queries.
-  const [business] = await db
-    .insert(businesses)
-    .values({
-      ownerId,
-      name: "Malhotra Health Group",
-      slug: "malhotra-health-group",
-      email: "ops@malhotrahealth.example",
-      phone: "+91 9810000000",
-      address: "Green Park, New Delhi",
-      isActive: true,
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const businessId = Number(business.insertId);
-
-  const [clinicTwo] = await db
-    .insert(doctorClinics)
-    .values({
-      doctorId,
-      clinicName: "Malhotra Health — Dwarka Branch",
-      addressType: "manual" as never,
-      address: "Sector 12, Dwarka, New Delhi",
-      phone: "011-46190001",
-      consultationFee: "600",
-      isActive: true,
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  const clinicTwoId = Number(clinicTwo.insertId);
-
-  await db.insert(clinicDoctors).values({
-    clinicId: clinicTwoId,
-    doctorId,
-    isActive: true,
-    createdAt: now(),
-    updatedAt: now(),
-  });
-  await db.insert(doctorSchedules).values({
-    doctorClinicId: clinicTwoId,
-    doctorId,
-    dayOfWeek: "monday" as never,
-    startTime: "10:00",
-    endTime: "13:00",
-    sessionType: "morning" as never,
-    maxPatients: 8,
-    slotDuration: 15,
-    gapDuration: 5,
-    isActive: true,
-    createdAt: now(),
-    updatedAt: now(),
-  });
-
-  await db.insert(businessClinics).values([
-    { businessId, clinicId, isPrimary: true, createdAt: now(), updatedAt: now() },
-    { businessId, clinicId: clinicTwoId, isPrimary: false, createdAt: now(), updatedAt: now() },
-  ]);
-
-  // Manager #1 runs the primary clinic; manager #2 runs the Dwarka branch.
-  await db.insert(clinicManagers).values([
-    { businessId, clinicId, userId: managerOneId, isActive: true, createdAt: now(), updatedAt: now() },
-    { businessId, clinicId: clinicTwoId, userId: managerTwoId, isActive: true, createdAt: now(), updatedAt: now() },
-  ]);
-
-  // Direct module perms per manager (model_has_permissions — the same set
-  // getUserPermissions() expands, so /admin module guards resolve).
-  for (const managerId of [managerOneId, managerTwoId]) {
-    for (const name of managerTemplatePerms) {
-      const p = await findPerm(name);
-      if (p) {
-        await db.insert(modelHasPermissions).values({
-          permissionId: p.id,
-          modelType: "App\\Models\\User",
-          modelId: managerId,
-        });
-      }
-    }
-  }
-
-  // Receptionist clinic assignments (role model G4): anchor every seeded
-  // receptionist to every clinic of their anchoring doctor — the same
-  // backfill 0011 runs for pre-existing receptions during migration.
-  {
-    const receptionists = await db
-      .select({ id: users.id, doctorId: users.doctorId })
-      .from(users)
-      .where(eq(users.role, "receptionist"));
-    for (const r of receptionists) {
-      if (r.doctorId == null) continue;
-      const clinics = await db
-        .select({ id: doctorClinics.id })
-        .from(doctorClinics)
-        .where(eq(doctorClinics.doctorId, r.doctorId));
-      for (const c of clinics) {
-        await db
-          .insert(receptionistClinics)
-          .values({ receptionistId: r.id, clinicId: c.id, isActive: true })
-          .onDuplicateKeyUpdate({ set: { isActive: true } });
-      }
-    }
-  }
-
-  console.log("✅ Seed complete.");
-  console.log(`   ${emails.superAdmin} / ${SEED_PASSWORD_RAW}  → /super-admin`);
-  console.log(`   ${emails.owner} / ${SEED_PASSWORD_RAW}      → /admin (business owner)`);
-  console.log(`   ${emails.manager1} / ${SEED_PASSWORD_RAW}   → /admin (manager, primary clinic)`);
-  console.log(`   ${emails.manager2} / ${SEED_PASSWORD_RAW}   → /admin (manager, Dwarka branch)`);
-  console.log(`   ${emails.doctor} / ${SEED_PASSWORD_RAW}     → /doctor`);
-  console.log(`   ${emails.patient} / ${SEED_PASSWORD_RAW}    → /patient`);
-  process.exit(0);
+  await connection.end();
+  console.log("🌱 Seed complete.");
 }
 
-main().catch((e) => {
-  console.error(e);
+main().catch((err) => {
+  console.error(err);
   process.exit(1);
 });

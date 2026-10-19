@@ -6,16 +6,13 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { getLandingData } from "@/lib/queries/landing";
-import { getCurrentUser } from "@/lib/auth/user";
-import { isRazorpayConfigured } from "@/lib/packages/razorpay";
-import { PACKAGE_PLANS } from "@/lib/packages/config";
 import { LandingHero } from "@/components/marketing/landing-hero";
 import { FeaturesBento } from "@/components/marketing/features-bento";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { ProductsStack } from "@/components/marketing/products-stack";
 import { TestimonialsCarousel } from "@/components/marketing/testimonials-carousel";
 import { Reveal } from "@/components/marketing/reveal";
-import { Pricing } from "@/components/marketing/pricing";
+import { PricingWithCheckout } from "./pricing/checkout-resolver";
 import { Faq } from "@/components/marketing/faq";
 
 export const dynamic = "force-dynamic";
@@ -37,19 +34,6 @@ const STATS = [
 
 export default async function HomePage() {
   const data = await getLandingData();
-  // Doctors see live checkout buttons on the pricing cards (Razorpay); every
-  // other visitor keeps the marketing links.
-  const user = await getCurrentUser();
-  const checkoutPlans =
-    user?.role === "doctor" && isRazorpayConfigured()
-      ? PACKAGE_PLANS.map((p) => ({
-          title: p.name,
-          packageId: p.id,
-          buyerName: user.name,
-          buyerEmail: user.email,
-          buyerPhone: user.phone,
-        }))
-      : undefined;
 
   const hero = data.get("hero");
   const features = data.get("features");
@@ -171,7 +155,7 @@ export default async function HomePage() {
                 </p>
               )}
             </Reveal>
-            <Pricing items={pricing.items} checkoutPlans={checkoutPlans} />
+            <PricingWithCheckout items={pricing.items} />
           </div>
         </section>
       )}

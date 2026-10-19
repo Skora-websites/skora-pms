@@ -212,6 +212,39 @@ export function hasDoctorModuleAccess(perms: Set<string>, pathname: string): boo
   return perms.has(required);
 }
 
+/**
+ * Where the doctor panel should send a visitor who cannot see `pathname`, or
+ * null when they may stay.
+ *
+ * Single source of truth for the panel boundary. Before this existed the
+ * server bounce (app/doctor/layout.tsx) and the client gate
+ * (components/doctor/permission-gate.tsx) each implemented the rule
+ * separately — so the client gate omitted DOCTOR_ONLY_PATHS entirely and the
+ * two could disagree (audit M7). Both now call this.
+ *
+ * Order matters and matches the server: the doctor-only boundary is enforced
+ * BEFORE module permissions, because a receptionist holding the module
+ * permission still must not open a clinical page.
+ */
+export function resolveDoctorPanelRedirect(
+  pathname: string,
+  isReceptionist: boolean,
+  perms: Set<string>
+): string | null {
+  const internal = isReceptionist ? receptionistPathToDoctor(pathname) : pathname;
+
+  if (isReceptionist) {
+    const doctorOnly =
+      internal === "/doctor" ? false : DOCTOR_ONLY_PATHS.some((p) => internal === p || internal.startsWith(`${p}/`));
+    if (doctorOnly) return "/receptionist";
+  }
+
+  if (!hasDoctorModuleAccess(perms, internal)) {
+    return firstPermittedDoctorPath(perms);
+  }
+  return null;
+}
+
 // ── Receptionist panel URL-space ──────────────────────────────────────
 // Receptionists browse the same dashboard routes under /receptionist/* (the
 // proxy rewrites them onto /doctor/*). These helpers translate between the

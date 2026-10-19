@@ -4,11 +4,16 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
 import { saveConsultation } from "../../actions";
-import { ExternalMedicineSearch } from "@/components/integrations/medicine-search";
+import { IndiaPicker } from "@/components/integrations/india-picker";
 
 const initialState = { error: null as string | null, consultationId: null as number | null };
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
+/** Append a picked term as a new line in a controlled note field. */
+function appendLine(prev: string, text: string): string {
+  return prev.trim() ? `${prev.trim()}\n${text}` : text;
+}
 
 export function ConsultationForm({
   appointmentId,
@@ -29,10 +34,16 @@ export function ConsultationForm({
 }) {
   const [state, formAction, pending] = useActionState(saveConsultation, initialState);
   const [meds, setMeds] = useState("");
+  const [symptoms, setSymptoms] = useState("");
+  const [examination, setExamination] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [labTests, setLabTests] = useState("");
+  const [history, setHistory] = useState("");
+  const [instructions, setInstructions] = useState("");
   const today = new Date().toLocaleDateString("en-CA");
 
   const addMedicine = (name: string) => {
-    setMeds((prev) => (prev.trim() ? `${prev.trim()}\n${name}` : name));
+    setMeds((prev) => appendLine(prev, name));
   };
 
   if (!hasPatient) {
@@ -78,35 +89,131 @@ export function ConsultationForm({
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Symptoms & complaints">
-          <textarea name="symptoms_note" rows={3} className="input resize-none" placeholder="Chief complaints…" />
-        </Field>
-        <Field label="Examination findings">
-          <textarea name="examination_note" rows={3} className="input resize-none" placeholder="Clinical findings…" />
-        </Field>
+        <div>
+          <IndiaPicker
+            kind="symptoms"
+            onAdd={(t) => setSymptoms((prev) => appendLine(prev, t))}
+            placeholder="Search symptoms (Indian clinical terms)…"
+          />
+          <div className="mt-2">
+            <Field label="Symptoms & complaints">
+              <textarea
+                name="symptoms_note"
+                rows={3}
+                value={symptoms}
+                onChange={(e) => setSymptoms(e.target.value)}
+                className="input resize-none"
+                placeholder="Chief complaints…"
+              />
+            </Field>
+          </div>
+        </div>
+        <div>
+          <IndiaPicker
+            kind="examinations"
+            onAdd={(t) => setExamination((prev) => appendLine(prev, t))}
+            placeholder="Search examination findings…"
+          />
+          <div className="mt-2">
+            <Field label="Examination findings">
+              <textarea
+                name="examination_note"
+                rows={3}
+                value={examination}
+                onChange={(e) => setExamination(e.target.value)}
+                className="input resize-none"
+                placeholder="Clinical findings…"
+              />
+            </Field>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Diagnosis">
-          <textarea name="diagnosis_note" rows={3} className="input resize-none" placeholder="Provisional / final diagnosis…" />
-        </Field>
-        <Field label="Lab tests advised">
-          <textarea name="lab_note" rows={3} className="input resize-none" placeholder="Tests to be done…" />
-        </Field>
+        <div>
+          <IndiaPicker
+            kind="diagnoses"
+            onAdd={(t) => setDiagnosis((prev) => appendLine(prev, t))}
+            placeholder="Search diagnoses (ICD-10 codes shown)…"
+          />
+          <div className="mt-2">
+            <Field label="Diagnosis">
+              <textarea
+                name="diagnosis_note"
+                rows={3}
+                value={diagnosis}
+                onChange={(e) => setDiagnosis(e.target.value)}
+                className="input resize-none"
+                placeholder="Provisional / final diagnosis…"
+              />
+            </Field>
+          </div>
+        </div>
+        <div>
+          <IndiaPicker
+            kind="lab-tests"
+            onAdd={(t) => setLabTests((prev) => appendLine(prev, t))}
+            placeholder="Search lab tests…"
+          />
+          <div className="mt-2">
+            <Field label="Lab tests advised">
+              <textarea
+                name="lab_note"
+                rows={3}
+                value={labTests}
+                onChange={(e) => setLabTests(e.target.value)}
+                className="input resize-none"
+                placeholder="Tests to be done…"
+              />
+            </Field>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Medical history">
-          <textarea name="medical_history" rows={3} className="input resize-none" placeholder="Past illnesses, allergies, ongoing medications…" />
-        </Field>
-        <Field label="Medications note">
-          <textarea name="medications_note" rows={3} className="input resize-none" placeholder="General medication instructions…" />
-        </Field>
+        <div>
+          <IndiaPicker
+            kind="history"
+            onAdd={(t) => setHistory((prev) => appendLine(prev, t))}
+            placeholder="Search history items (conditions, allergies, habits)…"
+          />
+          <div className="mt-2">
+            <Field label="Medical history">
+              <textarea
+                name="medical_history"
+                rows={3}
+                value={history}
+                onChange={(e) => setHistory(e.target.value)}
+                className="input resize-none"
+                placeholder="Past illnesses, allergies, ongoing medications…"
+              />
+            </Field>
+          </div>
+        </div>
+        <div>
+          <IndiaPicker
+            kind="instructions"
+            onAdd={(t) => setInstructions((prev) => appendLine(prev, t))}
+            placeholder="Search instruction templates…"
+          />
+          <div className="mt-2">
+            <Field label="Medications note">
+              <textarea
+                name="medications_note"
+                rows={3}
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                className="input resize-none"
+                placeholder="General medication instructions…"
+              />
+            </Field>
+          </div>
+        </div>
       </div>
 
       {/* ── Medicines (with search) ── */}
       <MedicineSearchInput onAdd={addMedicine} />
-      <ExternalMedicineSearch onAdd={addMedicine} />
+      <IndiaPicker kind="medicines" onAdd={addMedicine} placeholder="Search Indian medicines (brand / composition)…" />
 
       <Field label="Prescribed medicines (one per line)">
         <textarea

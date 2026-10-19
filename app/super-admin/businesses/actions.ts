@@ -4,8 +4,15 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { businesses, users } from "@/lib/db/schema";
+import {
+  businessClinics,
+  businesses,
+  clinicDoctors,
+  doctorClinics,
+  users,
+} from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
+import { hashPassword } from "@/lib/auth/password";
 import { audit } from "@/lib/security/audit-log";
 
 export type BusinessActionResult = { error: string | null };
@@ -78,4 +85,135 @@ export async function toggleBusinessOwnerStatus(
 
   revalidatePath("/super-admin/businesses");
   return { error: null };
+}
+
+/**
+ * Onboard a business and its owner in one step.
+ *
+ * The `admin` tier had no creation surface anywhere in the app: `signupAction`
+ * accepts only `patient` and `doctor`, and `/admin/managers` only assigns
+ * managers that already exist — so a business owner could only be produced by
+ * editing the database directly. This is the missing top of the hierarchy
+ * (super_admin → admin → manager → team → patient), kept behind the super-admin
+ * guard rather than public signup so the open internet cannot mint accounts
+ * that own a business.
+ *
+ * Everything lands in ONE transaction: a user without a business (or a business
+ * without a clinic) is an owner who cannot use their dashboard.
+ */
+export async function createBusinessOwner(
+  _prev: BusinessActionResult,
+  formData: FormData
+): Promise<BusinessActionResult> {
+  const admin = await requireSuperAdmin();
+
+  const ownerName = String(formData.get("owner_name") ?? "").trim();
+  const ownerEmail = String(formData.get("owner_email") ?? "").trim().toLowerCase();
+  const ownerPhone = String(formData.get("owner_phone") ?? "").trim() || null;
+  const password = String(formData.get("password") ?? "");
+  const businessName = String(formData.get("business_name") ?? "").trim();
+  const clinicName = String(formData.get("clinic_name") ?? "").trim();
+  const clinicAddress = String(formData.get("clinic_address") ?? "").trim();
+  const clinicPhone = String(formData.get("clinic_phone") ?? "").trim();
+
+  if (!ownerName) return { error: "Owner name is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+    return { error: "A valid owner email is required." };
+  }
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (!businessName) return { error: "Business name is required." };
+  if (!clinicName) return { error: "Clinic name is required." };
+  if (!clinicAddress) return { error: "Clinic address is required." };
+  if (!clinicPhone) return { error: "Clinic phone is required." };
+
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, ownerEmail))
+    .limit(1);
+  if (existing) return { error: "A user with this email already exists." };
+
+  const now = new Date();
+  // `businesses.slug` is unique; derive it from the name plus a short suffix so
+  // two similarly-named businesses cannot collide.
+  const slug = `${slugify(businessName)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const result = await db.transaction(async (tx) => {
+    const [owner] = await tx
+      .insert(users)
+      .values({
+        name: ownerName,
+        email: ownerEmail,
+        phone: ownerPhone,
+        password: await hashPassword(password),
+        role: "admin",
+        status: "active",
+        emailVerifiedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const ownerId = Number(owner.id);
+
+    const [business] = await tx
+      .insert(businesses)
+      .values({
+        ownerId,
+        name: businessName,
+        slug,
+        email: ownerEmail,
+        phone: ownerPhone,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const businessId = Number(business.id);
+
+    const [clinic] = await tx
+      .insert(doctorClinics)
+      .values({
+        doctorId: ownerId,
+        clinicName,
+        addressType: "manual",
+        address: clinicAddress,
+        phone: clinicPhone,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .$returningId();
+    const clinicId = Number(clinic.id);
+
+    await tx
+      .insert(businessClinics)
+      .values({ businessId, clinicId, isPrimary: true, createdAt: now, updatedAt: now });
+
+    // The owner is a member of their own clinic: clinic-scoped reads and the
+    // booking dropdown resolve through `clinic_doctors`.
+    await tx
+      .insert(clinicDoctors)
+      .values({ clinicId, doctorId: ownerId, isActive: true });
+
+    return { ownerId, businessId, clinicId };
+  });
+
+  audit.settingsUpdated(admin.id, {
+    action: "business_owner_created",
+    ownerId: result.ownerId,
+    businessId: result.businessId,
+    clinicId: result.clinicId,
+    ownerEmail,
+  });
+
+  revalidatePath("/super-admin/businesses");
+  return { error: null };
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "business";
 }

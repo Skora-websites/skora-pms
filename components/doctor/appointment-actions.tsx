@@ -20,6 +20,7 @@ export function AppointmentRowActions({
   consentFile,
   showConsultLink = true,
   editBaseHref = "/doctor/appointments",
+  consultBaseHref = "/doctor/consultations",
 }: {
   appointmentId: number;
   status: string;
@@ -28,6 +29,12 @@ export function AppointmentRowActions({
   showConsultLink?: boolean;
   /** Panel prefix for the edit page (admin tier uses /admin/appointments). */
   editBaseHref?: string;
+  /**
+   * Panel prefix for the consultation detail page. Shared by /doctor and
+   * /admin/appointments, so it must be passed rather than hardcoded — a
+   * literal /doctor path bounced owners out of their own panel (audit H7).
+   */
+  consultBaseHref?: string;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -84,7 +91,7 @@ export function AppointmentRowActions({
 
       {showConsultLink && status !== "completed" && status !== "cancelled" && status !== "pending_consent" && (
         <Link
-          href={`/doctor/consultations/${appointmentId}`}
+          href={`${consultBaseHref}/${appointmentId}`}
           title="Start consultation"
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 text-brand-800 transition-colors hover:bg-brand-50"
         >

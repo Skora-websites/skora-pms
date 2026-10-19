@@ -44,7 +44,7 @@ export default async function AdminConsultationsPage({
       ) : (
         <>
           {/* Mobile: card list */}
-          <ConsultationList consultations={consultations} />
+          <ConsultationList consultations={consultations} shell="admin" />
           {/* Desktop: table */}
           <div className="hidden sm:block">
             <div className="table-shell">

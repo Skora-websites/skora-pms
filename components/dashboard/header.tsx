@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu, Bell, LogOut, UserRound, ChevronDown, Search, MessageCircle, ShieldCheck } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 import { initials, cn, type DutyMode } from "@/lib/utils";
+import { normalizeShell, notificationsPath, profilePath } from "@/lib/auth/shell-paths";
 
 export function DashboardHeader({
   user,
@@ -26,6 +27,15 @@ export function DashboardHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // Which panel is rendering this header. `user.role` is the real role for
+  // doctor/receptionist/patient but a DISPLAY LABEL for the admin and
+  // super-admin shells ("Business Owner", "Clinic Manager", "PMS Admin"), so
+  // role-string comparisons silently mis-classify them — normalizeShell()
+  // handles both. Super-admin and patient shells render no bell.
+  const shell = normalizeShell(user.role);
+  const notificationsHref = notificationsPath(shell);
+  const profileHref = profilePath(shell);
 
   // Doctor's duty mode drives the Online/Offline pill. Staff acting for a
   // doctor (receptionist/admin) inherit the doctor's duty status too.
@@ -95,10 +105,12 @@ export function DashboardHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Notifications — doctor/staff only; patients and super-admins have no notification inbox */}
-          {user.role !== "patient" && user.role !== "super_admin" && (
+          {/* Notifications — resolved for the CALLER's shell. A literal
+              /doctor path here bounced owners and managers out of their own
+              panel (audit H8). */}
+          {notificationsHref && (
             <Link
-              href="/doctor/notifications"
+              href={notificationsHref}
               className="relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:text-ink"
               aria-label="Notifications"
             >
@@ -154,20 +166,14 @@ export function DashboardHeader({
                   <p className="text-sm font-semibold text-ink">{user.name}</p>
                   <p className="truncate text-xs text-slate-400">{user.email}</p>
                 </div>
-                <Link
-                  href={
-                    user.role === "super_admin"
-                      ? "/super-admin/settings"
-                      : user.role === "patient"
-                        ? "/patient"
-                        : user.role === "receptionist"
-                          ? "/receptionist/profile"
-                          : "/doctor/profile"
-                  }
-                  className="mt-1 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50"
-                >
-                  <UserRound className="h-4 w-4" /> Profile settings
-                </Link>
+                {profileHref && (
+                  <Link
+                    href={profileHref}
+                    className="mt-1 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    <UserRound className="h-4 w-4" /> Profile settings
+                  </Link>
+                )}
                 <form action={logoutAction}>
                   <button
                     type="submit"
@@ -180,17 +186,25 @@ export function DashboardHeader({
             )}
           </div>
 
-          {/* Status pill (DESIGN.md §5.2) — reflects the doctor's duty mode:
-              on duty (clinic/home/both) = Online, off duty = Offline. */}
+          {/* Status pill (DESIGN.md §5.2) — reflects the doctor's duty status.
+              Only the doctor tier can change it (setDoctorOnDuty writes
+              users.on_duty), so it is hidden for every other shell rather than
+              advertising a control that 403s for them (audit H5). */}
+          {shell === "doctor" && (
           <span
             className={cn(
               "hidden items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.04em] xl:inline-flex",
               onDuty ? "border-slate-200 text-brand-800" : "border-slate-200 text-slate-400"
             )}
-            title={onDuty ? "You are on duty" : "You are off duty — set your status with the I'm on duty toggle"}
+            title={
+              onDuty
+                ? "You are on duty"
+                : "You are off duty — set your status with the I'm on duty toggle"
+            }
           >
             <span className={onDuty ? "text-accent-500" : "text-slate-400"}>●</span> {onDuty ? "Online" : "Offline"}
           </span>
+          )}
         </div>
       </div>
     </header>

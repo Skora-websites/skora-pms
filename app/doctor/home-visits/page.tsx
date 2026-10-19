@@ -29,10 +29,12 @@ export default async function HomeVisitsPage() {
         title="Home Visits"
         subtitle={`Scheduled home-visit appointments for your practice`}
         action={
-          <Link href="/doctor/appointments/book" className="btn-primary">
-            <Home className="h-4 w-4" />
-            Book a home visit
-          </Link>
+          user.role === "doctor" ? undefined : (
+            <Link href="/doctor/appointments/book" className="btn-primary">
+              <Home className="h-4 w-4" />
+              Book a home visit
+            </Link>
+          )
         }
       />
 
@@ -41,7 +43,11 @@ export default async function HomeVisitsPage() {
           icon={Home}
           title="No home visits scheduled"
           description="When you book appointments with 'Home Visit' as the case type, they appear here with patient details and map directions."
-          action={{ href: "/doctor/appointments/book", label: "Book first home visit" }}
+          action={
+            user.role === "doctor"
+              ? undefined
+              : { href: "/doctor/appointments/book", label: "Book first home visit" }
+          }
         />
       ) : (
         <div className="card overflow-hidden">

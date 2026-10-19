@@ -57,3 +57,13 @@ tmp-shot-*.png
 # IDE
 .idea/
 *.iml
+
+# large local archives — never commit
+/pms.zip
+*.zip
+
+# scratch probes
+*.tmp.mjs
+
+# harness command definitions (not application source)
+/.omp/

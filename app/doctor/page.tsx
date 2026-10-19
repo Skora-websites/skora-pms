@@ -134,8 +134,16 @@ export default async function DoctorDashboardPage() {
           <EmptyState
             icon={CalendarDays}
             title="No appointments yet"
-            description="Book your first appointment to see it here."
-            action={{ href: "/doctor/appointments/book", label: "Book appointment" }}
+            description={
+              user.role === "doctor"
+                ? "Appointments booked by reception will appear here."
+                : "Book your first appointment to see it here."
+            }
+            action={
+              user.role === "doctor"
+                ? undefined
+                : { href: "/doctor/appointments/book", label: "Book appointment" }
+            }
           />
         ) : (
           <div className="card overflow-hidden">
@@ -173,13 +181,15 @@ export default async function DoctorDashboardPage() {
         )}
       </div>
 
-      {/* Quick booking shortcut — the only action on this minimal home. */}
-      <div className="mt-6 flex justify-center">
-        <Link href="/doctor/appointments/book" className="btn-secondary">
-          <CalendarPlus className="h-4 w-4" />
-          Book appointment
-        </Link>
-      </div>
+      {/* Quick booking shortcut — staff tier only (doctors never book). */}
+      {user.role !== "doctor" && (
+        <div className="mt-6 flex justify-center">
+          <Link href="/doctor/appointments/book" className="btn-secondary">
+            <CalendarPlus className="h-4 w-4" />
+            Book appointment
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

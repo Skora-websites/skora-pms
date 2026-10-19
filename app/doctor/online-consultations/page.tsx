@@ -44,10 +44,12 @@ export default async function OnlineConsultationsPage({
         title="Online Consultations"
         subtitle="Video and online visits for your patients"
         action={
-          <Link href="/doctor/appointments/book" className="btn-primary">
-            <MonitorSmartphone className="h-4 w-4" />
-            Book online visit
-          </Link>
+          user.role === "doctor" ? undefined : (
+            <Link href="/doctor/appointments/book" className="btn-primary">
+              <MonitorSmartphone className="h-4 w-4" />
+              Book online visit
+            </Link>
+          )
         }
       />
 

@@ -5,14 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Duty-mode feature: derive the doctor's "I'm on duty" mode from the two duty flags. */
-export type DutyMode = "off" | "clinic" | "home" | "both";
+/**
+ * Duty mode: whether a doctor is on duty.
+ *
+ * Single source of truth is `users.on_duty` — the only duty column anything
+ * writes (`setDoctorOnDuty`) and the one the SOS broadcast reads. The old
+ * `clinic_on_duty`/`home_visit_on_duty` pair had NO writer, so the header pill
+ * could never leave "Offline" while its tooltip advertised a toggle that did
+ * not exist (audit H5).
+ */
+export type DutyMode = "off" | "on";
 
-export function dutyModeOf(clinic: boolean | null | undefined, home: boolean | null | undefined): DutyMode {
-  if (clinic && home) return "both";
-  if (clinic) return "clinic";
-  if (home) return "home";
-  return "off";
+export function dutyModeOf(onDuty: boolean | null | undefined): DutyMode {
+  return onDuty ? "on" : "off";
 }
 
 /**

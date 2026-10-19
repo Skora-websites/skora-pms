@@ -23,7 +23,11 @@ export async function uploadConsultPdf(
 ): Promise<ConsultPdfActionResult> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!["doctor", "receptionist"].includes(user.role)) {
+  // Doctor-only (audit H11): a receptionist resolving to the practice owner
+  // could otherwise overwrite the owner's consultation terms. Owners and
+  // managers amend their clinics' terms through this same doctor-tier action
+  // once the owner uploads on their own account; the read path is open wider.
+  if (user.role !== "doctor") {
     return { error: "Not authorized." };
   }
   if (!(await hasPermission(user.id, "dashboard"))) {

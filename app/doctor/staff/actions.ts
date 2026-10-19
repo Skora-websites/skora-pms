@@ -108,6 +108,34 @@ export async function updateStaff(
     return { error: "You cannot modify your own account here — use your profile page." };
   }
 
+  // Peer-credential guard (audit L4): the ownership predicate below is
+  // practice-scoped, so it matches every receptionist of the same practice —
+  // not just the accounts the caller created. Without this, holding staff-edit
+  // is enough to rewrite a peer's password (the practice is one trust domain,
+  // but a credential reset is not a peer operation). A staff-tier caller may
+  // therefore only reset a password for an account they own; owner/admin tier
+  // keeps its business-scoped reset.
+  if (password && me) {
+    const isStaffTier = me.role !== "doctor" && me.role !== "admin" && me.role !== "super_admin";
+    if (isStaffTier) {
+      const [own] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.id, staffId),
+            or(eq(users.referenceRoleId, me.id), eq(users.doctorId, me.id))
+          )
+        )
+        .limit(1);
+      if (!own) {
+        return {
+          error: "You can only reset the password of an account you own.",
+        };
+      }
+    }
+  }
+
   // Re-authentication for credential changes (audit F-05): setting a new
   // staff password requires the CALLER's current password, mirroring
   // updateProfileAction — a hijacked session can't silently mint credentials.
