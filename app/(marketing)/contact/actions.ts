@@ -57,17 +57,21 @@ export async function bookDemo(
     }).catch(() => undefined);
 
     // Notify the sales inbox in the background — failures must never block
-    // the user's "thank you" confirmation.
+    // the user's "thank you" confirmation. Without DEMO_NOTIFY_EMAIL
+    // configured the notify step is skipped (never sent to a placeholder).
+    const notifyTo = process.env.DEMO_NOTIFY_EMAIL;
     void sendMail({
       to: email,
       subject: "Thank you for booking a demo — SkoraCare",
       text: `Hi ${name},\n\nThanks for your interest in SkoraCare. Our team will reach out shortly to schedule your demo.\n\n— SkoraCare`,
     }).then((sent) => {
-      void sendMail({
-        to: process.env.DEMO_NOTIFY_EMAIL ?? "sales@example.com",
-        subject: "New demo booking",
-        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || "—"}\nClinic: ${clinic || "—"}\nMessage: ${message}`,
-      }).catch(() => undefined);
+      if (notifyTo) {
+        void sendMail({
+          to: notifyTo,
+          subject: "New demo booking",
+          text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || "—"}\nClinic: ${clinic || "—"}\nMessage: ${message}`,
+        }).catch(() => undefined);
+      }
       return sent;
     }).catch(() => undefined);
   } catch {

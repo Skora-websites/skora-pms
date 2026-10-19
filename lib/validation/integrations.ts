@@ -55,10 +55,11 @@ export const geoDataQuerySchema = z.object({
   q: z.string().trim().max(100).optional().default(""),
 });
 
-export const medicineQuerySchema = z.object({
-  q: z.string().trim().min(2).max(100),
-});
-
-export const medicineRxcuiSchema = z.object({
-  rxcui: z.string().trim().regex(/^\d{1,8}$/, "Invalid RxCUI"),
+/** Indian clinical-data pickers (consultation form): term per domain. */
+export const indiaQuerySchema = z.object({
+  kind: z
+    .enum(["medicines", "symptoms", "examinations", "diagnoses", "lab-tests", "history", "instructions"])
+    .optional()
+    .default("medicines"),
+  q: z.string().trim().min(1).max(120),
 });

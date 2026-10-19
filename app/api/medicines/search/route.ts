@@ -8,8 +8,9 @@ export const runtime = "nodejs";
 /**
  * GET /api/medicines/search?q=para
  *
- * Mirrors legacy `medicines/search` route: searches medicine_masters by name.
- * Returns up to 20 matching medicines for the autocomplete dropdown.
+ * Searches the `medicines` master catalog (same table the super-admin
+ * masters CRUD manages) by name. Returns up to 20 matching medicines
+ * for the consultation-form autocomplete dropdown.
  */
 export async function GET(request: NextRequest) {
   const user = await requireApiRole(["doctor", "receptionist"]);
@@ -23,9 +24,9 @@ export async function GET(request: NextRequest) {
   }
 
   const rows = await db
-    .select({ id: schema.medicineMasters.id, name: schema.medicineMasters.name })
-    .from(schema.medicineMasters)
-    .where(like(schema.medicineMasters.name, `%${q.trim()}%`))
+    .select({ id: schema.medicines.id, name: schema.medicines.name })
+    .from(schema.medicines)
+    .where(like(schema.medicines.name, `%${q.trim()}%`))
     .limit(20);
 
   return NextResponse.json({ medicines: rows });

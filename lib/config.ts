@@ -104,9 +104,20 @@ export const PUBLIC_API_WEATHER_ENABLED = process.env.PUBLIC_API_WEATHER_ENABLED
 export const PUBLIC_API_VALIDATION_ENABLED = process.env.PUBLIC_API_VALIDATION_ENABLED !== "0";
 export const PUBLIC_API_QR_ENABLED = process.env.PUBLIC_API_QR_ENABLED !== "0";
 export const PUBLIC_API_REFERENCE_ENABLED = process.env.PUBLIC_API_REFERENCE_ENABLED !== "0";
-export const PUBLIC_API_MEDICINES_ENABLED = process.env.PUBLIC_API_MEDICINES_ENABLED !== "0";
 /** Default Indian state code for holiday lookup (DL = Delhi). */
 export const HOLIDAY_STATE_DEFAULT = process.env.HOLIDAY_STATE_DEFAULT ?? "DL";
+
+// ── Indian clinical data (consultation form) ─────────────────────────────
+// India-only clinical reference. Default provider reads a committed snapshot
+// (no keys, works offline — see lib/integrations/india/README notes and
+// scripts/import-india-datasets.mjs for the refresh path). Set
+// INDIA_API_BASE_URL (+ optional INDIA_API_KEY) to proxy the SAME search
+// surface to a live India provider (NAMASTE/FHIR gateway, data.gov.in
+// mirror…) instead — same response shape, no UI change.
+export const INDIA_API_ENABLED = process.env.INDIA_API_ENABLED !== "0";
+export const INDIA_API_BASE_URL = process.env.INDIA_API_BASE_URL?.trim() || null;
+export const INDIA_API_KEY = process.env.INDIA_API_KEY?.trim() || null;
+export const INDIA_API_TIMEOUT_MS = num(process.env.INDIA_API_TIMEOUT_MS, 8000);
 
 // ── SOS emergency dispatch fare ─────────────────────────────────────────
 // Base + per-km, floored at a minimum. Per-minute is priced but not charged
