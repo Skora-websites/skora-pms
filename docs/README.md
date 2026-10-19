@@ -27,6 +27,28 @@ Historical planning and specification documents. Git history is the source of tr
 |---|---|
 | `server-actions.md` | Placement convention for `"use server"` files (`lib/actions/` vs route-local `actions.ts`) |
 
+## Verification gates (`npm run`)
+
+Every change MUST pass the gates that apply to it. The two new gates (`check:permissions`,
+`check:links`) close audit findings where a route or component referenced something that no longer
+existed.
+
+| Command | Covers |
+|---|---|
+| `npm run build` | TypeScript `strict`, whole app |
+| `npm run lint` | ESLint + `eslint-config-next` |
+| `npm run check:storage` | Storage path containment (no bare `startsWith`) |
+| `npm run db:check` | Migration numbering, collation, staff-link integrity |
+| `npm run db:migrate:status` | No pending migrations |
+| `npm run check:permissions` | Every route-map permission name exists in the catalog |
+| `npm run check:links` | No component hardcodes another shell's URL prefix |
+| `npm run test` | `node --test` suites covering role scoping and isolation |
+
+**Migration numbering**: `drizzle/` files are applied in filename order by
+`scripts/migrate.ts`, which only picks up files matching `^\d{4}_`. The sequence
+skips `0017` (0016 → 0018) — the runner is unaffected because it orders by name,
+not by continuity. New migrations use the next free number (currently `0022`).
+
 ## PWA probes (`docs/probes/`)
 
 | Probe | Content |
@@ -48,7 +70,8 @@ components/     Shared UI by domain: dashboard, doctor, integrations, marketing,
 lib/            Server modules: actions, auth, db, dispatch, files, integrations,
                 mail, packages, push, queries, security, uploads, validation
                 + flat shared modules: config, constants, notifications, utils
-scripts/        Operator tooling (migrate, seed, db:check, check:storage, provision-api-token)
+scripts/        Operator tooling (migrate, seed, db:check, check:storage, provision-api-token,
+                import-india-datasets — validates the India clinical-data snapshots)
 drizzle/        Numbered MySQL migrations, applied by scripts/migrate.ts in filename order
 proxy.ts        Middleware: session gate, security headers, CSP
 docs/           This directory

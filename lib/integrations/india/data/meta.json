@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-10-17",
+  "sources": [
+    "Indian brand/generic medicines: starter set of widely-marketed Indian brands (CDSCO-approved formulations). Refresh from CDSCO approved-drug lists + National List of Essential Medicines 2022 via scripts/import-india-datasets.mjs",
+    "Diagnoses: ICD-10 (WHO) morbidity codes",
+    "NAMASTE codes: null across all rows — pending an authoritative export from the Ministry of Ayush NAMASTE portal (registration required); do not hand-fabricate"
+  ],
+  "disclaimer": "Advisory starter snapshot. Verify every suggestion against the current product insert / authoritative source before clinical use.",
+  "refresh": "node scripts/import-india-datasets.mjs (documents upstream URLs; dry-run by default)"
+}

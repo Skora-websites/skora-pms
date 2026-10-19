@@ -27,7 +27,7 @@
 | | Create patient (auto `PAT+` registration no.), edit, delete | ✅ |
 | | Patient detail page + profile photo upload | ✅ |
 | | Excel export of patients | ✅ |
-| **Appointments** (`/doctor/appointments`) | List, book (with booked-times conflict detection), edit, delete | ✅ |
+| **Appointments** (`/doctor/appointments`) | List, book (with booked-times conflict detection), edit, delete — **but the doctor role cannot CREATE appointments**: `drizzle/0019_revoke_doctor_appointments_create.sql` revokes `appointments-create` from the system Doctor role and the action hard-rejects `callerRole === "doctor"`. Reception, managers, owners and the patient self-booking path are unaffected (product boundary: doctors treat, reception books). | ⚠️ |
 | | Cancel / complete / status transitions | ✅ |
 | | Excel export of appointments | ✅ |
 | | Consent flow: public consent page (`/my-consent/[slug]`) + appointment consent-file viewing | ✅ |

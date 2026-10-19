@@ -34,8 +34,8 @@
 
 ### 1.4 Appointments (`/doctor/appointments`)
 - **Book** (`createAppointment`): the fullest validation chain in the app:
-  1. `requireDoctorPermission("appointments-create")` → zod `appointmentSchema`.
-  2. **Target doctor resolution:** doctors always book for themselves; receptionists may pick a practice doctor (`doctor_id` field) — a doctor injecting `doctor_id` for someone else is rejected as unauthorized.
+  1. `requireWriteScope("appointments-create")` → zod `appointmentSchema`. **Doctors never create appointments** (product boundary, enforced 2026-10-19): the Doctor role's `appointments-create` grant was revoked (`drizzle/0019`), and `createAppointment` hard-rejects `callerRole === "doctor"` even if a direct grant or custom role still holds the permission. Receptionists, managers, owners, and patients (own self-service flow) book on doctors' behalf. All booking CTAs on the doctor panel are hidden for `role === "doctor"`, and `/doctor/appointments/book` redirects doctors to `/doctor/appointments`.
+  2. **Target doctor resolution:** staff tiers (receptionist/manager/admin) may pick an in-scope practice doctor (`doctor_id` field) — an out-of-scope `doctor_id` is rejected as unauthorized. The `/doctor/*` path space is shared with `/receptionist/*` (proxy rewrite), so the same form serves both tiers.
   3. **Clinic resolution:** chosen clinic must be accessible; booking on behalf of another doctor lands on a clinic **shared by the practice**, else the target's first active clinic.
   4. **Schedule check:** the chosen time must fall inside the target doctor's active schedule for that weekday (overnight-aware).
   5. **Conflict check:** existing non-cancelled appointment at the same doctor/date/time is rejected; plus a **duplicate-booking finder** (same patient, date, time).
@@ -158,10 +158,20 @@ Create ticket (`createSupportTicket`) → reply (`replySupportTicket`, ownership
 2. **Assign manager to clinic(s)** (`assignManager`) / **unassign** (`unassignManager`).
 3. Assigned managers get `/admin` access limited to their clinics and only modules they hold permissions for.
 
-### 2.3 Monitoring modules (read-only by design)
+### 2.3 Clinic operations modules (full CRUD — NOT read-only)
+> Corrected 2026-10-19. This section previously said "read-only by design" and
+> named Follow Ups "the one interactive module". That was never true: the
+> `/admin` pages import the doctor dashboard's write forms and actions
+> (`app/admin/billing/page.tsx` imports `BillForm`/`BillTable`/
+> `BillingTypesManager`; `income-expense` imports `TransactionForm`;
+> `test-bookings` imports `BookingForm`/`VendorManager`; `patients/new` imports
+> `PatientForm`). An earlier audit planned against this text and therefore
+> **understated the admin tier's authority and its audit surface**. DASHBOARD_FEATURES §2
+> was the accurate one.
+
 - **Clinics** (owner): list with revenue per clinic.
-- **Schedule / Registrations / Appointments / Test Bookings / Billing / Income & Expense / Clinic Staff:** scoped lists + totals (billing shows total/received/pending; I&E has the scoped Excel export API).
-- **Follow Ups:** the one interactive module — new reminder + status actions reusing the doctor flow components (§1.6).
+- **Schedule / Registrations / Appointments / Test Bookings / Billing / Income & Expense / Clinic Staff:** scoped lists + totals (billing shows total/received/pending; I&E has the scoped Excel export API), plus the create/edit/delete actions the doctor flow components provide.
+- **Follow Ups:** new reminder + status actions, same as the doctor flow (§1.6).
 - **Business Settings** (owner), plus dedicated **empty state** (no businesses yet), **error** and **loading** boundaries.
 
 ---

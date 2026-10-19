@@ -1,15 +1,33 @@
 # Role & Permission Model — Implementation Plan
 
-> Status: **IMPLEMENTED (phases 1–5).**
-> Verified against the codebase on 2026-10-01 (guards, scopes, seeds, e2e contracts).
-> Decisions below are confirmed by the product owner.
+> Status: **IMPLEMENTED (phases 1–5), gaps G1–G6 closed 2026-10-19.**
+> Re-verified against the codebase and the live database on 2026-10-19
+> (guards, scopes, catalog rows, migrations, `--test` regression suite).
 >
-> Implemented: doctor default = clinical core (Phase 4); manager permission
-> editor + finance template (Phase 2); receptionist_clinics migration 0011 +
-> owner assignment UI + booking enforcement (Phase 3); six owner-parity
-> modules under /admin (Phase 1); route map + nav + firstPermittedAdminPath
-> updates (Phase 5). Remaining: apply migration 0011 + reseed, run e2e
-> (Phase 6).
+> Closed in the 2026-10-19 pass (`specs/001-role-security-fixes`):
+> - **G1** — all six owner-parity modules exist under `/admin` **and** are now
+>   delegable to managers (`DELEGABLE_MANAGER_MODULES` is derived from
+>   `ADMIN_ROUTE_PERMISSIONS` rather than restated).
+> - **G2** — owner permission editor (`saveManagerPermissions`, owner-only,
+>   transactional, audited).
+> - **G3** — `createManager` grants the documented D2 default module set, so a
+>   new manager is usable immediately instead of landing on the public site.
+> - **G4** — receptionist reads are now scoped by `receptionist_clinics`
+>   (`listDoctorIdsFor` → `getReceptionistClinicIds`); the broken
+>   practice-wide fallback was removed; booking at an unassigned clinic is
+>   **rejected** (previously the clinic was silently dropped and the row was
+>   written with `clinic_id = NULL` — 9 such rows existed and are repaired by
+>   migration `0021`).
+> - **G5** — `DEFAULT_DOCTOR_MODULE_PERMS` is the clinical core.
+> - **G6** — role labels rendered ("PMS Admin", "Business Owner", "Clinic Manager").
+> - **Phase 6 (tests)** — regression suite added: `npm run test`, 19 tests
+>   covering doctor/receptionist isolation, catalog parity, consent TTL and
+>   integration tenancy. No test framework existed before.
+>
+> Also fixed in that pass (not in the original gap list): the C1 PHI leak in
+> `getHomeVisitPatientDetail`, the SOS dispatch tier boundary, the duty-toggle
+> dead control, the consent retention window, `/api/shule/doctors` tenant
+> scoping, and the cross-shell links that bounced owners out of `/admin`.
 
 ## 1. Target role model
 
