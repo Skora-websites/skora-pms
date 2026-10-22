@@ -272,43 +272,110 @@ async function main() {
   await grantRole(doctorRoleId, doctorRolePerms);
 
   // ── Company settings ───────────────────────────────────────────────────
-  await db.insert(companySettings).values({
-    id: 1,
-    companyName: "SkoraCares",
-    companyShortName: "Skora",
-    companyTagline: "Smarter Patient & Clinic Management",
-    companyEmail1: "info@skoracares.com",
-    companyMobile1: "+91 9217375831",
-    companyWhatsapp1: "+91 9217375832",
-    currencyName: "INR",
-    currencySymbol: "₹",
-    defaultTrialDays: 15,
-    createdAt: now(),
-    updatedAt: now(),
-  });
+  // Idempotent: the row is created with an explicit id of 1, so a re-run (or
+  // a database that already has the row from an earlier deploy) used to abort
+  // the whole seed with ER_DUP_ENTRY before it ever reached the master data,
+  // the landing CMS or the operator account.
+  const [existingSettings] = await db
+    .select({ id: companySettings.id })
+    .from(companySettings)
+    .limit(1);
+  if (existingSettings) {
+    console.log("ℹ️  Company settings already exist — left untouched.");
+  } else {
+    await db.insert(companySettings).values({
+      id: 1,
+      companyName: "SkoraCares",
+      companyShortName: "Skora",
+      companyTagline: "Smarter Patient & Clinic Management",
+      companyEmail1: "info@skoracares.com",
+      companyMobile1: "+91 9217375831",
+      companyWhatsapp1: "+91 9217375832",
+      currencyName: "INR",
+      currencySymbol: "₹",
+      defaultTrialDays: 15,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  }
 
   // ── Master data ────────────────────────────────────────────────────────
+  // None of these tables carries a unique index, so a re-run would silently
+  // duplicate every row. Filter against what is already stored instead.
   const symptomNames = ["Fever", "Cough", "Headache", "Fatigue", "Nausea", "Body Ache", "Sore Throat", "Dizziness"];
   const examNames = ["General Examination", "Cardiovascular", "Respiratory", "Abdominal", "Neurological", "ENT", "Ophthalmic"];
   const diagnosisNames = ["Hypertension", "Type 2 Diabetes", "Viral Fever", "Migraine", "Gastroenteritis", "Upper Respiratory Infection", "Anemia", "Arthritis"];
   const labTestNames = ["CBC", "Blood Sugar (Fasting)", "Lipid Profile", "Liver Function Test", "Kidney Function Test", "Thyroid Profile", "Urine Analysis", "HbA1c"];
   const medicineNames = ["Paracetamol 500mg", "Amoxicillin 500mg", "Omeprazole 20mg", "Cetirizine 10mg", "Metformin 500mg", "Amlodipine 5mg", "Azithromycin 250mg", "Vitamin D3 60K"];
 
-  for (const name of symptomNames) await db.insert(symptoms).values({ name, createdAt: now(), updatedAt: now() });
-  for (const name of examNames) await db.insert(examinations).values({ name, createdAt: now(), updatedAt: now() });
-  for (const name of diagnosisNames) await db.insert(diagnoses).values({ name, createdAt: now(), updatedAt: now() });
-  for (const name of labTestNames) await db.insert(labTests).values({ name, createdAt: now(), updatedAt: now() });
-  for (const name of medicineNames) await db.insert(medicines).values({ name, createdAt: now(), updatedAt: now() });
+  /** Insert only the names this table doesn't already hold. */
+  const seedMaster = async (
+    label: string,
+    names: string[],
+    loadExisting: () => Promise<string[]>,
+    insert: (name: string) => Promise<unknown>
+  ): Promise<void> => {
+    const have = new Set(await loadExisting());
+    const missing = names.filter((n) => !have.has(n));
+    for (const name of missing) await insert(name);
+    if (missing.length > 0) {
+      console.log(`ℹ️  ${label}: added ${missing.length}, kept ${have.size} existing.`);
+    } else {
+      console.log(`ℹ️  ${label}: all ${have.size} rows already present.`);
+    }
+  };
+
+  await seedMaster(
+    "symptoms",
+    symptomNames,
+    async () => (await db.select({ name: symptoms.name }).from(symptoms)).map((r) => r.name),
+    (name) => db.insert(symptoms).values({ name, createdAt: now(), updatedAt: now() })
+  );
+  await seedMaster(
+    "examinations",
+    examNames,
+    async () => (await db.select({ name: examinations.name }).from(examinations)).map((r) => r.name),
+    (name) => db.insert(examinations).values({ name, createdAt: now(), updatedAt: now() })
+  );
+  await seedMaster(
+    "diagnoses",
+    diagnosisNames,
+    async () => (await db.select({ name: diagnoses.name }).from(diagnoses)).map((r) => r.name),
+    (name) => db.insert(diagnoses).values({ name, createdAt: now(), updatedAt: now() })
+  );
+  await seedMaster(
+    "lab tests",
+    labTestNames,
+    async () => (await db.select({ name: labTests.name }).from(labTests)).map((r) => r.name),
+    (name) => db.insert(labTests).values({ name, createdAt: now(), updatedAt: now() })
+  );
+  await seedMaster(
+    "medicines",
+    medicineNames,
+    async () => (await db.select({ name: medicines.name }).from(medicines)).map((r) => r.name),
+    (name) => db.insert(medicines).values({ name, createdAt: now(), updatedAt: now() })
+  );
 
   // ── Landing page CMS (mirrors LandingPageSeeder) ───────────────────────
+  // landing_sections.key is UNIQUE, so a re-run would abort; landing_items has
+  // no unique index, so a re-run would duplicate silently. Both are filtered.
+  const existingSections = await db.select({ key: landingSections.key }).from(landingSections);
+  const sectionKeys = new Set(existingSections.map((s) => s.key));
+  const existingItems = await db
+    .select({ sectionKey: landingItems.sectionKey, title: landingItems.title })
+    .from(landingItems);
+  const itemKeys = new Set(existingItems.map((i) => `${i.sectionKey}::${i.title ?? ""}`));
+
   const section = (
     key: string,
     name: string,
     title?: string | null,
     subtitle?: string | null,
     metadata?: object
-  ) =>
-    db.insert(landingSections).values({
+  ): Promise<unknown> | null => {
+    if (sectionKeys.has(key)) return null;
+    sectionKeys.add(key);
+    return db.insert(landingSections).values({
       key,
       name,
       title: title ?? null,
@@ -317,8 +384,13 @@ async function main() {
       createdAt: now(),
       updatedAt: now(),
     });
-  const item = (v: Omit<typeof landingItems.$inferInsert, "createdAt" | "updatedAt">) =>
-    db.insert(landingItems).values({ ...v, createdAt: now(), updatedAt: now() });
+  };
+  const item = (v: Omit<typeof landingItems.$inferInsert, "createdAt" | "updatedAt">): Promise<unknown> | null => {
+    const k = `${v.sectionKey}::${(v.title as string | null) ?? ""}`;
+    if (itemKeys.has(k)) return null;
+    itemKeys.add(k);
+    return db.insert(landingItems).values({ ...v, createdAt: now(), updatedAt: now() });
+  };
 
   await section("hero", "Hero Slider");
   await item({ sectionKey: "hero", title: "SkoraCares – Smarter Patient & Clinic Management", description: "Online Prescription Upload, Multi Clinic Management, Home Visit with Map Integration — everything your practice needs in one powerful platform.", link: "#demo", linkText: "Request a demo →", order: 0 });
@@ -362,7 +434,7 @@ async function main() {
     sectionKey: "products", title: "Smart, Affordable & Trusted Solution",
     description: "Designed for modern healthcare professionals, our platform offers premium features at the best price. Hundreds of doctors, clinics, and healthcare businesses already trust us to streamline their daily operations and improve patient care.",
     badge: "🚀 Why Choose Us", link: "tel:9217375832", linkText: "Contact Sales →", icon: "reverse", order: 1,
-    features: ["PMS Complimentary for Existing Customers", "Affordable Paid PMS Plans Available", "30 Days Free Trial", "Easy to Use Interface", "Highest Features at Lowest Price", "24×7 Training & Support"],
+    features: ["PMS Complimentary for Existing Customers", "Affordable Paid PMS Plans Available", "15 Days Free Trial", "Easy to Use Interface", "Highest Features at Lowest Price", "24×7 Training & Support"],
   });
 
   await section("testimonials", "Testimonials", "Loved by Doctors Across India", "Here's what healthcare professionals say after switching to SkoraCares.", { badge: "Testimonials" });
@@ -401,7 +473,7 @@ async function main() {
   ];
   faqs.forEach((f, i) => item({ sectionKey: "faq", title: f[0], description: f[1], badge: f[2], order: i }));
 
-  await section("cta", "CTA Banner", "Ready to Transform Your Clinic?", "Join 2,000+ healthcare providers who've already made the switch. Start your free 14-day trial.", { primary_btn_text: "Start Free Trial", primary_btn_link: "/contact", secondary_btn_text: "Request a Demo", secondary_btn_link: "#demo" });
+  await section("cta", "CTA Banner", "Ready to Transform Your Clinic?", "Join 2,000+ healthcare providers who've already made the switch. Start your free 15-day trial.", { primary_btn_text: "Start Free Trial", primary_btn_link: "/contact", secondary_btn_text: "Request a Demo", secondary_btn_link: "#demo" });
 
   // ── Operator account (one super admin, from env) ───────────────────────
   const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim();

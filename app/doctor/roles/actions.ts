@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { roles, permissions, roleHasPermissions, modelHasRoles, modelHasPermissions, users } from "@/lib/db/schema";
 import { getCurrentUser, getUserPermissions } from "@/lib/auth/user";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
+import { getPracticeEntitlements } from "@/lib/queries/packages";
+import { featureBlockedMessage } from "@/lib/packages/entitlements";
 
 import { audit } from "@/lib/security/audit-log";
 
@@ -64,6 +66,9 @@ export async function createRole(
 ): Promise<RoleActionResult> {
   const doctorId = await requireDoctorPermission("roles-create");
   if (!doctorId) return { error: "You don't have permission to create roles." };
+  // Plan gate: Package 1 excludes role management.
+  const blocked = featureBlockedMessage(await getPracticeEntitlements(doctorId), "roleManagement");
+  if (blocked) return { error: blocked };
   const name = String(formData.get("name") ?? "").trim();
   const permissionsRaw = String(formData.get("permissions") ?? "");
 
@@ -114,6 +119,9 @@ export async function updateRole(
 ): Promise<RoleActionResult> {
   const doctorId = await requireDoctorPermission("roles-edit");
   if (!doctorId) return { error: "You don't have permission to edit roles." };
+  // Plan gate: Package 1 excludes role management (same rule as create).
+  const blocked = featureBlockedMessage(await getPracticeEntitlements(doctorId), "roleManagement");
+  if (blocked) return { error: blocked };
   const roleId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const permissionsRaw = String(formData.get("permissions") ?? "");
@@ -164,6 +172,9 @@ export async function updateRole(
 export async function deleteRole(roleId: number): Promise<RoleActionResult> {
   const doctorId = await requireDoctorPermission("roles-delete");
   if (!doctorId) return { error: "You don't have permission to delete roles." };
+  // Plan gate: Package 1 excludes role management (same rule as create).
+  const blocked = featureBlockedMessage(await getPracticeEntitlements(doctorId), "roleManagement");
+  if (blocked) return { error: blocked };
   if (!roleId || !Number.isInteger(roleId)) return { error: "Invalid role ID." };
 
   const [existing] = await db
@@ -212,6 +223,9 @@ export async function saveStaffPermissions(
 ): Promise<RoleActionResult> {
   const doctorId = await requireDoctorPermission("roles-edit");
   if (!doctorId) return { error: "You don't have permission to edit staff permissions." };
+  // Plan gate: Package 1 excludes role management (same rule as create).
+  const blocked = featureBlockedMessage(await getPracticeEntitlements(doctorId), "roleManagement");
+  if (blocked) return { error: blocked };
   if (!staffId || !Number.isInteger(staffId)) return { error: "Invalid staff ID." };
 
   // Self-targeting guard (audit F-05): a receptionist holding roles-edit

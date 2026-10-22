@@ -11,10 +11,11 @@ import {
   modelHasPermissions,
   modelHasRoles,
   roles,
-  companySettings,
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { DEFAULT_DOCTOR_MODULE_PERMS } from "@/lib/auth/server-permissions";
+import { trialEndsInDays } from "@/lib/auth/trial";
+import { getTrialDays } from "@/lib/queries/landing";
 import { isDupKey, dupKeyConstraint } from "@/lib/db/dup";
 import { hashPassword } from "@/lib/auth/password";
 import { audit } from "@/lib/security/audit-log";
@@ -89,11 +90,6 @@ async function syncSystemRole(userId: number, role: string) {
     .delete(modelHasRoles)
     .where(and(eq(modelHasRoles.modelId, userId), eq(modelHasRoles.modelType, USER_MODEL)));
   await db.insert(modelHasRoles).values({ roleId: systemRole.id, modelId: userId, modelType: USER_MODEL });
-}
-
-async function getTrialDays(): Promise<number> {
-  const [company] = await db.select().from(companySettings).limit(1);
-  return company?.defaultTrialDays ?? 15;
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -207,9 +203,7 @@ export async function storeUser(
 
   const passwordHash = await hashPassword(password);
   const trialEndsAt =
-    role === "doctor"
-      ? new Date(Date.now() + (await getTrialDays()) * 24 * 60 * 60 * 1000)
-      : undefined;
+    role === "doctor" ? trialEndsInDays(await getTrialDays()) : undefined;
 
   // Insert + role attach + permission grants in ONE transaction, retrying
   // the whole thing with a fresh registration id when concurrent admin
@@ -315,7 +309,7 @@ export async function updateUser(
     if (Number.isNaN(parsed.getTime())) return { error: "Invalid trial end date." };
     trialEndsAt = parsed;
   } else if (isDoctorNow && !trialEndsAt) {
-    trialEndsAt = new Date(Date.now() + (await getTrialDays()) * 24 * 60 * 60 * 1000);
+    trialEndsAt = trialEndsInDays(await getTrialDays());
   } else if (!isDoctorNow) {
     trialEndsAt = null;
   }

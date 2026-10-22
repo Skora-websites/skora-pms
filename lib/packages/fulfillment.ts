@@ -102,7 +102,7 @@ export async function fulfillPackagePayment(input: {
 
   await db
     .update(users)
-    .set({ trialEndsAt: accessUntil, updatedAt: new Date() })
+    .set({ trialEndsAt: accessUntil, packageId: payment.packageId, updatedAt: new Date() })
     .where(eq(users.id, payment.userId));
 
   await auditLog({

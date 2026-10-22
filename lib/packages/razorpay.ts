@@ -39,22 +39,29 @@ export type RazorpayOrder = {
   status: string;
 };
 
+/** Authenticated call against the Razorpay REST API. */
+async function razorpayRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const keyId = getRazorpayKeyId();
+  const keySecret = getRazorpayKeySecret();
+  if (!keyId || !keySecret) throw new Error("Razorpay is not configured.");
+  return fetch(`${RAZORPAY_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
 /** Creates a Razorpay order. Throws with a readable message on failure. */
 export async function createRazorpayOrder(input: {
   amount: number; // paise
   receipt: string;
   notes?: Record<string, string>;
 }): Promise<RazorpayOrder> {
-  const keyId = getRazorpayKeyId();
-  const keySecret = getRazorpayKeySecret();
-  if (!keyId || !keySecret) throw new Error("Razorpay is not configured.");
-
-  const res = await fetch(`${RAZORPAY_API}/orders`, {
+  const res = await razorpayRequest("/orders", {
     method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       amount: input.amount,
       currency: "INR",
@@ -68,6 +75,38 @@ export async function createRazorpayOrder(input: {
     throw new Error(`Razorpay order failed (${res.status}): ${body.slice(0, 300)}`);
   }
   return (await res.json()) as RazorpayOrder;
+}
+
+export type RazorpayPayment = {
+  id: string;
+  order_id: string;
+  /** created | authorized | captured | refunded | failed */
+  status: string;
+  amount: number; // paise
+  currency: string;
+};
+
+/**
+ * Fetches a payment by id. Returns null when Razorpay has no such payment,
+ * throws on transport/API failure.
+ *
+ * The checkout signature proves Razorpay signed an event for this order — not
+ * that the money moved. A payment can be authorized-but-un-captured, or
+ * failed, with a perfectly valid signature, so the verify route asserts
+ * `status === "captured"` plus the order binding against this server-side
+ * fetch before granting anything. The webhook path already listens to
+ * `payment.captured` only, so this closes the same gap for the callback.
+ */
+export async function fetchRazorpayPayment(paymentId: string): Promise<RazorpayPayment | null> {
+  // Guard the path segment before it reaches the outbound URL (SSRF hygiene).
+  if (!/^pay_[A-Za-z0-9]{1,64}$/.test(paymentId)) return null;
+  const res = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Razorpay payment fetch failed (${res.status}): ${body.slice(0, 300)}`);
+  }
+  return (await res.json()) as RazorpayPayment;
 }
 
 /**

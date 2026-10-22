@@ -18,6 +18,8 @@ import {
 import { requireWriteScope } from "@/lib/auth/action-scope";
 import { audit } from "@/lib/security/audit-log";
 import { generateBillNumber, todayStr } from "@/lib/utils";
+import { getPracticeEntitlements } from "@/lib/queries/packages";
+import { featureBlockedMessage } from "@/lib/packages/entitlements";
 
 export type TestBookingActionResult = { error: string | null };
 
@@ -588,6 +590,12 @@ export async function createVendor(
   const scope = await requireWriteScope("test-booking-create");
   if (!scope) return { error: "You don't have permission to add vendors." };
   const doctorId = scope.anchorDoctorId;
+  // Plan gate: Package 1 excludes multi-vendor lab tests.
+  const blocked = featureBlockedMessage(
+    await getPracticeEntitlements(doctorId),
+    "multiVendorLabTests"
+  );
+  if (blocked) return { error: blocked };
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
@@ -623,6 +631,12 @@ export async function updateVendor(
 ): Promise<TestBookingActionResult> {
   const scope = await requireWriteScope("test-booking-edit");
   if (!scope) return { error: "You don't have permission to edit vendors." };
+  // Plan gate: Package 1 excludes multi-vendor lab tests.
+  const blocked = featureBlockedMessage(
+    await getPracticeEntitlements(scope.anchorDoctorId),
+    "multiVendorLabTests"
+  );
+  if (blocked) return { error: blocked };
   const vendorId = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const mobile = String(formData.get("mobile") ?? "").trim();
@@ -651,6 +665,12 @@ export async function updateVendor(
 export async function deleteVendor(vendorId: number): Promise<TestBookingActionResult> {
   const scope = await requireWriteScope("test-booking-delete");
   if (!scope) return { error: "You don't have permission to delete vendors." };
+  // Plan gate: Package 1 excludes multi-vendor lab tests.
+  const blocked = featureBlockedMessage(
+    await getPracticeEntitlements(scope.anchorDoctorId),
+    "multiVendorLabTests"
+  );
+  if (blocked) return { error: blocked };
   if (!vendorId || !Number.isInteger(vendorId)) return { error: "Invalid vendor ID." };
 
   const [existing] = await db

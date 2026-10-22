@@ -3,10 +3,12 @@
 import { redirect } from "next/navigation";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, companySettings, roles, modelHasRoles, permissions, modelHasPermissions } from "@/lib/db/schema";
+import { users, roles, modelHasRoles, permissions, modelHasPermissions } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
 import { setSessionCookie } from "@/lib/auth/session";
 import { DEFAULT_DOCTOR_MODULE_PERMS } from "@/lib/auth/server-permissions";
+import { trialEndsInDays } from "@/lib/auth/trial";
+import { getTrialDays } from "@/lib/queries/landing";
 import { isDupKey } from "@/lib/db/dup";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit-log";
@@ -135,12 +137,7 @@ export async function signupAction(
   // Doctor accounts get a trial window (legacy RegistrationController parity).
   let trialEndsAt: Date | null = null;
   if (role === "doctor") {
-    const [setting] = await db
-      .select({ defaultTrialDays: companySettings.defaultTrialDays })
-      .from(companySettings)
-      .limit(1);
-    const days = setting?.defaultTrialDays ?? 15;
-    trialEndsAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    trialEndsAt = trialEndsInDays(await getTrialDays());
   }
 
   const hashed = await hashPassword(rawPassword);

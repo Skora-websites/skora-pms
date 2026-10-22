@@ -2,6 +2,7 @@ import { cache } from "react";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { landingItems, landingSections, type LandingItem } from "@/lib/db/schema";
+import { DEFAULT_TRIAL_DAYS } from "@/lib/auth/trial";
 
 export type LandingSectionData = {
   id: number;
@@ -60,3 +61,14 @@ export const getCompanySettings = cache(async (): Promise<CompanySettings | null
     defaultTrialDays: row.defaultTrialDays,
   };
 });
+
+/**
+ * Free-trial length in days for new doctor accounts — single source of the
+ * `?? 15` fallback (company_settings.default_trial_days, schema default 15),
+ * previously duplicated in signup and the super-admin user actions.
+ */
+export async function getTrialDays(): Promise<number> {
+  const settings = await getCompanySettings();
+  const days = settings?.defaultTrialDays;
+  return Number.isInteger(days) && days! > 0 ? days! : DEFAULT_TRIAL_DAYS;
+}

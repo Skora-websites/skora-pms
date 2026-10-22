@@ -162,14 +162,10 @@ export async function hasPermission(userId: number, permission: string) {
  * (requireWriteScope, requireDoctorPermission, the API permission guards)
  * calls this so the paid-feature boundary holds on ALL paths.
  *
- * `trialEndsAt = NULL` means "no trial restriction" (seeded and legacy
- * doctors) — never "expired". Only the `doctor` role carries a trial;
- * every other role always returns false.
+ * The predicate itself lives in ./trial (DB-free, unit-tested); this re-export
+ * keeps every existing `from "./user"` import working unchanged.
  */
-export function isTrialExpired(user: Pick<CurrentUser, "role" | "trialEndsAt">): boolean {
-  if (user.role !== "doctor" || !user.trialEndsAt) return false;
-  return new Date(user.trialEndsAt).getTime() <= Date.now();
-}
+export { isTrialExpired, msUntilTrialEnd } from "./trial";
 
 export type UserRole =
   | "super_admin"

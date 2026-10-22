@@ -77,6 +77,8 @@ export const users = mysqlTable(
     salutation: varchar("salutation", { length: 50 }),
     aadhaarNo: varchar("aadhaar_no", { length: 12 }),
     trialEndsAt: timestamp("trial_ends_at"),
+    /** Purchased package id (e.g. "package-2") — NULL while on trial/legacy. */
+    packageId: varchar("package_id", { length: 50 }),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
   },

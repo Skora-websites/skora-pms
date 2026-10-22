@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { getPracticeEntitlements } from "@/lib/queries/packages";
+import { featureBlockedMessage } from "@/lib/packages/entitlements";
 import {
   listPermissionsByRole,
   listPracticeReceptionistOptions,
@@ -19,6 +21,11 @@ export default async function RolesPage() {
   const user = await requireRole(["doctor", "receptionist"]);
   const doctorId = resolvePracticeDoctorId(user);
 
+  // Reads stay open on every plan (a Package 1 practice must still see its
+  // existing roles); only the write actions are gated, and the notice below
+  // explains the boundary instead of silently failing on save.
+  const entitlements = await getPracticeEntitlements(doctorId);
+
   const [rows, receptionists, permissionModules] = await Promise.all([
     listRolesWithPermissionCounts(doctorId),
     listPracticeReceptionistOptions(doctorId),
@@ -30,6 +37,7 @@ export default async function RolesPage() {
   // role-permission rows (F-06).
   const permsByRole = await listPermissionsByRole(rows.map((r) => r.id));
   const rolesWithPerms = rows.map((r) => ({ ...r, permissionNames: permsByRole.get(r.id) ?? [] }));
+  const rolePlanNotice = featureBlockedMessage(entitlements, "roleManagement");
 
   return (
     <div>
@@ -40,6 +48,12 @@ export default async function RolesPage() {
         />
         <RoleForm modules={permissionModules} />
       </div>
+
+      {rolePlanNotice && (
+        <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          {rolePlanNotice}
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-200 px-5 py-8 text-center text-sm text-slate-400">

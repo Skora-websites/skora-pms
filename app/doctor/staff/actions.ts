@@ -8,6 +8,8 @@ import { users, roles, modelHasRoles, staffAttendances } from "@/lib/db/schema";
 import { requireDoctorPermission } from "@/lib/auth/server-permissions";
 import { getCurrentUser } from "@/lib/auth/user";
 import { revokeAllSessionsForUser } from "@/lib/auth/session";
+import { countPracticeStaff, getPracticeEntitlements } from "@/lib/queries/packages";
+import { seatLimitMessage, seatLimitReached } from "@/lib/packages/entitlements";
 import { audit } from "@/lib/security/audit-log";
 
 export type StaffActionResult = { error: string | null };
@@ -33,6 +35,19 @@ export async function createStaff(
 ): Promise<StaffActionResult> {
   const doctorId = await requireDoctorPermission("staff-create");
   if (!doctorId) return { error: "You don't have permission to add staff." };
+
+  // Plan limit: seats are a property of the PRACTICE (the anchor doctor's
+  // package), so a receptionist hitting this action on someone else's behalf
+  // is still bounded by the practice's plan. Existing staff are never
+  // revoked — only additions are blocked.
+  const [entitlements, seatsUsed] = await Promise.all([
+    getPracticeEntitlements(doctorId),
+    countPracticeStaff(doctorId),
+  ]);
+  if (seatLimitReached(entitlements, seatsUsed)) {
+    return { error: seatLimitMessage(entitlements) };
+  }
+
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const phone = String(formData.get("phone") ?? "").trim() || null;

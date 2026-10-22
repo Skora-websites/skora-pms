@@ -2,7 +2,8 @@
 
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { User, Signature, Bell, Shield } from "lucide-react";
+import type { ReactNode } from "react";
+import { User, Signature, Bell, Shield, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProfileForm } from "../profile/profile-form";
 import { PhotoUpload } from "../profile/photo-upload";
@@ -26,9 +27,10 @@ const TABS = [
   { id: "signature", label: "Signature", icon: Signature },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security", label: "Security", icon: Shield },
+  { id: "plan", label: "Plan", icon: CreditCard },
 ];
 
-export function SettingsTabs({ user }: { user: User }) {
+export function SettingsTabs({ user, planSlot }: { user: User; planSlot?: ReactNode }) {
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("tab") || "profile";
 
@@ -92,6 +94,8 @@ export function SettingsTabs({ user }: { user: User }) {
             <SecuritySettings />
           </div>
         )}
+
+        {activeTab === "plan" && <div className="card p-7">{planSlot}</div>}
       </div>
     </div>
   );

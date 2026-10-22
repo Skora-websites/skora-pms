@@ -44,6 +44,13 @@ existed.
 | `npm run check:links` | No component hardcodes another shell's URL prefix |
 | `npm run test` | `node --test` suites covering role scoping and isolation |
 
+**`npm run build` pins `NODE_ENV=production` itself.** npm on some hosts injects
+`NODE_ENV=development` into lifecycle scripts, which makes `next build` compile
+React's development internals; static generation then dies prerendering
+`/_global-error` with `TypeError: Cannot read properties of null (reading
+'useContext')`. Do not set `NODE_ENV` in `.env`/`.env.example` either — Next owns
+that variable, and a pinned value silently builds the wrong bundle.
+
 **Migration numbering**: `drizzle/` files are applied in filename order by
 `scripts/migrate.ts`, which only picks up files matching `^\d{4}_`. The sequence
 skips `0017` (0016 → 0018) — the runner is unaffected because it orders by name,

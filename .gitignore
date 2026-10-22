@@ -3,6 +3,10 @@
 /.pnp
 .pnp.*
 
+# Database dumps/exports — contain the operator password hash, never commit
+skoracares-db-export.sql
+/*-db-export.sql
+
 # testing
 /coverage
 
