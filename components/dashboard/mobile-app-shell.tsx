@@ -13,8 +13,8 @@ import { normalizeShell, notificationsPath, profilePath } from "@/lib/auth/shell
  * Mobile app shell (lg:hidden only).
  *
  * Bottom tab bar: up to 5 primary destinations + a "More" sheet with every
- * remaining module in a grid. Slim top app bar: hamburger (full nav),
- * page title, notification bell, profile → logout.
+ * remaining module in a grid. Slim top app bar: page title, notification
+ * bell, profile → logout.
  *
  * Desktop (>= lg) is untouched — the sidebar layout renders instead.
  */
@@ -43,8 +43,11 @@ export function MobileAppShell({
   const notificationsHref = notificationsPath(shell);
   const profileHref = profilePath(shell);
 
-  const isActive = (href: string) =>
-    pathname === href || (href !== "/" && pathname.startsWith(href));
+  // Same semantics as the sidebar: `exact` items must match the pathname
+  // exactly, otherwise the prefix match would highlight "Dashboard" on every
+  // /patient/* route (two active tabs + a stale app-bar title).
+  const isActive = (href: string, exact = false) =>
+    exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
   const closeAll = () => {
     setMoreOpen(false);
@@ -67,15 +70,34 @@ export function MobileAppShell({
   }, [moreOpen, profileOpen]);
 
   const pageTitle =
-    navItems.find((i) => isActive(i.href))?.label ??
+    navItems.find((i) => isActive(i.href, i.exact))?.label ??
     (user.role === "patient" ? "My Care" : footerLabel);
+
+  // iOS-style large-title collapse: at the top of the page the H1 sits right
+  // under the bar, so the bar title hides (no duplicated heading); it fades
+  // in once the content scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 32);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <div className="lg:hidden">
       {/* ── Top app bar ── */}
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
         <div className="flex h-14 items-center gap-1.5 px-3">
-          <span className="truncate font-display text-[15px] font-bold text-ink">{pageTitle}</span>
+          <span
+            className={cn(
+              "truncate font-display text-[15px] font-bold text-ink transition-opacity duration-200",
+              scrolled ? "opacity-100" : "opacity-0"
+            )}
+          >
+            {pageTitle}
+          </span>
           <div className="ml-auto flex items-center gap-1">
             {notificationsHref && (
               <Link
@@ -148,24 +170,28 @@ export function MobileAppShell({
         </div>
       )}
 
-      {/* ── Full drawer nav removed — hamburger hidden on mobile/tablet;
-          bottom tab bar + More sheet cover all navigation. ── */}
-
-      {/* ── Bottom tab bar ── */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-md items-stretch justify-around px-1">
+      {/* ── Bottom tab bar — floating rounded app-nav ── */}
+      <nav className="fixed inset-x-3 z-40 bottom-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex max-w-md items-stretch justify-around rounded-[26px] border border-slate-200/60 bg-white/90 px-1 shadow-float backdrop-blur-xl">
           {primary.map((item) => {
-            const active = isActive(item.href);
+            const active = isActive(item.href, item.exact);
             const Icon = ICON_MAP[item.icon] ?? Grid2x2;
             return (
-              <Link key={item.href} href={item.href} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2">
-                <span className="relative flex h-7 w-12 items-center justify-center">
-                  {active && (
-                    <span className="absolute inset-x-1 top-0 h-0.5 rounded-full bg-accent-400" />
-                  )}
-                  <Icon className={cn("h-[22px] w-[22px]", active ? "text-brand-700" : "text-slate-400")} />
+              <Link
+                key={item.href}
+                href={item.href}
+                className="group flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[20px] py-2.5 transition-transform active:scale-95"
+              >
+                <span className="relative flex h-8 w-12 items-center justify-center">
+                  {active && <span className="absolute inset-0 rounded-full bg-accent-100" />}
+                  <Icon
+                    className={cn(
+                      "relative h-[22px] w-[22px] transition-colors",
+                      active ? "text-brand-800" : "text-slate-400 group-active:text-slate-500"
+                    )}
+                  />
                 </span>
-                <span className={cn("max-w-full truncate text-[10px] font-semibold", active ? "text-brand-800" : "text-slate-400")}>
+                <span className={cn("max-w-full truncate text-[11px] font-semibold", active ? "text-brand-800" : "text-slate-500")}>
                   {shortLabel(item.label)}
                 </span>
               </Link>
@@ -174,14 +200,21 @@ export function MobileAppShell({
           {moreItems.length > 0 && (
             <button
               onClick={() => setMoreOpen(true)}
-              className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2"
+              className="group flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[20px] py-2.5 transition-transform active:scale-95"
               aria-label="More"
             >
-              <span className="relative flex h-7 w-12 items-center justify-center">
-                {moreOpen && <span className="absolute inset-x-1 top-0 h-0.5 rounded-full bg-accent-400" />}
-                <Grid2x2 className={cn("h-[22px] w-[22px]", moreOpen ? "text-brand-700" : "text-slate-400")} />
+              <span className="relative flex h-8 w-12 items-center justify-center">
+                {moreOpen && <span className="absolute inset-0 rounded-full bg-accent-100" />}
+                <Grid2x2
+                  className={cn(
+                    "relative h-[22px] w-[22px] transition-colors",
+                    moreOpen ? "text-brand-800" : "text-slate-400 group-active:text-slate-500"
+                  )}
+                />
               </span>
-              <span className="max-w-full truncate text-[10px] font-semibold text-slate-400">More</span>
+              <span className={cn("max-w-full truncate text-[11px] font-semibold", moreOpen ? "text-brand-800" : "text-slate-500")}>
+                More
+              </span>
             </button>
           )}
         </div>
@@ -190,7 +223,7 @@ export function MobileAppShell({
       {/* ── More sheet ── */}
       {moreOpen && (
         <div className="fixed inset-x-0 bottom-0 z-50" ref={sheetRef}>
-          <div className="mx-auto max-w-md rounded-t-3xl bg-white px-4 pb-[env(safe-area-inset-bottom)] pt-3 shadow-2xl">
+          <div className="mx-auto max-w-md rounded-t-3xl bg-white px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-200" />
             <div className="flex items-center justify-between px-1">
               <p className="font-display text-sm font-bold text-ink">All modules</p>
@@ -200,7 +233,7 @@ export function MobileAppShell({
             </div>
             <div className="grid max-h-[50vh] grid-cols-4 gap-1 overflow-y-auto pb-3 pt-2">
               {[...moreItems, ...primary].map((item) => {
-                const active = isActive(item.href);
+                const active = isActive(item.href, item.exact);
                 const Icon = ICON_MAP[item.icon] ?? Grid2x2;
                 return (
                   <Link
@@ -263,6 +296,11 @@ function shortLabel(label: string): string {
     "Manage Users": "Users",
     "My Health Records": "Records",
     "Find a Doctor": "Find",
+    // The floating rounded bar is ~73px/tab at 11px — anything longer
+    // ellipsizes, so the two frequent ones get terse tab-bar equivalents.
+    Appointments: "Visits",
+    Registrations: "Patients",
+    "Schedule Time": "Schedule",
   };
   return map[label] ?? label;
 }

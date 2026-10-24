@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Menu, Bell, LogOut, UserRound, ChevronDown, Search, MessageCircle, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, UserRound, ChevronDown, Search, MessageCircle, ShieldCheck } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 import { initials, cn, type DutyMode } from "@/lib/utils";
 import { normalizeShell, notificationsPath, profilePath } from "@/lib/auth/shell-paths";
@@ -11,14 +11,12 @@ import { normalizeShell, notificationsPath, profilePath } from "@/lib/auth/shell
 export function DashboardHeader({
   user,
   unreadCount = 0,
-  onOpenMobileMenu,
   searchHref,
   searchPlaceholder = "Search patient by name, phone or email…",
   dutyMode = "off",
 }: {
   user: { name: string; role: string; email: string | null; profilePhotoPath: string | null };
   unreadCount?: number;
-  onOpenMobileMenu: () => void;
   searchHref?: string;
   searchPlaceholder?: string;
   /** Doctor duty mode — drives the Online/Offline status pill (§5.2). */
@@ -66,14 +64,6 @@ export function DashboardHeader({
   return (
     <header className="sticky top-0 z-30 hidden border-b border-slate-200 bg-surface/80 backdrop-blur-xl lg:block">
       <div className="flex h-17 items-center gap-3 px-4 lg:px-6">
-        <button
-          onClick={onOpenMobileMenu}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 lg:hidden"
-          aria-label="Open menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-
         {/* Global search (reuses the patients / users search — no new feature) */}
         {searchHref && (
           <form onSubmit={submitSearch} className="hidden min-w-0 flex-1 max-w-xl lg:block">

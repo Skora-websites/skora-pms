@@ -179,7 +179,7 @@ export function PwaSetup() {
 
   if (!showInstall || storedDismissed) return null;
   return (
-    <div className="fixed bottom-20 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-brand-100 bg-white p-3 shadow-2xl lg:bottom-6">
+    <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-brand-100 bg-white p-3 shadow-2xl lg:bottom-6">
       <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon-192.png" alt="SkoraCare" className="h-full w-full object-cover" />

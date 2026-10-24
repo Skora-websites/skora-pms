@@ -28,7 +28,7 @@ if (publicKey && privateKey) {
  */
 export async function sendPushToSubscription(
   subscription: { endpoint: string; auth: string; p256dh: string },
-  payload: { title: string; body: string; url?: string; tag?: string }
+  payload: { title: string; body: string; url?: string; tag?: string; critical?: boolean }
 ): Promise<boolean> {
   if (!configured) return false;
   // Defense in depth: rows written before the subscribe-time allowlist must
@@ -52,6 +52,7 @@ export async function sendPushToSubscription(
         body: payload.body,
         url: payload.url ?? "/",
         tag: payload.tag ?? "skoracare",
+        critical: payload.critical === true,
       })
     );
     return true;
@@ -75,7 +76,7 @@ export async function sendPushToSubscription(
  */
 export async function sendPushToUser(
   userId: number,
-  payload: { title: string; body: string; url?: string; tag?: string }
+  payload: { title: string; body: string; url?: string; tag?: string; critical?: boolean }
 ): Promise<number> {
   if (!configured) return 0;
   const subs = await db

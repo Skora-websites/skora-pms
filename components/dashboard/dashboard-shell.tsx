@@ -32,7 +32,6 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-surface">
@@ -48,8 +47,6 @@ export function DashboardShell({
         items={navItems}
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((v) => !v)}
-        mobileOpen={mobileOpen}
-        onCloseMobile={() => setMobileOpen(false)}
         footerHref={footerHref}
         footerLabel={footerLabel}
         promo={promo}
@@ -63,10 +60,11 @@ export function DashboardShell({
           collapsed ? "lg:pl-[76px]" : "lg:pl-64"
         }`}
       >
-        <DashboardHeader user={user} unreadCount={unreadCount} onOpenMobileMenu={() => setMobileOpen(true)} searchHref={searchHref} dutyMode={dutyMode} />
-        {/* Single page content — never duplicated. Mobile: gutters + bottom
-            tab bar clearance. Desktop: top padding below the in-flow header. */}
-        <main className="overflow-x-hidden px-4 pb-24 pt-14 lg:px-8 lg:pb-8 lg:pt-6">
+        <DashboardHeader user={user} unreadCount={unreadCount} searchHref={searchHref} dutyMode={dutyMode} />
+        {/* Single page content — never duplicated. Mobile: gutters + clearance
+            for the safe-area-padded top app bar and the floating bottom tab
+            bar. Desktop: top padding below the in-flow header. */}
+        <main className="overflow-x-hidden px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(3.5rem+env(safe-area-inset-top))] lg:px-8 lg:pb-8 lg:pt-6">
           {children}
         </main>
       </div>

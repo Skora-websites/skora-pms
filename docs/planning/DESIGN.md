@@ -283,7 +283,7 @@
 | **Desktop (Default)** | `>= 1280px` | Full 3-column clinical Bento layout, 240px persistent medical sidebar. |
 | **Laptop / Clinic Tablet Horiz** | `1024px - 1279px` | Left navigation condenses to icon rail (`72px`). Metric row wraps to 2x2. |
 | **Nurse Station Tablet** | `768px - 1023px` | Single-column metric stacking, Bento widgets convert into 2-column flex. |
-| **Doctor Mobile Phone** | `< 768px` | Full-width linear stream. Navigation moves to sticky bottom app bar. |
+| **Doctor Mobile Phone** | `< 768px` | Full-width linear stream. Navigation moves to a floating rounded bottom tab bar (4 primary tabs + "More" sheet); active tab carries a mint pill chip; bar honors `env(safe-area-inset-bottom)`; the app-bar title collapses iOS-style on scroll. |
 
 ---
 

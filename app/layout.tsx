@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaSetup } from "@/components/pwa/pwa-setup";
 import { SplashScreen } from "@/components/pwa/splash-screen";
+import { ToastProvider } from "@/components/ui/toast";
 import { AgentationDev } from "@/components/dev/agentation-dev";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -53,12 +54,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Native-app feel: no pinch-zoom or pan, covers the whole screen on
-  // notched devices, and fits the iOS safe area.
+  // Covers the whole screen on notched devices and fits the iOS safe area.
+  // Pinch-zoom stays enabled (no maximumScale/userScalable=no): WCAG 1.4.4
+  // requires text resizability, and the medical audience skews older —
+  // a locked viewport locks them out.
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
 };
 
@@ -77,9 +78,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full">
         <SplashScreen />
-        {children}
-        <PwaSetup />
-        <AgentationDev />
+        <ToastProvider>
+          {children}
+          <PwaSetup />
+          <AgentationDev />
+        </ToastProvider>
       </body>
     </html>
   );

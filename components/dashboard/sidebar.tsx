@@ -111,8 +111,6 @@ export function Sidebar({
   items,
   collapsed,
   onToggleCollapsed,
-  mobileOpen,
-  onCloseMobile,
   footerHref,
   footerLabel,
   promo = false,
@@ -120,8 +118,6 @@ export function Sidebar({
   items: NavItem[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  mobileOpen: boolean;
-  onCloseMobile: () => void;
   footerHref: string;
   footerLabel: string;
   /** Show the §5.1 "Download Doctor App" promo card (doctor shell only). */
@@ -173,7 +169,7 @@ export function Sidebar({
   const nav = (
     <div className="flex h-full flex-col">
       <div className={cn("flex items-center justify-between px-4 py-5", collapsed && "justify-center px-2")}>
-        <div onClick={onCloseMobile} className="cursor-pointer">
+        <div>
           <Logo />
         </div>
         <button
@@ -182,13 +178,6 @@ export function Sidebar({
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-        </button>
-        <button
-          onClick={onCloseMobile}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-ink lg:hidden"
-          aria-label="Close menu"
-        >
-          <X className="h-4 w-4" />
         </button>
       </div>
 
@@ -207,7 +196,6 @@ export function Sidebar({
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={onCloseMobile}
                   className={cn(
                     "group flex items-center gap-2.5 rounded-full px-3 py-2 text-[13px] font-medium transition-all duration-200",
                     collapsed ? "justify-center px-0" : "",
@@ -265,7 +253,6 @@ export function Sidebar({
         <Link
           href={footerHref}
           target={footerHref.startsWith("http") ? "_blank" : undefined}
-          onClick={onCloseMobile}
           className={cn(
             "flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100/80 hover:text-ink",
             collapsed && "justify-center px-0"
@@ -280,34 +267,14 @@ export function Sidebar({
   );
 
   return (
-    <>
-      {/* Desktop sidebar */}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-40 hidden border-r border-slate-200 bg-white transition-all duration-300 lg:block",
-          collapsed ? "w-[76px]" : "w-64"
-        )}
-      >
-        {nav}
-      </aside>
-
-      {/* Mobile drawer */}
-      <div
-        className={cn(
-          "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden",
-          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
-        )}
-        onClick={onCloseMobile}
-      />
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 border-r border-slate-200 bg-white transition-transform duration-300 lg:hidden",
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        {nav}
-      </aside>
-    </>
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-40 hidden border-r border-slate-200 bg-white transition-all duration-300 lg:block",
+        collapsed ? "w-[76px]" : "w-64"
+      )}
+    >
+      {nav}
+    </aside>
   );
 }
 
