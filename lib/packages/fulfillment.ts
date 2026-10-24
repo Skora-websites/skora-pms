@@ -16,6 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { packagePayments, users } from "@/lib/db/schema";
 import { getPackagePricing, type PackagePeriod } from "./config";
+import { mayFulfillForUser } from "./buyers";
 import { auditLog } from "@/lib/security/audit-log";
 
 export type FulfillmentResult =
@@ -31,10 +32,16 @@ export async function fulfillPackagePayment(input: {
   paymentId: string | null;
   signature?: string | null;
   source: "checkout" | "webhook";
-  /** Caller's user id — required for checkout (audit F-14): the browser
-   *  callback must only fulfill the CALLER'S order, never another user's.
-   *  The webhook path has no session and legitimately omits it. */
-  callerId?: number;
+  /**
+   * Checkout binding (audit F-14) in set form: the browser callback may only
+   * fulfill payments credited to one of these user ids. The buyer is no
+   * longer always the credited user — a business owner pays for their
+   * practice's anchor doctor — so the binding is the caller's authorized
+   * target set from lib/packages/buyers.ts, not a single id.
+   *
+   * The webhook path has no session and legitimately omits it.
+   */
+  callerMayCreditUserIds?: number[];
 }): Promise<FulfillmentResult> {
   const [payment] = await db
     .select()
@@ -43,10 +50,14 @@ export async function fulfillPackagePayment(input: {
     .limit(1);
   if (!payment) return { ok: false, error: "Unknown order." };
 
-  // Checkout binding (audit F-14): an authenticated caller can only ever
-  // fulfill their own order. The HMAC signature proves the payment is real,
-  // not that the caller owns it.
-  if (input.source === "checkout" && input.callerId !== payment.userId) {
+  // Checkout binding (audit F-14): an authenticated caller can only fulfill
+  // payments credited to a user they are allowed to pay for (their own
+  // practice, or — for a business owner — their practice's doctors). The
+  // HMAC signature proves the payment is real, not that the caller owns it.
+  if (
+    input.source === "checkout" &&
+    !mayFulfillForUser(payment.userId, input.callerMayCreditUserIds)
+  ) {
     return { ok: false, error: "This order belongs to a different account." };
   }
 
@@ -106,11 +117,16 @@ export async function fulfillPackagePayment(input: {
     .where(eq(users.id, payment.userId));
 
   await auditLog({
-    userId: payment.userId,
+    // Attribute the purchase to the ACCOUNT THAT PAID (the buyer), not the
+    // credited practice doctor — an owner buying for their practice is the
+    // actor here. Pre-0023 rows have no buyer and fall back to the doctor.
+    userId: payment.buyerId ?? payment.userId,
     action: "settings_updated",
     metadata: {
       event: "package_purchased",
       source: input.source,
+      buyerId: payment.buyerId ?? null,
+      creditedUserId: payment.userId,
       packageId: payment.packageId,
       packageName: payment.packageName,
       period: payment.period,
@@ -130,6 +146,7 @@ export async function getRecentPackagePayments(limit = 50) {
     .select({
       id: packagePayments.id,
       userId: packagePayments.userId,
+      buyerId: packagePayments.buyerId,
       userName: users.name,
       userEmail: users.email,
       packageName: packagePayments.packageName,

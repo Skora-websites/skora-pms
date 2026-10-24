@@ -49,6 +49,9 @@ export default async function PackagePaymentsPage() {
                   <td>
                     <p className="font-medium text-ink">{p.userName}</p>
                     <p className="text-xs text-slate-400">{p.userEmail ?? "—"}</p>
+                    {p.buyerId !== null && p.buyerId !== p.userId && (
+                      <p className="mt-1 text-xs text-amber-700">paid by another account</p>
+                    )}
                   </td>
                   <td>{p.packageName}</td>
                   <td className="capitalize">{p.period}</td>

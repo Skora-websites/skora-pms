@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/guard";
+import { getBusinessScope } from "@/lib/auth/scope";
 import { verifyRazorpaySignature, fetchRazorpayPayment, type RazorpayPayment } from "@/lib/packages/razorpay";
+import { resolvePlanPurchaseTarget } from "@/lib/packages/buyers";
 import { fulfillPackagePayment } from "@/lib/packages/fulfillment";
 
 /**
@@ -11,8 +13,16 @@ export async function POST(request: Request) {
   // Role-only gate (see the order route): an expired trial MUST be able to
   // complete the purchase it started, otherwise the buyer pays while the
   // callback fails and access stays locked.
-  const user = await requireApiRole(["doctor"]);
+  const user = await requireApiRole(["doctor", "admin"]);
   if (user instanceof Response) return user;
+
+  // The fulfillment binding (audit F-14) is the set of users this caller may
+  // pay for: a doctor's own practice, or every doctor of the owner's business.
+  const { mayCreditUserIds } = resolvePlanPurchaseTarget({
+    role: user.role,
+    userId: user.id,
+    businessDoctorIds: user.role === "admin" ? (await getBusinessScope()).doctorIds : [],
+  });
 
   let body: Record<string, unknown>;
   try {
@@ -69,7 +79,7 @@ export async function POST(request: Request) {
     paymentId,
     signature,
     source: "checkout",
-    callerId: user.id, // bound to the caller (audit F-14)
+    callerMayCreditUserIds: mayCreditUserIds, // bound to the caller (audit F-14)
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 

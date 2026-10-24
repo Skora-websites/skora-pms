@@ -54,7 +54,7 @@ that variable, and a pinned value silently builds the wrong bundle.
 **Migration numbering**: `drizzle/` files are applied in filename order by
 `scripts/migrate.ts`, which only picks up files matching `^\d{4}_`. The sequence
 skips `0017` (0016 → 0018) — the runner is unaffected because it orders by name,
-not by continuity. New migrations use the next free number (currently `0022`).
+not by continuity. New migrations use the next free number (currently `0023`).
 
 ## PWA probes (`docs/probes/`)
 

@@ -239,6 +239,12 @@ export const packagePayments = mysqlTable(
   {
     id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
     userId: bigint("user_id", { mode: "number" }).notNull(),
+    /**
+     * Account that actually paid. Same as `userId` for the doctor-tier
+     * checkout and for every row created before migration 0023; a business
+     * owner pays for their practice's anchor doctor, so the two differ there.
+     */
+    buyerId: bigint("buyer_id", { mode: "number" }),
     packageId: varchar("package_id", { length: 50 }).notNull(),
     packageName: varchar("package_name", { length: 255 }).notNull(),
     /** Monthly or yearly billing period chosen at checkout. */

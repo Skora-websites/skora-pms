@@ -14,6 +14,8 @@ import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { hashPassword } from "@/lib/auth/password";
 import { revokeAllSessionsForUser } from "@/lib/auth/session";
+import { countPracticeStaff, getPracticeEntitlements } from "@/lib/queries/packages";
+import { seatLimitMessage, seatLimitReached } from "@/lib/packages/entitlements";
 
 export type StaffActionResult = { error: string | null };
 
@@ -60,6 +62,17 @@ export async function createStaffMember(
     .where(eq(doctorClinics.id, clinicId))
     .limit(1);
   if (!clinic) return { error: "Clinic not found." };
+
+  // Plan limit (parity with /doctor/staff): the practice the staff row
+  // anchors to is the clinic's owner doctor's, so its plan bounds the seats.
+  // Existing staff are never revoked — only additions are blocked.
+  const [entitlements, seatsUsed] = await Promise.all([
+    getPracticeEntitlements(clinic.doctorId),
+    countPracticeStaff(clinic.doctorId),
+  ]);
+  if (seatLimitReached(entitlements, seatsUsed)) {
+    return { error: seatLimitMessage(entitlements) };
+  }
 
   const [existing] = await db
     .select({ id: users.id })

@@ -27,15 +27,23 @@ async function getPracticePackageId(doctorId: number): Promise<string | null> {
   return row?.packageId ?? null;
 }
 
-/** Staff accounts already linked to the practice — the seat count. */
-export async function countPracticeStaff(doctorId: number): Promise<number> {
+/**
+ * Staff accounts already linked to a practice — the seat count. Accepts one
+ * anchor doctor (a doctor's own practice) or a list (every doctor of a
+ * business, so an owner's seat count covers their whole business).
+ */
+export async function countPracticeStaff(doctorId: number | number[]): Promise<number> {
+  const ids = [...new Set(Array.isArray(doctorId) ? doctorId : [doctorId])].filter(
+    (id) => Number.isInteger(id) && id > 0
+  );
+  if (ids.length === 0) return 0;
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(users)
     .where(
       and(
         inArray(users.role, ["receptionist", "manager"]),
-        or(eq(users.doctorId, doctorId), eq(users.referenceRoleId, doctorId))
+        or(inArray(users.doctorId, ids), inArray(users.referenceRoleId, ids))
       )
     );
   return Number(row?.n ?? 0);
@@ -68,19 +76,25 @@ type PracticePlanSummary = {
   }[];
 };
 
-/** Everything the doctor settings "Plan" card renders. */
-export async function getPracticePlanSummary(
-  viewer: { id: number; role: string },
-  doctorId: number
-): Promise<PracticePlanSummary> {
+/**
+ * Shared body: the plan reads the anchor doctor's row (whose `package_id` /
+ * `trial_ends_at` carry the practice plan), seats count over `seatDoctorIds`
+ * (one practice, or every doctor of a business), and payments belong to
+ * `paymentUserId` (the viewer's own when they are a doctor, else the anchor).
+ */
+async function summarizePlan(input: {
+  anchorDoctorId: number;
+  seatDoctorIds: number[];
+  paymentUserId: number;
+}): Promise<PracticePlanSummary> {
   const [planRow, staffCount, payments] = await Promise.all([
     db
       .select({ packageId: users.packageId, trialEndsAt: users.trialEndsAt })
       .from(users)
-      .where(eq(users.id, doctorId))
+      .where(eq(users.id, input.anchorDoctorId))
       .limit(1)
       .then((rows) => rows[0]),
-    countPracticeStaff(doctorId),
+    countPracticeStaff(input.seatDoctorIds),
     db
       .select({
         id: packagePayments.id,
@@ -92,7 +106,7 @@ export async function getPracticePlanSummary(
         createdAt: packagePayments.createdAt,
       })
       .from(packagePayments)
-      .where(eq(packagePayments.userId, viewer.role === "doctor" ? viewer.id : doctorId))
+      .where(eq(packagePayments.userId, input.paymentUserId))
       .orderBy(desc(packagePayments.createdAt))
       .limit(10),
   ]);
@@ -106,4 +120,35 @@ export async function getPracticePlanSummary(
     staffSeatsUsed: staffCount,
     payments,
   };
+}
+
+/** Everything the doctor settings "Plan" card renders. */
+export async function getPracticePlanSummary(
+  viewer: { id: number; role: string },
+  doctorId: number
+): Promise<PracticePlanSummary> {
+  return summarizePlan({
+    anchorDoctorId: doctorId,
+    seatDoctorIds: [doctorId],
+    paymentUserId: viewer.role === "doctor" ? viewer.id : doctorId,
+  });
+}
+
+/**
+ * The same summary for a business owner: the plan is the practice anchor
+ * doctor's (the same `scope.doctorIds[0]` anchor `requireWriteScope` and the
+ * checkout target use), while seats count across EVERY doctor of the
+ * business — an owner sees the seats their whole business occupies, not just
+ * one clinic's.
+ */
+export async function getBusinessPlanSummary(
+  viewer: { id: number; role: string },
+  doctorIds: number[]
+): Promise<PracticePlanSummary> {
+  const ids = [...new Set(doctorIds)].filter((id) => Number.isInteger(id) && id > 0);
+  return summarizePlan({
+    anchorDoctorId: ids[0],
+    seatDoctorIds: ids,
+    paymentUserId: ids[0],
+  });
 }

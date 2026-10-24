@@ -5,6 +5,7 @@ import { getBusinessScope } from "@/lib/auth/scope";
 import { listBusinessProfiles, scopeOrSentinel } from "@/lib/queries/admin";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { BusinessSettingsForm, type BusinessProfile } from "./settings-form";
+import PlanCard from "@/components/packages/plan-card";
 
 export const metadata: Metadata = { title: "Business Settings · Business" };
 
@@ -14,7 +15,7 @@ export const metadata: Metadata = { title: "Business Settings · Business" };
  * reach this route (ownerOnly module map).
  */
 export default async function AdminSettingsPage() {
-  await requireAdminTier("/admin/settings");
+  const { user } = await requireAdminTier("/admin/settings");
   const scope = await getBusinessScope();
 
   const rows = await listBusinessProfiles(scopeOrSentinel(scope.businessIds));
@@ -106,6 +107,35 @@ export default async function AdminSettingsPage() {
             </div>
           );
         })}
+      </div>
+
+      {/* Plan & subscription — the same component the doctor panel renders, so
+          the two tiers cannot drift: the practice anchor doctor carries the
+          plan (the anchor this owner's checkout credits and their staff
+          writes enforce), and seats count across the whole business. */}
+      <div className="mt-10 border-t border-slate-200 pt-8">
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">Plan &amp; subscription</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Your practice&apos;s plan, the seats it includes, and its renewal.
+        </p>
+        <div className="mt-5">
+          {scope.doctorIds.length === 0 ? (
+            <p className="card p-6 text-sm text-slate-500">
+              No clinic is linked to your business yet, so there is no practice plan to show. Add a
+              clinic from the Clinics page — a plan is purchased for the clinic&apos;s practice.
+            </p>
+          ) : (
+            <PlanCard
+              viewerId={user.id}
+              viewerRole={user.role}
+              viewerName={user.name}
+              viewerEmail={user.email}
+              viewerPhone={user.phone}
+              practiceDoctorId={scope.doctorIds[0]}
+              businessDoctorIds={scope.doctorIds}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

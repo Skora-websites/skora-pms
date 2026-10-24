@@ -9,6 +9,8 @@ import { ADMIN_ROUTE_PERMISSIONS, type AdminNavPerm } from "@/lib/auth/permissio
 import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { hashPassword } from "@/lib/auth/password";
+import { countPracticeStaff, getPracticeEntitlements } from "@/lib/queries/packages";
+import { seatLimitMessage, seatLimitReached } from "@/lib/packages/entitlements";
 
 const USER_MODEL = "App\\Models\\User";
 
@@ -184,6 +186,22 @@ export async function createManager(
 
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
   if (existing) return { error: "A user with this email already exists." };
+
+  // Plan limit (parity with /doctor/staff): a manager is a staff seat, and
+  // the plan belongs to the practice anchor doctor — the same anchor the
+  // owner's checkout credits. Seats count across the whole business, so the
+  // number enforced here is the number the owner's plan card shows. Existing
+  // managers are never revoked; only additions are blocked.
+  const scope = await getBusinessScope();
+  if (scope.doctorIds.length > 0) {
+    const [entitlements, seatsUsed] = await Promise.all([
+      getPracticeEntitlements(scope.doctorIds[0]),
+      countPracticeStaff(scope.doctorIds),
+    ]);
+    if (seatLimitReached(entitlements, seatsUsed)) {
+      return { error: seatLimitMessage(entitlements) };
+    }
+  }
 
   // Resolve the documented default set (clinic-ops core + finance) against the
   // live catalog before opening the write, so an unknown module name can't

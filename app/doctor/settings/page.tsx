@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/guard";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { SettingsTabs } from "./settings-tabs";
-import PlanCard from "./plan-card";
+import PlanCard from "@/components/packages/plan-card";
 
 export const metadata: Metadata = { title: "Settings · Doctor" };
 

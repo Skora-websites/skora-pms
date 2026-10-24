@@ -2,11 +2,20 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { packagePayments } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
+import { getBusinessScope } from "@/lib/auth/scope";
 import { getPackagePricing, type PackagePeriod } from "@/lib/packages/config";
+import { resolvePlanPurchaseTarget } from "@/lib/packages/buyers";
 import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/packages/razorpay";
 
 /**
- * Creates a Razorpay order + package_payments row for the signed-in doctor.
+ * Creates a Razorpay order + package_payments row for the signed-in buyer.
+ *
+ * The BUYER and the CREDITED user differ by tier: a doctor buys their own
+ * practice, a business owner buys for their practice's anchor doctor
+ * (lib/packages/buyers.ts). `package_payments.user_id` is the credited user
+ * because fulfillment writes `users.package_id` / `users.trial_ends_at` on
+ * that row — never the caller.
+ *
  * Body: { packageId, period }
  */
 export async function POST(request: Request) {
@@ -14,8 +23,24 @@ export async function POST(request: Request) {
   // back in (self-serve renewal from /trial-expired and /pricing), so this
   // route deliberately does NOT reject expired trials — the previous
   // isTrialExpired 403 made the renew button on /trial-expired dead code.
-  const user = await requireApiRole(["doctor"]);
+  const user = await requireApiRole(["doctor", "admin"]);
   if (user instanceof Response) return user;
+
+  // Owner tier: which practice are we paying for? Managers are excluded —
+  // purchase is owner-gated, mirroring /admin/settings.
+  const businessDoctorIds =
+    user.role === "admin" ? (await getBusinessScope()).doctorIds : [];
+  const { targetUserId } = resolvePlanPurchaseTarget({
+    role: user.role,
+    userId: user.id,
+    businessDoctorIds,
+  });
+  if (targetUserId === null) {
+    return NextResponse.json(
+      { error: "No clinic is linked to your business yet — add a clinic before buying a plan." },
+      { status: 400 }
+    );
+  }
 
   let body: { packageId?: unknown; period?: unknown };
   try {
@@ -32,12 +57,13 @@ export async function POST(request: Request) {
   try {
     const order = await createRazorpayOrder({
       amount: pricing.amount,
-      receipt: `pkg_${user.id}_${Date.now()}`,
-      notes: { userId: String(user.id), packageId, period },
+      receipt: `pkg_${targetUserId}_${Date.now()}`,
+      notes: { buyerId: String(user.id), userId: String(targetUserId), packageId, period },
     });
 
     await db.insert(packagePayments).values({
-      userId: user.id,
+      userId: targetUserId,
+      buyerId: user.id,
       packageId,
       packageName: pricing.plan.name,
       period,

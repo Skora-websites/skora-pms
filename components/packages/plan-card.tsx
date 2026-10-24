@@ -5,7 +5,7 @@ import { PackageCheckoutButton } from "@/components/packages/package-checkout-bu
 import { isRazorpayConfigured } from "@/lib/packages/razorpay";
 import { PACKAGE_PLANS } from "@/lib/packages/config";
 import { getTrialDays } from "@/lib/queries/landing";
-import { getPracticePlanSummary } from "@/lib/queries/packages";
+import { getBusinessPlanSummary, getPracticePlanSummary } from "@/lib/queries/packages";
 import { DAY_MS, msUntilTrialEnd } from "@/lib/auth/trial";
 import { formatDate, formatINR } from "@/lib/utils";
 
@@ -20,6 +20,11 @@ const PERIOD_LABEL: Record<string, string> = {
  * entitlements it unlocks, the access expiry the layout guard enforces, and
  * the payment history backing it. Rendered server-side so it never ships plan
  * state to a client bundle.
+ *
+ * Shared by both shells so the two tiers cannot drift: the doctor panel reads
+ * their own practice, the business owner panel reads the practice anchor
+ * doctor (the same anchor their checkout credits and their writes enforce)
+ * and counts seats across the whole business.
  */
 export default async function PlanCard({
   viewerId,
@@ -28,15 +33,22 @@ export default async function PlanCard({
   viewerEmail,
   viewerPhone,
   practiceDoctorId,
+  businessDoctorIds,
 }: {
   viewerId: number;
   viewerRole: string;
   viewerName: string;
   viewerEmail: string | null;
   viewerPhone: string | null;
+  /** Doctor-tier anchor: the practice whose plan is shown. */
   practiceDoctorId: number;
+  /** Owner tier only: every doctor of the business (seat counting). */
+  businessDoctorIds?: number[];
 }) {
-  const summary = await getPracticePlanSummary({ id: viewerId, role: viewerRole }, practiceDoctorId);
+  const summary =
+    viewerRole === "admin" && businessDoctorIds && businessDoctorIds.length > 0
+      ? await getBusinessPlanSummary({ id: viewerId, role: viewerRole }, businessDoctorIds)
+      : await getPracticePlanSummary({ id: viewerId, role: viewerRole }, practiceDoctorId);
   const { entitlements, accessUntil, accessExpired, staffSeatsUsed, payments } = summary;
   const trialDays = await getTrialDays();
 
@@ -44,7 +56,10 @@ export default async function PlanCard({
   const daysLeft = accessUntil ? Math.floor(msUntilTrialEnd({ role: "doctor", trialEndsAt: accessUntil }) / DAY_MS) : null;
   const seatsLabel = entitlements.staffSeats === null ? "Unlimited" : `${entitlements.staffSeats}`;
   const seatsUsedLabel = `${staffSeatsUsed}${entitlements.staffSeats === null ? "" : ` / ${seatsLabel}`}`;
-  const canCheckout = viewerRole === "doctor" && isRazorpayConfigured();
+  // Buyers: the doctor themself, or the business owner acting for their
+  // practice (lib/packages/buyers.ts defines the credited target).
+  const canCheckout =
+    (viewerRole === "doctor" || viewerRole === "admin") && isRazorpayConfigured();
   const renewPlanId = entitlements.packageId ?? "package-2";
   const renewPlan = PACKAGE_PLANS.find((p) => p.id === renewPlanId);
 
@@ -71,7 +86,9 @@ export default async function PlanCard({
     <div className="space-y-6">
       {accessExpired && (
         <p className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800">
-          Your plan has ended. Renew below to restore access — until then the dashboard stays locked.
+          {viewerRole === "admin"
+            ? "Your practice's plan has ended. Renew below to restore access."
+            : "Your plan has ended. Renew below to restore access — until then the dashboard stays locked."}
         </p>
       )}
 
@@ -160,7 +177,7 @@ export default async function PlanCard({
           </div>
         ) : (
           <p className="mt-7 border-t border-slate-100 pt-6 text-sm text-slate-500">
-            {viewerRole === "doctor"
+            {viewerRole === "doctor" || viewerRole === "admin"
               ? "Online payment is not available on this deployment yet — contact support to renew or change plan."
               : "Plan changes are made by your practice owner."}
           </p>
@@ -201,8 +218,10 @@ export default async function PlanCard({
 
       <p className="flex items-start gap-2 text-xs text-slate-400">
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Plans do not renew automatically. When access ends the dashboard locks until a new plan is purchased; existing
-        patients, appointments and records are kept.
+        Plans do not renew automatically.{" "}
+        {viewerRole === "admin"
+          ? "When your practice's access ends, doctor and receptionist logins stay locked until a new plan is purchased; existing patients, appointments and records are kept."
+          : "When access ends the dashboard locks until a new plan is purchased; existing patients, appointments and records are kept."}
       </p>
     </div>
   );
