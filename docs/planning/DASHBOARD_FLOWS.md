@@ -113,13 +113,16 @@ Two distinct lists, one page:
 4. Scope: clinic owners + receptionists see the whole practice; member doctors see only their own.
 
 ### 1.14 Emergency (`/doctor/emergency`) — doctor-only (hidden from receptionists)
-1. **Live offers:** patient SOS broadcasts arrive over an **SSE stream** (`/api/doctor/sos/stream`) — no refresh needed.
-2. **Accept** (`acceptSos`) — **atomic claim**: a conditional `UPDATE ... WHERE status='pending'` means exactly one doctor wins; losers get "Another doctor accepted this request first."
-3. On accept: winner's offer → `accepted`, all other offers → `declined`; an **emergency case** row is created; the patient is notified "Doctor on the way"; other doctors are told it's taken (live + notification).
-4. **Decline** (`declineSos`) is idempotent; stale pending requests expire inline via business TTL.
-5. **Complete case** (`completeSos`) closes the active case; patient live-tracks via their own page (§4.6).
-6. Duty toggle (§1.1) controls whether the doctor receives offers at all.
-7. Past cases list with statuses.
+1. **App-only gate:** like the patient surface, the panel runs ONLY in the native doctor app; any
+   browser (desktop or installed PWA) renders the "Emergency dispatch is app-only" notice with
+   the app download CTA.
+2. **Live offers:** patient SOS broadcasts arrive over an **SSE stream** (`/api/doctor/sos/stream`) — no refresh needed. Each new request raises a **sticky Uber-driver-style toast** (patient · distance · complaint · "Expires in Nm" countdown) with inline **Accept/Decline** actions; the offer list below is the redundancy path.
+3. **Accept** (`acceptSos`) — **atomic claim**: a conditional `UPDATE ... WHERE status='pending'` means exactly one doctor wins; losers get "Another doctor accepted this request first."
+4. On accept: winner's offer → `accepted`, all other offers → `declined`; an **emergency case** row is created; the patient is notified "Doctor on the way" (in-app + a live `sos:status` SSE nudge to the patient tracker, which fires the "doctor on the way" toast); other doctors are told it's taken (live + notification).
+5. **Decline** (`declineSos`) is idempotent; stale pending requests expire inline via business TTL.
+6. **Complete case** (`completeSos`) closes the active case; patient live-tracks via their own page (§4.6).
+7. Duty toggle (§1.1) controls whether the doctor receives offers at all.
+8. Past cases list with statuses.
 
 ### 1.15 Support (`/doctor/support`)
 Create ticket (`createSupportTicket`) → reply (`replySupportTicket`, ownership-checked) → super-admin answers (§4.9).
@@ -204,13 +207,25 @@ Public doctor directory (directory data via `/api/shule/doctors`, photos via `/a
 In-app list via the shared shell.
 
 ### 3.6 Emergency (`/patient/emergency`)
-1. **SOS dispatch** (`triggerSos`): big red button captures GPS + optional complaint/notes/radius →
-   - Rate-limited (`authRateLimit.emergency`); re-trigger guard — one active pending request per patient, stale ones expire first.
-   - Inserts pending `sos_requests` row → finds **nearby on-duty doctors** within radius → creates offer rows → broadcasts live (SSE) + in-app notifications (WhatsApp intentionally not used).
-   - **No doctor available** → request expires immediately with a clear message (no endless wait).
-2. Patient **live-tracks** the request via `/api/patient/sos/status/[id]` (map tracking; Uber-style).
-3. Patient can **cancel** (`cancelSos`) while pending; doctor completes the case (`completeSos`).
-4. Call cards: 108 / 102 / clinic number (from company settings) + past emergency history.
+1. **App-only gate** (`components/emergency/app-only-notice.tsx`): the feature is visible on every
+   surface but runs ONLY in the native mobile app (Capacitor bridge detection). On a browser —
+   desktop or installed PWA — the big SOS button and the dashed "download our mobile app" notice
+   render; pressing SOS fires a **toast notification** ("please download our mobile application")
+   and nothing else. Inside the app the gate passes through.
+2. **Uber-like booking sheet** (native): pressing SOS opens a bottom sheet — auto-GPS (manual
+   coordinate fallback), optional complaint, fare estimate (`estimateSosFare` — base ₹100 ·
+   ₹25/km · minimum ₹100) — then "Request emergency help" calls `triggerSos`.
+3. **Dispatch** (`triggerSos`): rate-limited (`authRateLimit.emergency`); re-trigger guard — one
+   active pending request per patient, stale ones expire first; nearby on-duty doctors within
+   radius get offer rows; live broadcast (SSE) + in-app notifications (WhatsApp intentionally not
+   used). **No doctor available** → request expires immediately with a clear message.
+4. **Realtime tracker** (native): SSE stream (`/api/patient/sos/stream`) pushes `sos:status` nudges
+   → the client refetches `/api/patient/sos/status/[id]`; 3s polling is the fallback only. Step
+   strip (Requested → Doctor assigned → On the way → Arrived → Visit in progress → Done), live
+   doctor map marker, toasts on every transition (accepted with ETA/Call action, arrived, visit
+   in progress, completed with fare, expired/cancelled).
+5. Patient can **cancel** (`cancelSos`) while pending; doctor completes the case (`completeSos`).
+6. Call cards: 108 / 102 / clinic number (from company settings) + past emergency history.
 
 ---
 

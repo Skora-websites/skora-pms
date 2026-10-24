@@ -121,7 +121,7 @@
 | **Test Reports** | List + report download + AI report summary | ✅ |
 | **My Bills** | Bill history | ✅ |
 | **My Health Records** | Consultation history (diagnosis, meds, follow-up badges) + PDF download | ✅ |
-| **Emergency** | Uber-style SOS dispatch button + live map tracking, resume in-flight SOS | ✅ |
+| **Emergency** | App-only (native mobile app): Uber-style SOS booking sheet (GPS + complaint + fare estimate), realtime tracker over SSE with polling fallback, step strip, live map tracking, resume in-flight SOS; browsers get the "download our mobile app" notice + toast | ✅ |
 | | Call cards (108 / 102 / clinic number from company settings), past emergencies history | ✅ |
 
 ---

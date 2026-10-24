@@ -17,7 +17,9 @@ export type SosEvent =
       patient: string;
     }
   | { type: "sos:taken"; requestId: number }
-  | { type: "sos:cancelled"; requestId: number };
+  | { type: "sos:cancelled"; requestId: number }
+  /** Patient-side nudge: "re-fetch your request status now". */
+  | { type: "sos:status"; requestId: number; status: string };
 
 type Listener = (event: SosEvent) => void;
 
@@ -29,10 +31,15 @@ type Listener = (event: SosEvent) => void;
  * Storing it on globalThis guarantees one registry per server process.
  */
 const HUB_KEY = "__skoracare_sos_hub__";
-type HubRegistry = { listeners: Map<number, Set<Listener>> };
+type HubRegistry = {
+  listeners: Map<number, Set<Listener>>;
+  /** Patient trackers keyed by patient id — separate namespace, same shape. */
+  patientListeners: Map<number, Set<Listener>>;
+};
 const g = globalThis as typeof globalThis & { [HUB_KEY]?: HubRegistry };
-const registry: HubRegistry = (g[HUB_KEY] ??= { listeners: new Map() });
+const registry: HubRegistry = (g[HUB_KEY] ??= { listeners: new Map(), patientListeners: new Map() });
 const listeners = registry.listeners;
+const patientListeners = registry.patientListeners;
 
 /** Subscribe a doctor to live events. Returns an unsubscribe function. */
 export function subscribe(doctorId: number, listener: Listener): () => void {
@@ -62,6 +69,25 @@ export function broadcastToDoctor(doctorId: number, event: SosEvent) {
 
 export function broadcastToMany(doctorIds: number[], event: SosEvent) {
   for (const id of doctorIds) broadcastToDoctor(id, event);
+}
+
+/** Subscribe a patient's live tracker. Returns an unsubscribe function. */
+export function subscribePatient(patientId: number, listener: Listener): () => void {
+  let set = patientListeners.get(patientId);
+  if (!set) {
+    set = new Set();
+    patientListeners.set(patientId, set);
+  }
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+    if (set!.size === 0) patientListeners.delete(patientId);
+  };
+}
+
+/** Push a status nudge to one patient's open trackers. */
+export function broadcastToPatient(patientId: number, event: SosEvent) {
+  patientListeners.get(patientId)?.forEach((l) => l(event));
 }
 
 /**
@@ -98,6 +124,9 @@ export async function announceSosToDoctors(
       body,
       url: "/doctor/emergency",
       tag: "sos-new",
+      // Emergency dispatch: persistent notification + double-buzz (see sw.js
+      // `push` handler — requireInteraction + vibrate are gated on this).
+      critical: true,
     });
   }
 }

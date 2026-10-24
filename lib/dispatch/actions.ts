@@ -22,7 +22,7 @@ import { notifyUser } from "@/lib/notifications";
 import { SOS_FARE } from "@/lib/config";
 import { generateBillNumber } from "@/lib/utils";
 import { findNearbyOnDutyDoctors, haversineKm, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";
-import { broadcastToMany, announceSosToDoctors } from "./hub";
+import { broadcastToMany, broadcastToPatient, announceSosToDoctors } from "./hub";
 import { expireStalePendingRequest } from "./expiry";
 
 const sosSchema = z.object({
@@ -145,6 +145,7 @@ export async function triggerSos(
       .update(sosRequests)
       .set({ status: "expired", updatedAt: new Date() })
       .where(eq(sosRequests.id, requestId));
+    broadcastToPatient(user.id, { type: "sos:status", requestId, status: "expired" });
     return { error: null, requestId };
   }
 
@@ -315,6 +316,8 @@ export async function acceptSos(requestId: number): Promise<SosActionResult> {
     .from(users)
     .where(eq(users.id, req.patientId))
     .limit(1);
+  // Live nudge to the patient's open tracker (SSE) → refetch + toast.
+  broadcastToPatient(req.patientId, { type: "sos:status", requestId, status: "accepted" });
   void notifyUser({
     userId: req.patientId,
     title: "Doctor on the way",
@@ -361,6 +364,7 @@ export async function cancelSos(requestId: number): Promise<SosActionResult> {
     .from(sosOffers)
     .where(eq(sosOffers.sosRequestId, requestId));
   broadcastToMany(offers.map((o) => o.doctorId), { type: "sos:cancelled", requestId });
+  broadcastToPatient(user.id, { type: "sos:status", requestId, status: "cancelled" });
   void auditLog({ userId: user.id, action: "sos_cancelled", metadata: { requestId } });
   revalidatePath("/patient/emergency");
   return { error: null };
@@ -392,6 +396,7 @@ export async function completeSos(requestId: number): Promise<SosActionResult> {
     .where(eq(sosRequests.id, requestId))
     .limit(1);
   if (req) {
+    broadcastToPatient(req.patientId, { type: "sos:status", requestId, status: "completed" });
     void notifyUser({
       userId: req.patientId,
       title: "Emergency resolved",
@@ -421,7 +426,7 @@ export async function markSosArrived(requestId: number): Promise<SosActionResult
   const doctor = await requireDoctor();
   const doctorId = resolveDoctorId(doctor);
   const [caseRow] = await db
-    .select({ arrivedAt: sosCases.arrivedAt })
+    .select({ arrivedAt: sosCases.arrivedAt, patientId: sosCases.patientId })
     .from(sosCases)
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)))
     .limit(1);
@@ -431,6 +436,7 @@ export async function markSosArrived(requestId: number): Promise<SosActionResult
     .update(sosCases)
     .set({ arrivedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
+  broadcastToPatient(Number(caseRow.patientId), { type: "sos:status", requestId, status: "accepted" });
   revalidatePath("/doctor/emergency");
   revalidatePath("/patient/emergency");
   return { error: null };
@@ -450,7 +456,7 @@ export async function verifySosOtp(requestId: number, otp: string): Promise<SosA
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid code." };
 
   const [caseRow] = await db
-    .select({ patientOtp: sosCases.patientOtp })
+    .select({ patientOtp: sosCases.patientOtp, patientId: sosCases.patientId })
     .from(sosCases)
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)))
     .limit(1);
@@ -465,6 +471,7 @@ export async function verifySosOtp(requestId: number, otp: string): Promise<SosA
     .update(sosCases)
     .set({ otpVerifiedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId)));
+  broadcastToPatient(Number(caseRow.patientId), { type: "sos:status", requestId, status: "accepted" });
   revalidatePath("/doctor/emergency");
   revalidatePath("/patient/emergency");
   return { error: null };

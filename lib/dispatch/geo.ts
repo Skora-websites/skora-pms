@@ -1,9 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, doctorClinics } from "@/lib/db/schema";
+import { SOS_TTL_MIN } from "@/lib/config";
 
-/** Pending SOS requests expire after this many minutes (business TTL). */
-export const SOS_TTL_MIN = 5;
+// Re-exported from lib/config (client-safe): the doctor panel's offer
+// countdown imports it, and importing from this module would drag the
+// server-only db into the client bundle.
+export { SOS_TTL_MIN };
 
 /**
  * The doctor a dispatch action acts as.

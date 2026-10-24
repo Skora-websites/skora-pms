@@ -119,6 +119,12 @@ export const INDIA_API_BASE_URL = process.env.INDIA_API_BASE_URL?.trim() || null
 export const INDIA_API_KEY = process.env.INDIA_API_KEY?.trim() || null;
 export const INDIA_API_TIMEOUT_MS = num(process.env.INDIA_API_TIMEOUT_MS, 8000);
 
+// ── SOS emergency dispatch ──────────────────────────────────────────────
+/** Pending SOS requests expire after this many minutes (business TTL).
+ *  Client-safe: the patient booking copy and the doctor offer countdown
+ *  both need it without touching the server-only geo/db modules. */
+export const SOS_TTL_MIN = num(process.env.SOS_TTL_MIN, 5);
+
 // ── SOS emergency dispatch fare ─────────────────────────────────────────
 // Base + per-km, floored at a minimum. Per-minute is priced but not charged
 // yet: trip duration is not tracked, so completion bills distance + base only.
@@ -129,3 +135,18 @@ export const SOS_FARE = {
   minFare: num(process.env.SOS_FARE_MIN, 100),
   currency: "INR",
 } as const;
+
+/** Estimated dispatch fare for a distance — same math the bill settles with. */
+export function estimateSosFare(distanceKm: number): number {
+  if (!Number.isFinite(distanceKm) || distanceKm < 0) return SOS_FARE.minFare;
+  return Math.max(SOS_FARE.minFare, SOS_FARE.baseFare + distanceKm * SOS_FARE.perKm);
+}
+
+// ── Mobile application ──────────────────────────────────────────────────
+// The Emergency dispatch feature (Uber-style patient booking + doctor
+// alerts) is native-app-only: browsers — desktop or installed PWA — see a
+// "download our app" notice instead. Point these at the real store listings
+// when they ship; until then the CTA lands on the marketing site.
+export const APP_DOWNLOAD_URL =
+  process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL?.trim() || "/";
+export const APP_DOWNLOAD_LABEL = process.env.NEXT_PUBLIC_APP_DOWNLOAD_LABEL?.trim() || "Download the app";

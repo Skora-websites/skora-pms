@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, BellOff, CheckCircle2, Loader2, MapPin, XCircle } from "lucide-react";
 import {
@@ -15,9 +15,15 @@ import {
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
 import { urlBase64ToUint8Array } from "@/lib/push/client-utils";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
-import { SOS_FARE } from "@/lib/config";
+import { SOS_FARE, SOS_TTL_MIN } from "@/lib/config";
 import { useWakeLock } from "@/components/sos/use-wake-lock";
 import { primeAlarmAudio, startSosAlarm, stopSosAlarm } from "@/components/sos/sos-alarm";
+import {
+  useEmergencyAccess,
+  useEmergencyGate,
+  EmergencyAppOnly,
+} from "@/components/emergency/app-only-notice";
+import { useToast } from "@/components/ui/toast";
 
 type Offer = {
   id: number;
@@ -72,6 +78,37 @@ export function EmergencyPanel({
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
+  // Emergency is native-app-only on every surface. `null` until the client
+  // resolves the bridge (SSR + pre-hydration), so the gate must never flash
+  // at a native user.
+  const { available } = useEmergencyAccess();
+  const gate = useEmergencyGate();
+  const { notify, dismiss } = useToast();
+  // Sticky incoming-request toasts keyed by requestId, each with the countdown
+  // timer that expires it (held as a cancel fn). Stops duplicate frames stacking
+  // a second toast and lets the effect cleanup clear every timer on unmount.
+  const offerToastsRef = useRef(new Map<number, { toastId: number; cancel: () => void }>());
+
+  /** Drop the sticky toast + countdown for one request (accept, decline, expiry, revoke). */
+  const dropOfferToast = useCallback(
+    (requestId: number) => {
+      const tracked = offerToastsRef.current.get(requestId);
+      if (!tracked) return;
+      tracked.cancel();
+      offerToastsRef.current.delete(requestId);
+      dismiss(tracked.toastId);
+    },
+    [dismiss]
+  );
+
+  /** Clear every tracked toast + countdown (unmount). Stable for effect cleanup. */
+  const clearAllOfferToasts = useCallback(() => {
+    offerToastsRef.current.forEach((tracked) => {
+      tracked.cancel();
+      dismiss(tracked.toastId);
+    });
+    offerToastsRef.current.clear();
+  }, [dismiss]);
 
   // Keep the screen awake while an emergency case is active so the 5s GPS
   // sharing loop isn't killed by the phone sleeping (Android + iOS 16.4+).
@@ -131,6 +168,40 @@ export function EmergencyPanel({
     }
   };
 
+  // Declared before the SSE effect on purpose: the incoming-request toast's
+  // actions call these, and a const referenced by a closure above its
+  // declaration trips no-use-before-define.
+  const accept = (requestId: number) => {
+    setBusy(true);
+    stopSosAlarm();
+    dropOfferToast(requestId);
+    startTransition(async () => {
+      const res = await acceptSos(requestId);
+      if (res.error) alert(res.error);
+      else {
+        setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
+        setActiveCase(requestId);
+        // Plaintext arrival code + ETA exist only in this return value.
+        if (res.otp) setOtp(res.otp);
+        if (res.etaMinutes != null) setEta(res.etaMinutes);
+      }
+      setBusy(false);
+      router.refresh();
+    });
+  };
+
+  const decline = (requestId: number) => {
+    setBusy(true);
+    stopSosAlarm();
+    dropOfferToast(requestId);
+    startTransition(async () => {
+      await declineSos(requestId);
+      setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
+      setBusy(false);
+      router.refresh();
+    });
+  };
+
   // Live SSE subscription when on duty.
   useEffect(() => {
     if (!onDuty) return;
@@ -140,6 +211,7 @@ export function EmergencyPanel({
         const ev = JSON.parse(e.data);
         if (ev.type === "sos:new") {
           startSosAlarm();
+          const createdAt = new Date();
           setOffers((prev) =>
             prev.some((o) => o.requestId === ev.requestId)
               ? prev
@@ -151,19 +223,65 @@ export function EmergencyPanel({
                     distanceKm: ev.distanceKm,
                     complaint: ev.complaint,
                     patient: ev.patient,
-                    createdAt: new Date(),
+                    createdAt,
                   },
                 ]
           );
+          // Uber-driver-style sticky toast. A duplicate frame for a request
+          // that already has a live toast must not stack a second one.
+          if (offerToastsRef.current.has(ev.requestId)) return;
+          // Remaining offer life from its creation time; clamped to >= 5s so
+          // a late frame still shows a countdown instead of expiring instantly.
+          const remainingMs = Math.max(
+            5_000,
+            SOS_TTL_MIN * 60_000 - (Date.now() - createdAt.getTime())
+          );
+          const body = [
+            `${ev.patient} · ${ev.distanceKm} km away`,
+            ev.complaint || null,
+            `Expires in ${Math.max(1, Math.ceil(remainingMs / 60_000))}m`,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          const toastId = notify({
+            title: "🚨 Emergency request nearby",
+            body,
+            tone: "critical",
+            ttl: 0, // sticky — the countdown below governs dismissal
+            actions: [
+              { label: "Accept", onClick: () => accept(ev.requestId) },
+              { label: "Decline", onClick: () => decline(ev.requestId) },
+            ],
+          });
+          const expireOfferToast = setTimeout(() => {
+            offerToastsRef.current.delete(ev.requestId);
+            dismiss(toastId);
+            // Dropping the last offer stops the alarm via the effect below.
+            setOffers((prev) => prev.filter((o) => o.requestId !== ev.requestId));
+          }, remainingMs);
+          offerToastsRef.current.set(ev.requestId, {
+            toastId,
+            cancel: () => clearTimeout(expireOfferToast),
+          });
         } else if (ev.type === "sos:taken" || ev.type === "sos:cancelled") {
           setOffers((prev) => prev.filter((o) => o.requestId !== ev.requestId));
+          // Another doctor took it, or the patient cancelled: the sticky toast
+          // and its countdown die with the offer.
+          dropOfferToast(ev.requestId);
         }
       } catch {
         /* ignore malformed frames */
       }
     };
-    return () => es.close();
-  }, [onDuty]);
+    return () => {
+      es.close();
+      // Toasts and countdowns must not leak past unmount.
+      clearAllOfferToasts();
+    };
+    // accept/decline are intentionally omitted (recreated every render); the
+    // subscription must not re-connect on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onDuty, dropOfferToast]);
 
   // Stop the alarm when no offers remain (e.g. TTL expiry on the status poll).
   useEffect(() => {
@@ -200,40 +318,21 @@ export function EmergencyPanel({
     };
   }, [activeCase]);
 
+  // Native-app-only gate: in any browser (desktop or installed PWA) the entire
+  // panel — duty and push toggles included — is replaced by the download
+  // notice. `available === null` renders nothing so the gate never flashes.
+  if (available === null) return null;
+  if (!available) return <EmergencyAppOnly surface="doctor" />;
+
   const toggleDuty = () => {
+    // Belt-and-braces: the panel itself is gated above, so a browser never
+    // reaches this — keep the guard so a reverted gate still can't go on duty.
+    if (!gate("doctor")) return;
     if (!onDuty) primeAlarmAudio(); // user gesture — unlocks iOS audio
     setBusy(true);
     startTransition(async () => {
       await setDoctorOnDuty(!onDuty);
       setOnDuty(!onDuty);
-      setBusy(false);
-      router.refresh();
-    });
-  };
-
-  const accept = (requestId: number) => {
-    setBusy(true);
-    stopSosAlarm();
-    startTransition(async () => {
-      const res = await acceptSos(requestId);
-      if (res.error) alert(res.error);
-      else {
-        setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
-        setActiveCase(requestId);
-        // Plaintext arrival code + ETA exist only in this return value.
-        if (res.otp) setOtp(res.otp);
-        if (res.etaMinutes != null) setEta(res.etaMinutes);
-      }
-      setBusy(false);
-      router.refresh();
-    });
-  };
-
-  const decline = (requestId: number) => {
-    setBusy(true);
-    startTransition(async () => {
-      await declineSos(requestId);
-      setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
       setBusy(false);
       router.refresh();
     });
