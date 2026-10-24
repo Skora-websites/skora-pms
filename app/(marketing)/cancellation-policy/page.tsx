@@ -10,11 +10,8 @@ export default function CancellationPolicyPage() {
         <p>
           Plans are one-off purchases, not recurring subscriptions — there is no automatic renewal and
           nothing is charged again unless you buy another plan. You can simply stop when your access
-          period ends; you keep full access until the date shown under{" "}
-          <a className="text-brand-800 underline" href="/doctor/settings?tab=plan">
-            Plan &amp; subscription
-          </a>{" "}
-          in your account settings, and no further charges are made.
+          period ends; you keep full access until the expiry date shown under Plan &amp;
+          subscription in your account settings, and no further charges are made.
         </p>
         <p>
           Want to end access early, switch plans, or remove an account entirely? Contact our support
@@ -38,12 +35,12 @@ export default function CancellationPolicyPage() {
             info@skoracares.com
           </a>{" "}
           or call our support line with your registered account details, and our team will process
-          your request within 2 business days. Plan changes and renewals can also be completed
-          directly from{" "}
-          <a className="text-brand-800 underline" href="/doctor/settings?tab=plan">
-            Plan &amp; subscription
+          request within 2 business days. Plan changes and renewals can also be completed directly
+          from the{" "}
+          <a className="text-brand-800 underline" href="/pricing">
+            plans page
           </a>{" "}
-          in your account settings.
+          or from Plan &amp; subscription in your account settings.
         </p>
       </PolicyBlock>
     </PolicyContent>

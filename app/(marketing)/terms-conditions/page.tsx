@@ -35,11 +35,8 @@ export default function TermsPage() {
           Paid plans are billed once per purchase for the period selected at checkout — monthly plans
           add 30 days of access and yearly plans add 365 days. Plans do not renew automatically and
           nothing is charged again unless you buy another plan; access simply ends on the expiry
-          date shown under{" "}
-          <a className="text-brand-800 underline" href="/doctor/settings?tab=plan">
-            Plan &amp; subscription
-          </a>{" "}
-          in your account settings. Prices are exclusive of applicable taxes. We may change pricing
+          date shown under Plan &amp; subscription in your account settings. Prices are exclusive of
+          applicable taxes. We may change pricing
           with at least 30 days&apos; notice.
         </p>
       </PolicyBlock>
