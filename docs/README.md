@@ -20,6 +20,7 @@ Historical planning and specification documents. Git history is the source of tr
 | `DASHBOARD_FLOWS.md` | Companion to the checklist: how each module works end-to-end |
 | `DESIGN.md` | Design system & UI/UX specification |
 | `BUSINESS_FLOW_AUDIT.md` | Business flow & business-logic validation report |
+| `DEPLOY_AND_MOBILE_PLAN.md` | aaPanel git deploy plan (replaces manual file + .sql import) + React Native/Expo app plan for the existing `app/api/mobile/` layer |
 
 ## Architecture (`docs/architecture/`)
 
