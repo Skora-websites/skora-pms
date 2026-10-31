@@ -321,6 +321,34 @@ export const pushSubscriptions = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Native push device tokens (React Native app — FCM/APNs via Expo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const deviceTokens = mysqlTable(
+  "device_tokens",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    /** "ios" | "android" — recorded for diagnostics and providerAudits. */
+    platform: varchar("platform", { length: 16 }).notNull(),
+    /** Opaque provider token; unique so re-registering can't duplicate an alert. */
+    token: varchar("token", { length: 512 }).notNull(),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("device_tokens_user_id_index").on(t.userId),
+    // One row per device: the same phone re-authenticating (or two accounts
+    // signed in on it) must not deliver every SOS alert twice.
+    uniqueIndex("device_tokens_token_unique").on(t.token),
+    foreignKey({
+      columns: [t.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 

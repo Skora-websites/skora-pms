@@ -106,7 +106,9 @@ Rollback: `git checkout <previous-sha> && npm run build && pm2 restart skoracare
 ## 1.8 Production readiness on aaPanel
 
 1. **PM2 + reboot survival** (above).
-2. **Cron for SOS expiry:** aaPanel cron every minute: `curl -s https://pms.skorainfotech.com/api/cron/expire-sos` (add this endpoint wrapping `lib/dispatch/expiry.ts` if not present) so stale pending requests are cleaned without relying on patient polling.
+2. **Cron for SOS expiry — shipped.** `GET /api/cron/expire-sos` exists (`app/api/cron/expire-sos/route.ts`) and wraps the new bulk sweep `expireStalePendingRequests()` (`lib/dispatch/expiry.ts`), which drives the existing per-request TTL rule over the whole table so requests nobody polls for still end. aaPanel cron every minute, authenticated with a bearer token exactly like the Shule integration:
+   `curl -s -H "Authorization: Bearer <token>" https://pms.skorainfotech.com/api/cron/expire-sos`
+   Provision the token with `node scripts/provision-api-token.mjs <staff-email> cron-expire-sos`.
 3. **Backups (daily, off-server):** aaPanel backup job for (a) MySQL dump, (b) the `uploads/` directory. Uploads live outside the DB — a .sql restore does not restore consent files/photos.
 4. **Logs:** `pm2 logs skoracare` + log rotation (`pm2 install pm2-logrotate`).
 5. **Firewall:** only 80/443 public; MySQL (3306) never exposed.
@@ -176,23 +178,35 @@ Liquid Glass = Apple's iOS 26 material: translucent, refractive surfaces with sp
 4. **Offline behavior:** SOS trigger retries on network loss (exponential backoff, local queue of 1 — the SOS itself); non-emergency actions show "will sync" states. Server stays authoritative.
 5. **Wake lock** on the doctor emergency screen (web already has `components/sos/use-wake-lock.ts` — mirror with `expo-keep-awake`).
 
-## 2.6 Native push (the audit's biggest gap — build first)
+## 2.6 Native push (the audit's biggest gap — backend shipped)
 
-- Expo Notifications → FCM (Android) / APNs (iOS). New `device_tokens` table (user_id, platform, token, updated_at) + `lib/push/native.ts` sender alongside `web-push`.
-- Wire into `announceSosToDoctors` (hub.ts) as a fourth channel: SSE + in-app + web-push + **FCM**.
-- Android onboarding step: battery-optimization exemption request (killed app = dead push otherwise). Critical alert entitlement on iOS for SOS.
-- Backend work estimate: 3–5 days. Do this before the app UI — both platforms depend on it.
+Backend half is done; only the app-side registration and credential setup remain.
+
+**Shipped (2026-10-31):**
+- `device_tokens` table (`drizzle/0024_native_device_tokens.sql`): `user_id` (FK cascade), `platform`, unique `token`, timestamps. Unique token = re-registering a device can't duplicate an alert.
+- `lib/push/native.ts`: posts to the **Expo push service**, which fans out to FCM/APNs. No service-account key on this side — only outbound HTTPS from the app server. Mirrors the Web Push conventions: kill switch (`NATIVE_PUSH_ENABLED=0`), never throws, dead tokens pruned.
+- `lib/push/device-tokens.ts`: idempotent register (one row per device; a device signing into a second account follows that account), user-scoped unregister.
+- `POST`/`DELETE /api/mobile/device-tokens` for the app, any role.
+- `announceSosToDoctors` now derives **one** payload object (`sosAnnouncementPushPayload`) shared by Web Push and native push, so the copy and the `critical` flag can't drift between channels.
+
+**Expo message shape for an emergency:** `priority: high`, iOS `interruptionLevel: critical`, `sound: default`, bounded `ttl` (10 min — a queued SOS alert must not fire hours later). Dead tokens are pruned on `DeviceNotRegistered`, so a device that uninstalled stops being dispatched to.
+
+**Still to do on the app side (phase 5):**
+- Call `getExpoPushTokenAsync()` and POST it to `/api/mobile/device-tokens` on login; DELETE it on sign-out.
+- Android: battery-optimization exemption request (killed app = dead push), and create a notification channel with high importance.
+- iOS: Critical Alerts entitlement for SOS.
+- EAS push credentials (FCM V1 service account for Android, APNs key for iOS) in the Expo dashboard; if push *security* is enabled there, set `EXPO_PUSH_ACCESS_TOKEN`.
 
 ## 2.7 Build order (6–7 weeks)
 
 | Phase | Weeks | Work |
 |---|---|---|
-| 0 | now | Commit mobile API (Part 1), deploy current state to aaPanel via git flow |
-| 1 | 1 | Backend: FCM device tokens + native push sender + cron expiry endpoint |
+| 0 | now | Commit mobile API (Part 1), deploy current state to aaPanel via git flow — **done** |
+| 1 | 1 | Backend: FCM device tokens + native push sender + cron expiry endpoint — **done** (see 2.6) |
 | 2 | 1–2 | Expo app skeleton: auth, role routing, theme system (tokens above), glass component kit |
 | 3 | 2–4 | Patient app: home, doctors, booking, records |
 | 4 | 3–4 | Doctor app: schedule, patients, on-duty, chat |
-| 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, FCM wiring end-to-end |
+| 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, FCM wiring end-to-end (app-side push registration lands here) |
 | 6 | 5–6 | Polish: dark mode, haptics, offline states, Android blur fallback, reduced-motion |
 | 7 | 6–7 | Beta (TestFlight + Play internal track) with real clinics; fix field bugs; store submission |
 

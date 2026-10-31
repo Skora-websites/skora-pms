@@ -150,3 +150,17 @@ export function estimateSosFare(distanceKm: number): number {
 export const APP_DOWNLOAD_URL =
   process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL?.trim() || "/";
 export const APP_DOWNLOAD_LABEL = process.env.NEXT_PUBLIC_APP_DOWNLOAD_LABEL?.trim() || "Download the app";
+
+// ── Native push (Expo push service → FCM/APNs) ──────────────────────────
+// Web Push reaches browsers only; the native app needs FCM/APNs. The server
+// talks to the Expo push service (no service-account key to sign with), which
+// fans out to FCM/APNs. Kill switch mirrors the public-API pattern: 0 disables
+// it instantly and every send degrades to the Web Push channel alone.
+export const NATIVE_PUSH_ENABLED = process.env.NATIVE_PUSH_ENABLED !== "0";
+export const EXPO_PUSH_TIMEOUT_MS = num(process.env.EXPO_PUSH_TIMEOUT_MS, 8000);
+/** Optional Expo access token — required once push security is enabled in the
+ *  EAS dashboard (otherwise leaked tokens could impersonate this server). */
+export const EXPO_PUSH_ACCESS_TOKEN = process.env.EXPO_PUSH_ACCESS_TOKEN?.trim() || null;
+/** Redelivery window for emergency alerts: a queued SOS notification must
+ *  never fire hours later. Non-emergency sends keep the provider default. */
+export const NATIVE_PUSH_TTL_S = num(process.env.NATIVE_PUSH_TTL_S, 600);

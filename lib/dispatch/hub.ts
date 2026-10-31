@@ -7,6 +7,7 @@
 
 import { notifyUser } from "@/lib/notifications";
 import { sendPushToUser } from "@/lib/push/client";
+import { sendNativePushToUser } from "@/lib/push/native";
 
 export type SosEvent =
   | {
@@ -91,9 +92,41 @@ export function broadcastToPatient(patientId: number, event: SosEvent) {
 }
 
 /**
+ * The push payload shared by the Web Push and native-push channels.
+ *
+ * One object, derived once: the copy and the `critical` flag cannot drift
+ * between the channel a browser panel receives and the one the mobile app
+ * receives. The native channel (FCM/APNs) reads the same fields, so an
+ * emergency means high priority + critical alert on iOS for both.
+ */
+export function sosAnnouncementPushPayload(info: {
+  requestId: number;
+  distanceKm: number;
+  complaint: string | null;
+  patient: string;
+}): {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+  critical: boolean;
+} {
+  return {
+    title: "🚨 Emergency request nearby",
+    body: `${info.patient} needs urgent help${info.complaint ? ` (${info.complaint})` : ""}.`,
+    url: "/doctor/emergency",
+    tag: "sos-new",
+    // Emergency dispatch: persistent notification + double-buzz (see sw.js
+    // `push` handler — requireInteraction + vibrate are gated on this), and
+    // high priority + iOS critical alert for native delivery.
+    critical: true,
+  };
+}
+
+/**
  * Announce a pending SOS to a set of doctors: live SSE event, in-app
- * notification, and Web Push. Shared by the initial broadcast (triggerSos)
- * and the late-joiner sweep (discovery) so the copy can't drift.
+ * notification, Web Push, and native push. Shared by the initial broadcast
+ * (triggerSos) and the late-joiner sweep (discovery) so the copy can't drift.
  */
 export async function announceSosToDoctors(
   doctorIds: number[],
@@ -110,23 +143,18 @@ export async function announceSosToDoctors(
       patient: info.patient,
     }
   );
-  const body = `${info.patient} needs urgent help${info.complaint ? ` (${info.complaint})` : ""}.`;
+  const push = sosAnnouncementPushPayload(info);
   for (const doctorId of doctorIds) {
     void notifyUser({
       userId: doctorId,
-      title: "🚨 Emergency request nearby",
-      message: body,
+      title: push.title,
+      message: push.body,
       type: "error",
       link: "/doctor/emergency",
     });
-    void sendPushToUser(doctorId, {
-      title: "🚨 Emergency request nearby",
-      body,
-      url: "/doctor/emergency",
-      tag: "sos-new",
-      // Emergency dispatch: persistent notification + double-buzz (see sw.js
-      // `push` handler — requireInteraction + vibrate are gated on this).
-      critical: true,
-    });
+    void sendPushToUser(doctorId, push);
+    // Native app: FCM/APNs, the channel that reaches a phone in a pocket.
+    // No-op when no device tokens exist or native push is switched off.
+    void sendNativePushToUser(doctorId, push);
   }
 }
