@@ -156,9 +156,45 @@ Liquid Glass = Apple's iOS 26 material: translucent, refractive surfaces with sp
 
 - **Expo (dev builds, EAS)** — not bare RN. OTA updates via EAS Update for JS-only fixes.
 - **Expo Router** (file-based, role-based route groups: `(patient)`, `(doctor)`, `(auth)`).
+- **Expo Router native tabs** (`expo-router/native-tabs`) for the role shells, not a JS tab
+  bar: on iOS 26+ the system draws the tab bar in the real liquid-glass material, which is the
+  whole point of the design language, and it costs nothing to maintain.
 - **TanStack Query** for all `app/api/mobile/*` consumption (polling intervals per screen).
-- **Zustand** for client state, **MMKV** for fast local storage, **expo-sqlite** only if offline queue proves needed (defer).
-- **Monorepo optional:** keep the RN app in a sibling repo/folder (`skora-mobile/`) — the web repo stays clean; shared logic is minimal since the API already encapsulates it.
+  Installed; the first screens using it arrive in phase 3.
+- **MMKV** for fast local storage (session identity only — the credential is the server's
+  session cookie, held by React Native's native cookie jar). No Zustand yet: the only client
+  state is the session, which is a React context until it earns more (phase 4 duty state).
+- **`expo-sqlite`** only if an offline queue proves needed (defer).
+- **Own repository, `skora-mobile`** — kept out of the web repo (its deploys are EAS, not
+  aaPanel). It lives beside the other projects rather than inside the sites volume: that
+  volume has ~6 GB free and an Expo toolchain plus its caches needs more.
+- **Auth:** `POST /api/mobile/session` with the web credentials; the server's session cookie
+  is replayed by the native jar, and `GET /api/mobile/session` is the only authority on
+  whether it is still valid. A 401 signs out; a dead network does not.
+
+## 2.3.1 Shipped in phase 2
+
+Skeleton at `~/skora-mobile` (Expo SDK 58, TypeScript, committed):
+
+- **Sign-in** (`src/app/(auth)/login.tsx`) against the web login endpoint, with the server's
+  own error messages surfaced and the rate-limit/cookie behaviour inherited.
+- **Session gate** (`src/app/_layout.tsx`): nothing renders until the stored session is
+  confirmed, so a signed-in user never sees a flash of the login screen; a role with no
+  mobile shell gets an explicit notice instead of a wrong shell.
+- **Role routing** (`src/lib/roles.ts`): `patient → (patient)`, `doctor → (doctor)`, and
+  `null` for every other role — an unresolvable route rather than a guessed one.
+- **Theme** (`src/theme/`): the web palette verbatim (brand `#114232`, accent `#1fd186`,
+  slate-green neutrals, Plus Jakarta Sans bundled), light + dark, checked by tests so the
+  app cannot silently fork the brand. Contrast and the emergency red are test-enforced too.
+- **Glass kit** (`src/components/ui/GlassSurface.tsx`): liquid glass on iOS 26+ →
+  `BlurView` → a themed translucent solid. Glass is chrome only — tab bars, the on-duty
+  pill — never clinical content, which stays on opaque `Card`s.
+- **API transport** (`src/lib/api.ts`): zod-validated envelope unwrapping, 401 classified for
+  sign-out, network and malformed-body failures resolved rather than thrown.
+- **Tests:** 23 (`tsx --test`) over the transport, auth client, role routing and theme
+  tokens — each watched failing before the module existed.
+- **Verified by rendering:** web export bundled every route and was screenshot-checked in
+  both themes (login, patient home, patient SOS, doctor emergency).
 
 ## 2.4 Screens by role (mapping to existing API)
 
@@ -203,7 +239,7 @@ Backend half is done; only the app-side registration and credential setup remain
 |---|---|---|
 | 0 | now | Commit mobile API (Part 1), deploy current state to aaPanel via git flow — **done** |
 | 1 | 1 | Backend: FCM device tokens + native push sender + cron expiry endpoint — **done** (see 2.6) |
-| 2 | 1–2 | Expo app skeleton: auth, role routing, theme system (tokens above), glass component kit |
+| 2 | 1–2 | Expo app skeleton: auth, role routing, theme system (tokens above), glass component kit — **done** (see 2.3.1) |
 | 3 | 2–4 | Patient app: home, doctors, booking, records |
 | 4 | 3–4 | Doctor app: schedule, patients, on-duty, chat |
 | 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, FCM wiring end-to-end (app-side push registration lands here) |
