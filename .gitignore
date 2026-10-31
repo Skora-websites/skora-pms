@@ -35,6 +35,10 @@ yarn-error.log*
 # local tooling artifacts
 .freebuff/
 
+# agent/harness workspaces + local-only audit reports (never deploy source)
+/.perch/
+AUDIT_REPORT.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -67,7 +71,8 @@ tmp-shot-*.png
 *.zip
 
 # scratch probes
-*.tmp.mjs
+*.tmp.*
 
 # harness command definitions (not application source)
 /.omp/
+/skoracares-app/
