@@ -154,16 +154,26 @@ Liquid Glass = Apple's iOS 26 material: translucent, refractive surfaces with sp
 
 ## 2.3 Architecture
 
+**Android only.** The build does not target iOS or the web — no `ios/` config, no
+`expo-glass-effect` (iOS-only), no `react-native-web`. Android permissions the emergency
+feature needs are declared in `app.json` (coarse/fine location, notifications, vibrate,
+wake lock); the microphone is explicitly blocked. The consequence worth knowing: "iOS
+liquid glass" in the sections below degrades to Android's blur + the themed translucent
+panel behind it, which is what `GlassSurface` implements.
+
 - **Expo (dev builds, EAS)** — not bare RN. OTA updates via EAS Update for JS-only fixes.
 - **Expo Router** (file-based, role-based route groups: `(patient)`, `(doctor)`, `(auth)`).
 - **Expo Router native tabs** (`expo-router/native-tabs`) for the role shells, not a JS tab
-  bar: on iOS 26+ the system draws the tab bar in the real liquid-glass material, which is the
-  whole point of the design language, and it costs nothing to maintain.
-- **TanStack Query** for all `app/api/mobile/*` consumption (polling intervals per screen).
-  Installed; the first screens using it arrive in phase 3.
+  bar: Android draws the Material bottom navigation, so the app gets the platform's own tab
+  behaviour instead of a component to maintain. Icons are Material names.
+- **Pushed screens live OUTSIDE the role folders** (`src/app/doctors.tsx`,
+  `src/app/book/[doctorId].tsx`). Native tabs only render routes declared with a Trigger,
+  so an undeclared route inside a tabs folder is silently unreachable — found by driving
+  the real app, not by a test.
+- **TanStack Query** for all `app/api/mobile/*` consumption.
 - **MMKV** for fast local storage (session identity only — the credential is the server's
-  session cookie, held by React Native's native cookie jar). No Zustand yet: the only client
-  state is the session, which is a React context until it earns more (phase 4 duty state).
+  session cookie, held by React Native's native cookie jar). No Zustand: the only client
+  state is the session.
 - **`expo-sqlite`** only if an offline queue proves needed (defer).
 - **Own repository, `skora-mobile`** — kept out of the web repo (its deploys are EAS, not
   aaPanel). It lives beside the other projects rather than inside the sites volume: that
@@ -191,10 +201,14 @@ Skeleton at `~/skora-mobile` (Expo SDK 58, TypeScript, committed):
   pill — never clinical content, which stays on opaque `Card`s.
 - **API transport** (`src/lib/api.ts`): zod-validated envelope unwrapping, 401 classified for
   sign-out, network and malformed-body failures resolved rather than thrown.
-- **Tests:** 23 (`tsx --test`) over the transport, auth client, role routing and theme
-  tokens — each watched failing before the module existed.
-- **Verified by rendering:** web export bundled every route and was screenshot-checked in
-  both themes (login, patient home, patient SOS, doctor emergency).
+- **Tests:** 38 (`tsx --test`) over the transport, auth client, role routing, theme
+  tokens, the API response schemas (against verbatim server captures) and the booking
+  mapper — each suite watched failing before the module existed.
+- **Verified by running it:** the app was driven through a real sign-in against the live
+  API and every phase-3 screen exercised with live data (that run also caught the two
+  defects noted above). The production Android Hermes bundle exports cleanly. No virtual
+  device exists on this machine, so on-device rendering is still unchecked — a dev build
+  on real hardware is the next verification step.
 
 ## 2.4 Screens by role (mapping to existing API)
 
@@ -240,7 +254,7 @@ Backend half is done; only the app-side registration and credential setup remain
 | 0 | now | Commit mobile API (Part 1), deploy current state to aaPanel via git flow — **done** |
 | 1 | 1 | Backend: FCM device tokens + native push sender + cron expiry endpoint — **done** (see 2.6) |
 | 2 | 1–2 | Expo app skeleton: auth, role routing, theme system (tokens above), glass component kit — **done** (see 2.3.1) |
-| 3 | 2–4 | Patient app: home, doctors, booking, records |
+| 3 | 2–4 | Patient app: home, doctors, booking, records — **done** (see 2.3.1) |
 | 4 | 3–4 | Doctor app: schedule, patients, on-duty, chat |
 | 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, FCM wiring end-to-end (app-side push registration lands here) |
 | 6 | 5–6 | Polish: dark mode, haptics, offline states, Android blur fallback, reduced-motion |
