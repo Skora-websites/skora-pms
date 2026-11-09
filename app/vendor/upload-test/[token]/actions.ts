@@ -11,6 +11,8 @@ import { testBookings, users } from "@/lib/db/schema";
 import { sendMail } from "@/lib/mail/send";
 import { notifyUser } from "@/lib/notifications";
 import { audit } from "@/lib/security/audit-log";
+import { authRateLimit } from "@/lib/security/rate-limit";
+import { getClientIp } from "@/lib/security/ip";
 import { isVendorTokenExpired } from "./token-ttl";
 
 export type VendorUploadResult = { error: string | null; success?: boolean };
@@ -48,6 +50,14 @@ export async function uploadTestReport(
   token: string,
   formData: FormData
 ): Promise<VendorUploadResult> {
+  // Rate limit (audit V5): this endpoint is token-gated, not authenticated,
+  // so bound upload attempts per client IP before any DB or file I/O. Runs
+  // first — a throttled caller learns nothing about whether the token is real.
+  const throttle = authRateLimit.vendorUploadIp(await getClientIp());
+  if (!throttle.allowed) {
+    return { error: "Too many upload attempts. Please try again later." };
+  }
+
   const [booking] = await db
     .select({
       id: testBookings.id,

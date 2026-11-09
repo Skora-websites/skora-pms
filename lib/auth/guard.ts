@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getCurrentUser, getUserPermissions, hasPermission, homePathForRole, isTrialExpired, type CurrentUser } from "./user";
+import { getBusinessScope } from "./scope";
+import { isPracticeAccessExpired } from "@/lib/queries/packages";
+import { checkSameOriginHeaders } from "@/lib/security/csrf";
+import { authRateLimit } from "@/lib/security/rate-limit";
 import {
   hasAdminModuleAccess,
   firstPermittedAdminPath,
@@ -28,6 +33,36 @@ export async function requireApiRole(
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
   if (!roles.includes(user.role)) return new Response("Forbidden", { status: 403 });
+
+  // CSRF origin check (audit V9) — AUTOMATIC now, not opt-in per route. The
+  // /api/** handlers are plain endpoints authenticated by the session cookie,
+  // and sameSite:lax does not block same-site requests, so every route that
+  // resolves a user through these guards rejects a foreign Origin. Absent
+  // Origin (native app, curl, webhooks) passes — see lib/security/csrf.ts for
+  // why absence is safe. Runs AFTER auth so an unauthenticated caller still
+  // gets its 401 rather than a 403 revealing the endpoint exists (the same
+  // ordering the mobile namespace's csrfGuard documents).
+  const originCheck = checkSameOriginHeaders(await headers());
+  if (!originCheck.ok) return new Response("Forbidden", { status: 403 });
+
+  // Per-user request budget (audit V12) — AUTOMATIC for every guard-protected
+  // route. Same ordering rationale: only an authenticated, in-role caller can
+  // consume their budget, and a 429 never masks an auth failure. Mobile routes
+  // keep their own identical-budget bucket; the two bind at the same rate.
+  const throttle = authRateLimit.apiGuard(user.id);
+  if (!throttle.allowed) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests — slow down and retry shortly." }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(Math.max(1, Math.ceil(throttle.retryAfterMs / 1000))),
+        },
+      }
+    );
+  }
+
   return user;
 }
 
@@ -93,6 +128,15 @@ export async function requireAdminTier(pathname?: string) {
     redirect(homePathForRole(user.role));
   }
   const viewerRole = user.role === "admin" ? ("owner" as const) : ("manager" as const);
+
+  // Practice-plan gate (audit V3): the plan that governs this tier lives on
+  // the anchor doctor's row — the plan the owner pays for. An expired plan
+  // stops the whole admin tier, mirroring the doctor shell's /trial-expired
+  // bounce; self-serve renewal is offered on that page for owners too.
+  const scope = await getBusinessScope();
+  if (scope.doctorIds.length > 0 && (await isPracticeAccessExpired(scope.doctorIds))) {
+    redirect("/trial-expired");
+  }
 
   if (pathname) {
     const perms =

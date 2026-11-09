@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
 import { todayStr } from "@/lib/utils";
+import { LIST_HARD_CAP } from "@/lib/constants";
 
 /** Patient's bill receipts with doctor + billing type names. */
 export const getPatientBills = cache(async (patientId: number) => {
@@ -24,7 +25,9 @@ export const getPatientBills = cache(async (patientId: number) => {
     .innerJoin(users, eq(users.id, billings.doctorId))
     .leftJoin(billingTypes, eq(billingTypes.id, billings.billingTypeId))
     .where(and(eq(billings.patientId, patientId), isNull(billings.deletedAt)))
-    .orderBy(desc(billings.billDate));
+    .orderBy(desc(billings.billDate))
+    // Hard cap (audit P4): newest 500 — the query must not grow without bound.
+    .limit(LIST_HARD_CAP);
   return rows;
 });
 
@@ -61,7 +64,9 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
     .from(consultations)
     .innerJoin(users, eq(users.id, consultations.doctorId))
     .where(eq(consultations.patientId, patientId))
-    .orderBy(desc(consultations.consultationDate));
+    .orderBy(desc(consultations.consultationDate))
+    // Hard cap (audit P4): newest 500 prescription records.
+    .limit(LIST_HARD_CAP);
 
   const medMap = await medicationsByConsultation(rows.map((c) => c.id));
   return rows.map((c) => ({ ...c, medications: medMap.get(c.id) ?? [] }));
@@ -85,7 +90,9 @@ export const getPatientTestBookings = cache(async (patientId: number) => {
     .innerJoin(users, eq(users.id, testBookings.doctorId))
     .leftJoin(vendors, eq(vendors.id, testBookings.vendorId))
     .where(eq(testBookings.patientId, patientId))
-    .orderBy(desc(testBookings.bookingDate));
+    .orderBy(desc(testBookings.bookingDate))
+    // Hard cap (audit P4): newest 500 test bookings.
+    .limit(LIST_HARD_CAP);
   return rows;
 });
 
@@ -228,9 +235,13 @@ export const getPatientAppointments = cache(async (patientId: number) => {
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
     .where(eq(appointments.patientId, patientId))
-    // DB can't sort the legacy "h:mm AM/PM" time strings chronologically,
-    // so order by date in SQL and finish the time-of-day sort in JS.
-    .orderBy(asc(appointments.date), desc(appointments.createdAt));
+    // DB can't sort the legacy "h:mm AM/PM" time strings chronologically, so
+    // the date sort happens in SQL and the time-of-day sort finishes in JS
+    // (byAppointmentDateTime re-sorts ascending). Fetch NEWEST-first with the
+    // hard cap (audit P4) so the cap can never hide the most recent visits —
+    // the JS sort then presents that newest window oldest-first as before.
+    .orderBy(desc(appointments.date), desc(appointments.createdAt))
+    .limit(LIST_HARD_CAP);
   return byAppointmentDateTime(rows);
 });
 
@@ -313,7 +324,9 @@ export const getPatientConsultations = cache(async (patientId: number) => {
     .from(consultations)
     .innerJoin(users, eq(users.id, consultations.doctorId))
     .where(eq(consultations.patientId, patientId))
-    .orderBy(desc(consultations.consultationDate));
+    .orderBy(desc(consultations.consultationDate))
+    // Hard cap (audit P4): newest 500 consultation records.
+    .limit(LIST_HARD_CAP);
 
   const medMap = await medicationsByConsultation(rows.map((c) => c.id));
   return rows.map((c) => ({ ...c, medications: medMap.get(c.id) ?? [] }));

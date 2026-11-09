@@ -3,6 +3,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, consultations, users } from "@/lib/db/schema";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 export type AdminConsultationRecord = {
   appointmentId: number;
@@ -23,15 +24,22 @@ export type AdminConsultationRecord = {
 /**
  * One consultation record, read-only, for the admin/manager tier.
  *
- * `doctorIds` is the caller's business scope: a consultation whose doctor is
- * outside it returns null (404), so an id belonging to another business cannot
- * be enumerated through this route.
+ * Security: every export of a `"use server"` module is a directly invocable
+ * RPC endpoint (audit V1), so this function derives the caller's business
+ * scope SERVER-SIDE via `getBusinessScope()` — it never trusts a
+ * caller-supplied doctor-id list. An unauthenticated or out-of-tier caller
+ * is redirected by the scope resolver before any query runs, and a
+ * consultation whose doctor is outside the resolved scope returns null
+ * (404), so an id belonging to another business cannot be enumerated
+ * through this route.
  */
 export async function getConsultationRecordForAdmin(
-  appointmentId: number,
-  doctorIds: number[]
+  appointmentId: number
 ): Promise<AdminConsultationRecord | null> {
-  if (doctorIds.length === 0 || !Number.isInteger(appointmentId) || appointmentId <= 0) return null;
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) return null;
+
+  const { doctorIds } = await getBusinessScope();
+  if (doctorIds.length === 0) return null;
 
   const [row] = await db
     .select({

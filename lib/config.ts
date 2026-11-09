@@ -113,6 +113,11 @@ export const RATE_LIMIT = {
   otpVerify: num(process.env.RATE_LIMIT_OTP_VERIFY, 10),
   /** Consent submissions per slug per hour. */
   consent: num(process.env.RATE_LIMIT_CONSENT, 10),
+  /** Unauthenticated vendor lab-report uploads per client IP per hour (audit V5). */
+  vendorUploadIp: num(process.env.RATE_LIMIT_VENDOR_UPLOAD_IP, 20),
+  /** Guard-level per-user API budget (audit V12) — requests per minute per resolved user. */
+  apiGuard: num(process.env.RATE_LIMIT_API_GUARD, 300),
+  apiGuardWindowMs: num(process.env.RATE_LIMIT_API_GUARD_WINDOW_MINUTES, 1) * 60_000,
   /** Demo requests per email per hour. */
   demo: num(process.env.RATE_LIMIT_DEMO, 5),
   /** Chat polls per user per minute. */

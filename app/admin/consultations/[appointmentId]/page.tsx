@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdminTier } from "@/lib/auth/guard";
-import { getBusinessScope } from "@/lib/auth/scope";
-import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
+import { PageHeader } from "@/components/ui/dashboard-ui";
 import { Stethoscope } from "lucide-react";
 import { ConsultationDetailView } from "./consultation-detail-view";
 import { getConsultationRecordForAdmin } from "./actions";
@@ -29,21 +28,7 @@ export default async function AdminConsultationDetailPage({
   const id = Number(appointmentId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const { doctorIds } = await getBusinessScope();
-  if (doctorIds.length === 0) {
-    return (
-      <>
-        <PageHeader title="Consultation" />
-        <EmptyState
-          icon={Stethoscope}
-          title="No clinic is assigned"
-          description="This account has no clinics, so there is nothing to review yet."
-        />
-      </>
-    );
-  }
-
-  const record = await getConsultationRecordForAdmin(id, doctorIds);
+  const record = await getConsultationRecordForAdmin(id);
   if (!record) notFound();
 
   return (

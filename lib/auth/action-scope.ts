@@ -38,6 +38,7 @@ import {
 import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
 import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
+import { isPracticeAccessExpired } from "@/lib/queries/packages";
 import { getBusinessScope } from "./scope";
 
 export type ActionScope = {
@@ -91,6 +92,9 @@ export async function requireWriteScope(permission: string): Promise<ActionScope
     if (user.role === "manager" && !(await hasPermission(user.id, permission))) return null;
     const scope = await getBusinessScope();
     if (scope.doctorIds.length === 0) return null;
+    // Practice-plan gate (audit V3): a write action must not outlive the plan
+    // that pays for it — same anchor-doctor expiry the page tier enforces.
+    if (await isPracticeAccessExpired(scope.doctorIds)) return null;
     return {
       callerId: user.id,
       callerRole: user.role,

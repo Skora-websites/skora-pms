@@ -104,6 +104,28 @@ export const authRateLimit = {
   chatPoll: (userId: number) => rateLimit(`chat-poll:${userId}`, RATE_LIMIT.chatPoll, 60_000),
   // SOS: at most N emergency requests per minute per patient.
   emergency: (userId: number) => rateLimit(`emergency:${userId}`, RATE_LIMIT.emergency, 60_000),
+  // Vendor lab-report upload (audit V5): the endpoint is token-gated, not
+  // session-gated, so the token holder is the only identity — but the token
+  // leaks nothing about who holds it, so bound the WRITE rate per client IP.
+  // Like loginIp, an unresolvable IP fails OPEN: collapsing every caller into
+  // one shared "unknown" bucket would turn a per-client limit into a global
+  // DoS on the upload path.
+  vendorUploadIp: (ip: string) =>
+    ip === "unknown"
+      ? { allowed: true, retryAfterMs: 0 }
+      : rateLimit(`vendor-upload-ip:${ip}`, RATE_LIMIT.vendorUploadIp, 60 * 60_000),
+  /**
+   * Guard-level budget (audit V12): applied INSIDE requireApiRole, so every
+   * route that resolves a user through the shared guards is throttled without
+   * each route having to remember. Keyed on the resolved user id (identity,
+   * not IP — clients share NAT). Deliberately the same generous default as
+   * the mobile namespace budget: it bounds abuse, it does not shape normal
+   * client behaviour. Mobile routes additionally count in their own
+   * `mobile-api` bucket; two independent generous budgets bind at the same
+   * effective rate, neither halves the other.
+   */
+  apiGuard: (userId: number) =>
+    rateLimit(`api-guard:${userId}`, RATE_LIMIT.apiGuard, RATE_LIMIT.apiGuardWindowMs),
   /**
    * The whole `/api/mobile/**` namespace, keyed on the resolved user id
    * (audit V5). A deliberately generous budget: it exists to bound abuse, not

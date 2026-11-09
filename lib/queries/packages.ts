@@ -17,8 +17,7 @@ import {
 } from "@/lib/packages/entitlements";
 import { isTrialExpired } from "@/lib/auth/trial";
 
-/** Plan id of the practice owner (NULL while they are on trial). */
-async function getPracticePackageId(doctorId: number): Promise<string | null> {
+/** Plan id of the practice owner (NULL while they are on trial). */async function getPracticePackageId(doctorId: number): Promise<string | null> {
   const [row] = await db
     .select({ packageId: users.packageId })
     .from(users)
@@ -151,4 +150,26 @@ export async function getBusinessPlanSummary(
     seatDoctorIds: ids,
     paymentUserId: ids[0],
   });
+}
+
+/**
+ * Admin-tier plan gate (audit V3).
+ *
+ * The plan governing the /admin tier lives on the ANCHOR doctor's row —
+ * `scope.doctorIds[0]`, the same row the owner's purchase credits
+ * (lib/packages/buyers.ts) and the same convention `requireWriteScope` uses
+ * for its anchor. An admin/manager user never carries `trial_ends_at`
+ * themselves, so `isTrialExpired(user)` is structurally false for them; the
+ * expiry that matters is the practice anchor's. An empty id list means
+ * "nothing to gate" (scope emptiness is each caller's own concern).
+ */
+export async function isPracticeAccessExpired(doctorIds: number[]): Promise<boolean> {
+  const anchor = doctorIds[0];
+  if (!anchor || !Number.isInteger(anchor) || anchor <= 0) return false;
+  const [row] = await db
+    .select({ trialEndsAt: users.trialEndsAt })
+    .from(users)
+    .where(and(eq(users.id, anchor), eq(users.role, "doctor")))
+    .limit(1);
+  return isTrialExpired({ role: "doctor", trialEndsAt: row?.trialEndsAt ?? null });
 }

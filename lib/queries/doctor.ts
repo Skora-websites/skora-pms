@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { LIST_HARD_CAP } from "@/lib/constants";
 import { db } from "@/lib/db";
 import {
   users,
@@ -604,7 +605,7 @@ export const getFollowUps = cache(async (doctorIds: number[]) => {
 /** Follow-up reminders (call list) across one doctor or the whole practice. */
 export const getFollowUpReminders = cache(async (doctorIds: number[]) => {
   if (doctorIds.length === 0) return [];
-  return db
+  const rows = await db
     .select({
       id: followUpReminders.id,
       followUpDate: followUpReminders.followUpDate,
@@ -618,7 +619,14 @@ export const getFollowUpReminders = cache(async (doctorIds: number[]) => {
     .from(followUpReminders)
     .innerJoin(users, eq(users.id, followUpReminders.patientId))
     .where(inArray(followUpReminders.doctorId, doctorIds))
-    .orderBy(asc(followUpReminders.followUpDate));
+    // Hard cap (audit P4): this call list grows with every follow-up ever
+    // created, so it is bounded at LIST_HARD_CAP. The display order is
+    // earliest-first, but capping an ascending sort would hide the NEWEST
+    // reminders — so fetch newest-first, cap, then reverse to restore the
+    // ascending presentation over the retained (most recent) window.
+    .orderBy(desc(followUpReminders.followUpDate), desc(followUpReminders.id))
+    .limit(LIST_HARD_CAP);
+  return rows.reverse();
 });
 
 /**
@@ -1130,48 +1138,51 @@ export const getPracticeStats = cache(async (doctorIds: number[]) => {
  * practice/business doctors (manager/owner finance chart).
  */
 export const getPracticeFinanceTrend = cache(async (doctorIds: number[], months = 6) => {
+  const n = Number.isInteger(months) && months > 0 ? Math.min(months, 24) : 6;
   if (doctorIds.length === 0) {
-    return Array.from({ length: months }, (_, i) => {
+    return Array.from({ length: n }, (_, i) => {
       const d = new Date();
       d.setDate(1);
-      d.setMonth(d.getMonth() - (months - 1 - i));
+      d.setMonth(d.getMonth() - (n - 1 - i));
       return { label: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, income: 0, expense: 0 };
     });
   }
+  // Aggregated IN SQL, bounded to the window (audit P2): the previous version
+  // selected date/type/amount of EVERY approved transaction ever and bucketed
+  // in JS — cost grew linearly with ledger age on every dashboard load. The
+  // WHERE clause makes the (user_id, date) composite index a range scan and
+  // the GROUP BY returns ≤ n rows regardless of ledger size.
   const rows = await db
     .select({
-      date: transactions.date,
-      type: transactions.type,
-      amount: transactions.amount,
+      month: sql<string>`DATE_FORMAT(${transactions.date}, '%Y-%m')`,
+      income: sql<string>`coalesce(sum(case when ${transactions.type} = 1 then ${transactions.amount} else 0 end), 0)`,
+      expense: sql<string>`coalesce(sum(case when ${transactions.type} = 2 then ${transactions.amount} else 0 end), 0)`,
     })
     .from(transactions)
     .where(
       and(
         inArray(transactions.userId, doctorIds),
         eq(transactions.status, "approved"),
-        isNull(transactions.deletedAt)
+        isNull(transactions.deletedAt),
+        sql`${transactions.date} >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL ${n - 1} MONTH), '%Y-%m-01')`
       )
-    );
+    )
+    .groupBy(sql`DATE_FORMAT(${transactions.date}, '%Y-%m')`);
 
-  const buckets = new Map<string, { income: number; expense: number }>();
-  for (let i = months - 1; i >= 0; i--) {
+  // mysql2 returns DECIMAL sums as strings — coerce once here.
+  const byMonth = new Map(
+    rows.map((r) => [String(r.month), { income: Number(r.income), expense: Number(r.expense) }])
+  );
+  const out: { label: string; income: number; expense: number }[] = [];
+  for (let i = n - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(1);
     d.setMonth(d.getMonth() - i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    buckets.set(key, { income: 0, expense: 0 });
+    const b = byMonth.get(key);
+    out.push({ label: key, income: b?.income ?? 0, expense: b?.expense ?? 0 });
   }
-
-  for (const r of rows) {
-    const key = r.date.slice(0, 7);
-    if (buckets.has(key)) {
-      const b = buckets.get(key)!;
-      if (r.type === 1) b.income += Number(r.amount);
-      else if (r.type === 2) b.expense += Number(r.amount);
-    }
-  }
-
-  return [...buckets.entries()].map(([label, { income, expense }]) => ({ label, income, expense }));
+  return out;
 });
 
 /** Income & expense totals per month for the last N months (dashboard chart). */

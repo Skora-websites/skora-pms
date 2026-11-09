@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/user";
+import { getCurrentUser, homePathForRole } from "@/lib/auth/user";
+import { getBusinessScope } from "@/lib/auth/scope";
+import { isPracticeAccessExpired } from "@/lib/queries/packages";
 import { getCompanySettings } from "@/lib/queries/landing";
 import { logoutAction } from "@/lib/actions/auth";
 import { isRazorpayConfigured } from "@/lib/packages/razorpay";
@@ -12,10 +14,27 @@ export const metadata: Metadata = { title: "Trial Expired · SkoraCares" };
 
 export default async function TrialExpiredPage() {
   const user = await getCurrentUser();
-  // Mirror legacy trialExpired guard: only doctors with an ended trial see this.
-  if (!user || user.role !== "doctor" || !user.trialEndsAt || user.trialEndsAt > new Date()) {
-    redirect(user ? (user.role === "doctor" ? "/doctor" : "/") : "/login");
+  if (!user) redirect("/login");
+
+  // Who belongs here (audit V3): a doctor whose own trial ended, or an
+  // admin/manager whose PRACTICE plan expired — the plan lives on the anchor
+  // doctor's row and is the one the owner pays for. Everyone else has no
+  // expired access to see.
+  let practiceExpired = false;
+  if (user.role === "doctor") {
+    if (!user.trialEndsAt || user.trialEndsAt > new Date()) redirect("/doctor");
+  } else if (user.role === "admin" || user.role === "manager") {
+    const scope = await getBusinessScope();
+    practiceExpired =
+      scope.doctorIds.length > 0 && (await isPracticeAccessExpired(scope.doctorIds));
+    if (!practiceExpired) redirect(homePathForRole(user.role));
+  } else {
+    redirect("/");
   }
+
+  // Only the tiers the checkout route can actually credit may self-serve
+  // (lib/packages/buyers.ts: doctor buys self, admin buys for the practice).
+  const canSelfRenew = user.role === "doctor" || user.role === "admin";
 
   const settings = await getCompanySettings();
   const supportEmail = settings?.companyEmail1 ?? "Support@skoracares.in";
@@ -24,7 +43,7 @@ export default async function TrialExpiredPage() {
   const cleanWhatsapp = whatsapp.replace(/[^0-9]/g, "");
   const wa = cleanWhatsapp.length === 10 ? `91${cleanWhatsapp}` : cleanWhatsapp;
   const message = encodeURIComponent(
-    `Hi, my trial plan on SkoraCares has expired.\nDoctor: ${user.name}\nEmail: ${user.email}\nI want to extend/renew my plan.`
+    `Hi, my ${user.role === "doctor" ? "trial plan" : "practice plan"} on SkoraCares has expired.\n${user.role === "doctor" ? "Doctor" : "Account"}: ${user.name}\nEmail: ${user.email}\nI want to extend/renew my plan.`
   );
   const whatsappUrl = `https://wa.me/${wa}?text=${message}`;
   const emailUrl = `mailto:${supportEmail}?subject=${encodeURIComponent(`Subscription Renewal Request - ${user.name}`)}&body=${message}`;
@@ -46,10 +65,12 @@ export default async function TrialExpiredPage() {
               Skora<span className="text-accent-400">Cares</span>
             </p>
             <h1 className="mt-10 font-display text-3xl font-extrabold leading-tight">
-              Your trial plan has expired!
+              {practiceExpired ? "Your practice plan has expired!" : "Your trial plan has expired!"}
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-white/80">
-              Your trial period has ended. Upgrade your plan to continue using the doctor dashboard.
+              {practiceExpired
+                ? "Your practice plan has ended. Renew it to continue using the business dashboard."
+                : "Your trial period has ended. Upgrade your plan to continue using the doctor dashboard."}
             </p>
           </div>
           <div className="mt-10 rounded-2xl border-2 border-dashed border-white/25 bg-accent-400 p-5 text-ink">
@@ -97,7 +118,7 @@ export default async function TrialExpiredPage() {
           </div>
 
           <div className="mt-8">
-            {renewPricing && (
+            {renewPricing && canSelfRenew && (
               <div className="mb-6 rounded-2xl border border-brand-200 bg-brand-50/60 p-5">
                 <p className="text-xs font-bold uppercase tracking-widest text-brand-700">Renew now — {renewPricing.plan.name}</p>
                 <div className="mt-1.5 flex items-baseline gap-1">

@@ -69,10 +69,18 @@ function buildCsp(nonce: string): string {
     `img-src 'self' data: blob: https:`,
     // Connect (API calls, WebSocket for dev overlay). Dev also allows the
     // local agent-toolbar port (4747) so its session-sync probes aren't
-    // CSP-blocked in the console. Production stays 'self'-only.
-    `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:4747 http://127.0.0.1:4747" : ""}`,
-    // Frames
-    `frame-src 'self'`,
+    // CSP-blocked in the console. Production additionally allows Razorpay's
+    // checkout endpoints — the Checkout.js modal posts to api.razorpay.com
+    // and its beacons go to lumberjack.razorpay.com (audit V6).
+    `connect-src 'self'${
+      isDev
+        ? " ws://localhost:* http://localhost:4747 http://127.0.0.1:4747"
+        : " https://api.razorpay.com https://lumberjack.razorpay.com"
+    }`,
+    // Frames — Razorpay Checkout renders its payment modal in a cross-origin
+    // iframe (audit V6); without this the owner tier cannot complete a
+    // purchase in production.
+    `frame-src 'self'${isDev ? "" : " https://api.razorpay.com https://checkout.razorpay.com"}`,
     // Media
     `media-src 'self'`,
     // Workers

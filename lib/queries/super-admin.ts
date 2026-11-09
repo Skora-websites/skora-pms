@@ -46,49 +46,53 @@ export const getSuperAdminStats = cache(async () => {
   };
 });
 
-/** Doctor registrations per month for the last N months. */
-export const getDoctorGrowth = cache(async (months = 6) => {
+/**
+ * Monthly signups for a role, aggregated IN SQL (audit P2).
+ *
+ * The previous implementations pulled EVERY user row of the role into JS and
+ * bucketed there — an unbounded scan whose cost grew linearly with total
+ * users on every super-admin dashboard load. DATE_FORMAT groups server-side
+ * and the WHERE clause bounds the window, so the query returns ≤ `months`
+ * rows regardless of table size. Month labels are still produced here so
+ * missing months render as 0 exactly as before; the return shape is
+ * unchanged for callers.
+ */
+async function growthByMonth(
+  role: "doctor" | "patient",
+  months: number
+): Promise<{ label: string; count: number }[]> {
+  const n = Number.isInteger(months) && months > 0 ? Math.min(months, 24) : 6;
   const rows = await db
     .select({
-      createdAt: users.createdAt,
+      month: sql<string>`DATE_FORMAT(${users.createdAt}, '%Y-%m')`,
+      count: sql<number>`count(*)`,
     })
     .from(users)
-    .where(eq(users.role, "doctor"));
-  const buckets = new Map<string, number>();
-  for (let i = months - 1; i >= 0; i--) {
+    .where(
+      and(
+        eq(users.role, role),
+        sql`${users.createdAt} >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL ${n - 1} MONTH), '%Y-%m-01')`
+      )
+    )
+    .groupBy(sql`DATE_FORMAT(${users.createdAt}, '%Y-%m')`);
+
+  const byMonth = new Map(rows.map((r) => [String(r.month), Number(r.count)]));
+  const out: { label: string; count: number }[] = [];
+  for (let i = n - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(1);
     d.setMonth(d.getMonth() - i);
-    buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
+    const label = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    out.push({ label, count: byMonth.get(label) ?? 0 });
   }
-  for (const r of rows) {
-    if (!r.createdAt) continue;
-    const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, "0")}`;
-    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
-  }
-  return [...buckets.entries()].map(([label, count]) => ({ label, count }));
-});
+  return out;
+}
+
+/** Doctor registrations per month for the last N months. */
+export const getDoctorGrowth = cache(async (months = 6) => growthByMonth("doctor", months));
 
 /** Patient registrations per month for the last N months. */
-export const getPatientGrowth = cache(async (months = 6) => {
-  const rows = await db
-    .select({ createdAt: users.createdAt })
-    .from(users)
-    .where(eq(users.role, "patient"));
-  const buckets = new Map<string, number>();
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - i);
-    buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
-  }
-  for (const r of rows) {
-    if (!r.createdAt) continue;
-    const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, "0")}`;
-    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
-  }
-  return [...buckets.entries()].map(([label, count]) => ({ label, count }));
-});
+export const getPatientGrowth = cache(async (months = 6) => growthByMonth("patient", months));
 
 /** Top clinics by total billed amount (non-deleted bills). */
 export const getTopClinics = cache(async (limit = 5) => {

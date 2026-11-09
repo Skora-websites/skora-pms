@@ -48,13 +48,14 @@ function allowedOrigins(): Set<string> {
 }
 
 /**
- * True when the request's `Origin` is absent or belongs to this app.
- *
- * Returns a descriptive string instead of a bare boolean so callers can log
- * what was rejected.
+ * Headers-based variant (audit V9): same check, usable from the shared API
+ * guards via `headers()` — route handlers call `requireApiRole(roles)` with
+ * no Request argument, so the guard-level enforcement cannot depend on one.
  */
-export function checkSameOrigin(request: Request): { ok: true } | { ok: false; origin: string } {
-  const origin = request.headers.get("origin");
+export function checkSameOriginHeaders(
+  h: Headers
+): { ok: true } | { ok: false; origin: string } {
+  const origin = h.get("origin");
   if (!origin) return { ok: true }; // no browser origin to validate
 
   let host: string;
@@ -64,6 +65,16 @@ export function checkSameOrigin(request: Request): { ok: true } | { ok: false; o
     return { ok: false, origin };
   }
   return allowedOrigins().has(host) ? { ok: true } : { ok: false, origin };
+}
+
+/**
+ * True when the request's `Origin` is absent or belongs to this app.
+ *
+ * Returns a descriptive string instead of a bare boolean so callers can log
+ * what was rejected.
+ */
+export function checkSameOrigin(request: Request): { ok: true } | { ok: false; origin: string } {
+  return checkSameOriginHeaders(request.headers);
 }
 
 /**

@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkSameOrigin, rejectForeignOrigin } from "../csrf";
+import { checkSameOrigin, checkSameOriginHeaders, rejectForeignOrigin } from "../csrf";
 
 /** A request carrying the given Origin (or none). */
 function req(origin: string | null) {
@@ -55,4 +55,34 @@ test("a same-host origin on a different port is refused", () => {
   } else {
     assert.equal(r.ok, false);
   }
+});
+
+// ── Headers-based variant (audit V9) — what the shared API guards call ──────
+
+/** Bare headers carrying the given Origin (or none) — no Request needed. */
+function hdrs(origin: string | null) {
+  const headers = new Headers();
+  if (origin) headers.set("origin", origin);
+  return headers;
+}
+
+test("the Headers variant agrees with the Request variant on every case", async () => {
+  const { APP_URL } = await import("@/lib/config");
+  const host = new URL(APP_URL).host;
+  for (const origin of [null, `https://${host}`, "https://evil.example.com", "not-a-url"]) {
+    const viaRequest = checkSameOrigin(req(origin));
+    const viaHeaders = checkSameOriginHeaders(hdrs(origin));
+    assert.equal(viaHeaders.ok, viaRequest.ok, `mismatch for origin: ${origin}`);
+    if (!viaRequest.ok && !viaHeaders.ok) {
+      assert.equal(viaHeaders.origin, viaRequest.origin);
+    }
+  }
+});
+
+test("the Headers variant allows absent Origin and own host, refuses foreign", async () => {
+  const { APP_URL } = await import("@/lib/config");
+  const host = new URL(APP_URL).host;
+  assert.equal(checkSameOriginHeaders(hdrs(null)).ok, true);
+  assert.equal(checkSameOriginHeaders(hdrs(`https://${host}`)).ok, true);
+  assert.equal(checkSameOriginHeaders(hdrs("https://evil.example.com")).ok, false);
 });
