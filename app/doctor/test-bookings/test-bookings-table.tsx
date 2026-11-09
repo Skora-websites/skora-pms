@@ -13,7 +13,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDateTime, formatINR } from "@/lib/utils";
-import { deleteTestBooking, updateTestBookingStatus, regenerateUploadLink } from "./actions";
+import { deleteTestBooking, updateTestBookingStatus, regenerateUploadLink, bulkUpdateTestBookingStatus } from "./actions";
 import { BookingForm } from "./booking-form";
 
 export type BookingRow = {
@@ -67,7 +67,49 @@ export function TestBookingsTable({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editing, setEditing] = useState<BookingRow | null>(null);
   const [copied, setCopied] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<string>("");
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const router = useRouter();
+
+  // Selection is a desktop-table affordance; mobile cards keep their own
+  // per-booking status select (bulk on a card list is awkward and the
+  // per-row control already covers it).
+  const allSelected = bookings.length > 0 && bookings.every((b) => selected.has(b.id));
+
+  function toggleRow(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(bookings.map((b) => b.id)));
+  }
+
+  async function applyBulk() {
+    if (!bulkStatus || selected.size === 0) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    const res = await bulkUpdateTestBookingStatus([...selected], bulkStatus);
+    setBulkBusy(false);
+    if (res.error) {
+      setBulkMsg(res.error);
+      return;
+    }
+    setSelected(new Set());
+    setBulkStatus("");
+    setBulkMsg(
+      res.skipped > 0
+        ? `Updated ${res.updated} booking${res.updated === 1 ? "" : "s"} · ${res.skipped} skipped (status transition not allowed).`
+        : `Updated ${res.updated} booking${res.updated === 1 ? "" : "s"}.`
+    );
+    router.refresh();
+  }
 
   const uploadUrl = (token: string) => `${window.location.origin}/vendor/upload-test/${token}`;
 
@@ -87,6 +129,52 @@ export function TestBookingsTable({
 
   return (
     <div>
+      {/* Bulk action bar (desktop selection) — audit UX §7.2.3 */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-brand-200 bg-brand-50/60 px-4 py-2.5">
+          <span className="text-sm font-semibold text-ink">
+            {selected.size} selected
+          </span>
+          <select
+            value={bulkStatus}
+            onChange={(e) => {
+              setBulkStatus(e.target.value);
+              setBulkMsg(null);
+            }}
+            aria-label="Set status for selected bookings"
+            className="input !w-auto !py-1.5 !text-xs"
+          >
+            <option value="" disabled>
+              Set status to…
+            </option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={applyBulk}
+            disabled={!bulkStatus || bulkBusy}
+            className="btn-primary !py-1.5 !text-xs disabled:opacity-50"
+          >
+            {bulkBusy ? "Applying…" : "Apply"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(new Set());
+              setBulkMsg(null);
+            }}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+          >
+            Clear
+          </button>
+          {bulkMsg && <span className="text-xs font-medium text-slate-600">{bulkMsg}</span>}
+        </div>
+      )}
+
       {/* Mobile: card-per-booking list */}
       <div className="space-y-3 sm:hidden">
         {bookings.map((b) => {
@@ -189,6 +277,15 @@ export function TestBookingsTable({
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium text-slate-500">
+              <th className="w-10 px-3 py-3.5">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Select all bookings"
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+              </th>
               <th className="px-5 py-3.5">Patient</th>
               <th className="px-5 py-3.5">Vendor</th>
               <th className="px-5 py-3.5">Booking</th>
@@ -204,6 +301,15 @@ export function TestBookingsTable({
               const token = b.uploadLinkToken;
               return (
                 <tr key={b.id} className="transition-colors hover:bg-brand-50/40">
+                  <td className="px-3 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(b.id)}
+                      onChange={() => toggleRow(b.id)}
+                      aria-label={`Select booking for ${b.patientName ?? "patient"}`}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                  </td>
                   <td className="px-5 py-4">
                     <Link href={`${patientBaseHref}/${b.patientId}`} className="font-semibold text-slate-800 hover:text-brand-800">
                       {b.patientName}

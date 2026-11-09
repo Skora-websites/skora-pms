@@ -566,6 +566,65 @@ export async function updateTestBookingStatus(
   return { error: null };
 }
 
+/** Upper bound on one bulk status update (audit UX §7.2.3). */
+const BULK_STATUS_MAX = 100;
+
+/**
+ * Bulk status update for test bookings (audit UX §7.2.3).
+ *
+ * One scoped read of the selected rows, then ONE `inArray` UPDATE — never a
+ * per-booking loop. The business state machine is enforced per booking: a
+ * mixed selection updates only the eligible subset and reports how many were
+ * skipped, instead of failing wholesale or silently overriding terminal
+ * states. Duplicate ids are collapsed; the operation is capped at
+ * BULK_STATUS_MAX to bound the write.
+ */
+export async function bulkUpdateTestBookingStatus(
+  bookingIds: number[],
+  status: string
+): Promise<TestBookingActionResult & { updated: number; skipped: number }> {
+  const empty = { error: null as string | null, updated: 0, skipped: 0 };
+  const scope = await requireWriteScope("test-booking-edit");
+  if (!scope) return { ...empty, error: "You don't have permission to change booking status." };
+
+  const ids = [...new Set(bookingIds)]
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, BULK_STATUS_MAX);
+  if (ids.length === 0) return { ...empty, error: "No bookings selected." };
+  if (!(BOOKING_STATUSES as readonly string[]).includes(status)) {
+    return { ...empty, error: "Invalid status." };
+  }
+
+  const rows = await db
+    .select({ id: testBookings.id, status: testBookings.status })
+    .from(testBookings)
+    .where(and(inArray(testBookings.id, ids), inArray(testBookings.doctorId, scope.doctorIds)));
+
+  const eligible = rows
+    .filter((r) => (BOOKING_TRANSITIONS[r.status ?? "pending"] ?? []).includes(status))
+    .map((r) => r.id);
+  const skipped = ids.length - eligible.length;
+  if (eligible.length === 0) {
+    return { ...empty, error: `No selected booking can move to ${status}.`, skipped };
+  }
+
+  await db
+    .update(testBookings)
+    .set({ status: status as never, updatedAt: new Date() })
+    .where(inArray(testBookings.id, eligible));
+
+  void audit.transactionStatusChanged(scope.callerId, {
+    source: "test_booking",
+    bookingIds: eligible,
+    status,
+    bulk: true,
+  });
+
+  revalidatePath("/doctor/test-bookings");
+  revalidatePath("/admin/test-bookings");
+  return { error: null, updated: eligible.length, skipped };
+}
+
 export async function regenerateUploadLink(bookingId: number): Promise<TestBookingActionResult> {
   const scope = await requireWriteScope("test-booking-edit");
   if (!scope) return { error: "You don't have permission to manage upload links." };
