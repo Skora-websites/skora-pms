@@ -49,6 +49,14 @@ export type AuditAction =
   | "settings_updated"
   | "support_ticket_created"
   | "file_uploaded"
+  /**
+   * A read of a protected health record (audit R3).
+   *
+   * Writes had always been logged; reads of PHI were not, so "who saw this
+   * patient's prescription" was unanswerable. Recorded on the routes that
+   * serve prescriptions, consultation notes, patient photos and lab reports.
+   */
+  | "phi_read"
   | "demo_booked"
   | "sos_triggered"
   | "sos_accepted"
@@ -181,6 +189,20 @@ export const audit = {
 
   fileUploaded: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "file_uploaded", metadata }),
+
+  /**
+   * Record a PHI read (audit R3).
+   *
+   * `resource` names the kind of record ("prescription", "consultation",
+   * "test_report", "patient_photo") and `resourceId` the row. Kept terse so
+   * the metadata stays greppable and the column does not fill with prose.
+   */
+  phiRead: (userId: number, resource: string, resourceId?: number | string | null) =>
+    auditLog({
+      userId,
+      action: "phi_read",
+      metadata: { resource, resourceId: resourceId ?? null },
+    }),
 
   supportTicketCreated: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "support_ticket_created", metadata }),

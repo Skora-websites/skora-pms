@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { sosRequests } from "@/lib/db/schema";
 import { cancelSos } from "@/lib/dispatch/actions";
 import { requireApiRole } from "@/lib/auth/guard";
-import { apiError, redirectError } from "@/app/api/mobile/_helpers";
+import { apiError, csrfGuard, redirectError } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
 
@@ -26,9 +26,14 @@ export const runtime = "nodejs";
  * rules never move into this file.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // CSRF (audit V4): a foreign Origin means a browser page is driving this write
+  // with the signed-in user's session cookie. No Origin at all is a native
+  // client fetch, which cannot be CSRF'd, so it passes untouched.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
   const user = await requireApiRole(["patient"]);
   if (user instanceof Response) {
     return apiError(user.status === 401 ? "Unauthorized" : "Forbidden", user.status);

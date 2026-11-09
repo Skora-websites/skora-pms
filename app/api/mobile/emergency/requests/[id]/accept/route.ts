@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { acceptSos } from "@/lib/dispatch/actions";
 import { requireApiRole } from "@/lib/auth/guard";
-import { apiError, redirectError } from "@/app/api/mobile/_helpers";
+import { apiError, csrfGuard, redirectError } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
 
@@ -19,9 +19,14 @@ export const runtime = "nodejs";
  * It is never persisted and never served by any read route.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // CSRF (audit V4): a foreign Origin means a browser page is driving this write
+  // with the signed-in user's session cookie. No Origin at all is a native
+  // client fetch, which cannot be CSRF'd, so it passes untouched.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
   // Doctor tier only — the same boundary requireDoctor() applies inside the
   // action (a receptionist is never resolved to a linked practice owner).
   const user = await requireApiRole(["doctor"]);

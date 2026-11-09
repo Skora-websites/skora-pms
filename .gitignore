@@ -25,9 +25,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env files
-.env*.local
+# env files — .env plus any backup or variant (.env.bak, .env.prod.bak, …),
+# so a dated env backup can never be swept up by `git add .`
 .env
+.env.*
+!.env.example
 
 # uploaded / generated files (PHI-safe non-public storage)
 /storage/uploads/
@@ -38,6 +40,10 @@ yarn-error.log*
 # agent/harness workspaces + local-only audit reports (never deploy source)
 /.perch/
 AUDIT_REPORT.md
+# audit HTML renderings — safe to keep on disk, but a `git add .` must never stage them
+/audit.html
+/AUDIT*.html
+/SECURITY_AUDIT_*.md
 
 # typescript
 *.tsbuildinfo

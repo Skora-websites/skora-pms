@@ -1647,14 +1647,32 @@ export const sosRequests = mysqlTable(
     status: mysqlEnum("status", ["pending", "accepted", "completed", "cancelled", "expired"])
       .default("pending")
       .notNull(),
-    latitude: varchar("latitude", { length: 255 }).notNull(),
-    longitude: varchar("longitude", { length: 255 }).notNull(),
+    // DECIMAL(10,7) since migration 0025 — closer-doctor discovery is the hot
+    // emergency query, and a numeric column lets it range-scan. Drizzle returns
+    // decimal as a string to avoid float precision loss, which is what the
+    // query layer already coerced by hand; `toNumberOrNull` at the API edge
+    // turns it into the number the clients' schemas declare.
+    latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+    longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
     radiusKm: int("radius_km").default(10),
     complaint: varchar("complaint", { length: 500 }),
     patientNotes: text("patient_notes"),
     acceptedBy: bigint("accepted_by", { mode: "number" }),
     acceptedAt: timestamp("accepted_at"),
     cancelledAt: timestamp("cancelled_at"),
+    /**
+     * Radius-escalation bookkeeping (audit P5 — the Uber re-dispatch loop).
+     *
+     * Round 0 is the patient's own submitted radius. Each later round widens
+     * the search by `SOS_ESCALATION_FACTOR` after `SOS_OFFER_TTL_MIN` with no
+     * accept, so a patient in a thin-supply area gets a WIDER search inside
+     * the wait they were already going to have, instead of staring at a fixed
+     * offer set until the request TTL ends. Default 0 = pre-P5 behaviour, so
+     * an un-migrated row is correct by construction.
+     */
+    escalationRound: int("escalation_round").default(0).notNull(),
+    /** When the current round's offer set started — the offer-TTL clock. */
+    lastEscalatedAt: timestamp("last_escalated_at"),
     createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
     updatedAt: timestamp("updated_at"),
   },
@@ -1704,8 +1722,8 @@ export const sosCases = mysqlTable(
     patientSymptoms: text("patient_symptoms"),
     notes: text("notes"),
     // Live doctor location (updated during the trip for real-time tracking).
-    doctorLatitude: varchar("doctor_latitude", { length: 255 }),
-    doctorLongitude: varchar("doctor_longitude", { length: 255 }),
+    doctorLatitude: decimal("doctor_latitude", { precision: 10, scale: 7 }),
+    doctorLongitude: decimal("doctor_longitude", { precision: 10, scale: 7 }),
     doctorLastSeenAt: timestamp("doctor_last_seen_at"),
     status: mysqlEnum("status", ["open", "completed", "cancelled"]).default("open").notNull(),
     // ── SOS parity (Uber/Ola/Rapido) — see drizzle/0018_sos_parity.sql ──

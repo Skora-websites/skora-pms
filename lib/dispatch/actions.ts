@@ -19,9 +19,10 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { authRateLimit } from "@/lib/security/rate-limit";
 import { auditLog } from "@/lib/security/audit-log";
 import { notifyUser } from "@/lib/notifications";
-import { SOS_FARE } from "@/lib/config";
+import { SOS_FARE, SOS_LOCATION_PING_INTERVAL_S } from "@/lib/config";
 import { generateBillNumber } from "@/lib/utils";
 import { findNearbyOnDutyDoctors, haversineKm, maskPatient, resolveDoctorId, SOS_TTL_MIN } from "./geo";
+import { estimateEtaMinutes } from "./eta";
 import { broadcastToMany, broadcastToPatient, announceSosToDoctors } from "./hub";
 import { expireStalePendingRequest } from "./expiry";
 
@@ -58,6 +59,14 @@ export type SosActionResult = {
   /** Plaintext arrival code — returned to the doctor's panel only, never persisted. */
   otp?: string;
   etaMinutes?: number;
+  /**
+   * True when a location ping arrived faster than SOS_LOCATION_PING_INTERVAL_S
+   * and was coalesced: the answer (current ETA) is valid, the row was not
+   * rewritten. Clients use it to back off; the tracker is unaffected.
+   */
+  throttled?: boolean;
+  /** Which distance the ETA was based on — surfaced so the UI can label it. */
+  etaBasis?: "road" | "straight-line";
 };
 
 async function requirePatient() {
@@ -607,6 +616,22 @@ export async function setDoctorOnDuty(onDuty: boolean): Promise<SosActionResult>
  * Doctor updates their live location for the accepted emergency case.
  * Called periodically (e.g. every 5s) while en route so the patient sees
  * the doctor moving on the map (Uber-style live tracking).
+ *
+ * TWO changes over the original (audit P6/P7):
+ *
+ * 1. PING THROTTLE. A GPS client that pings as fast as it likes rewrites a
+ *    `sos_cases` row per ping and drags the patient's tracker along with it.
+ *    Pings faster than SOS_LOCATION_PING_INTERVAL_S are now COALESCED rather
+ *    than written: the caller still gets a valid answer (the currently stored
+ *    ETA), so a well-behaved client is unaffected and a runaway one is stopped
+ *    without a 429 it would have to handle. The read is against the
+ *    `doctor_last_seen_at` we already write, so the throttle adds no state.
+ *
+ * 2. ROAD-AWARE ETA. The ETA was haversine / 30 km/h — a straight line, which
+ *    is badly wrong across a river or a one-way grid. It now goes through
+ *    `estimateEtaMinutes`, which uses a road provider when one is registered
+ *    and falls back to exactly the old formula when it is not (the default).
+ *    The straight-line distance is still computed because it is the fare basis.
  */
 export async function updateDoctorLocation(
   requestId: number,
@@ -620,24 +645,45 @@ export async function updateDoctorLocation(
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return { error: "Invalid coordinates." };
 
   // Only the accepting doctor of an open case may update location.
-  // ETA is recomputed from the NEW coordinates against the patient's stored
-  // position, so the patient's countdown moves as the doctor drives.
   const [caseRow] = await db
-    .select({ patientLatitude: sosRequests.latitude, patientLongitude: sosRequests.longitude })
+    .select({
+      patientLatitude: sosRequests.latitude,
+      patientLongitude: sosRequests.longitude,
+      lastSeenAt: sosCases.doctorLastSeenAt,
+      storedEta: sosCases.etaMinutes,
+    })
     .from(sosCases)
     .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")))
     .limit(1);
+  if (!caseRow) return { error: "This emergency case is not yours to track." };
+
+  // Coalesced ping: accept the write but skip the row update when the last
+  // accepted one is still inside the interval. Returns the stored ETA so the
+  // client's countdown stays correct — it just stops being the write driver.
+  if (SOS_LOCATION_PING_INTERVAL_S > 0 && caseRow.lastSeenAt) {
+    const sinceLastMs = Date.now() - caseRow.lastSeenAt.getTime();
+    if (sinceLastMs < SOS_LOCATION_PING_INTERVAL_S * 1000) {
+      return { error: null, etaMinutes: caseRow.storedEta ?? undefined, throttled: true };
+    }
+  }
+
+  const patientLat = parseCoord(caseRow.patientLatitude);
+  const patientLng = parseCoord(caseRow.patientLongitude);
 
   let etaMinutes: number | null = null;
-  if (caseRow) {
-    const patientLat = parseCoord(caseRow.patientLatitude);
-    const patientLng = parseCoord(caseRow.patientLongitude);
-    if (patientLat !== null && patientLng !== null) {
-      const dist = haversineKm(latitude, longitude, patientLat, patientLng);
-      // 30 km/h city average; 1-minute floor so the tracker never shows 0.
-      etaMinutes = Math.max(1, Math.round((dist / 30) * 60));
-    }
+  let etaBasis: "road" | "straight-line" | undefined;
+  if (patientLat !== null && patientLng !== null) {
+    const dist = haversineKm(latitude, longitude, patientLat, patientLng);
+    // Road distance when a provider is registered, else the straight line.
+    // Always falls back — a dead map API must never cost a patient their ETA.
+    const eta = await estimateEtaMinutes({
+      from: { lat: latitude, lng: longitude },
+      to: { lat: patientLat, lng: patientLng },
+      straightLineKm: dist,
+    });
+    etaMinutes = eta.minutes;
+    etaBasis = eta.basis;
   }
 
   await db
@@ -650,7 +696,133 @@ export async function updateDoctorLocation(
       updatedAt: new Date(),
     })
     .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.doctorId, doctorId), eq(sosCases.status, "open")));
-  return { error: null, etaMinutes: etaMinutes ?? undefined };
+
+  // Live nudge so the patient's tracker refreshes the map + countdown.
+  const [req] = await db
+    .select({ patientId: sosRequests.patientId })
+    .from(sosRequests)
+    .where(eq(sosRequests.id, requestId))
+    .limit(1);
+  if (req) {
+    broadcastToPatient(req.patientId, { type: "sos:status", requestId, status: "tracking" });
+  }
+
+  return { error: null, etaMinutes: etaMinutes ?? undefined, etaBasis, throttled: false };
+}
+
+/**
+ * Patient updates their OWN live location for an accepted case (audit P8).
+ *
+ * The pickup point was frozen at trigger time, so a patient who was moved —
+ * walked to the building's gate, told to wait under a lamp post, or simply
+ * standing somewhere different after ten minutes of waiting — could not fix
+ * it. The doctor's ETA and the fare both keyed off a stale coordinate.
+ *
+ * Scoped to the patient who owns the request AND only while the case is open,
+ * so a patient cannot edit a completed case's distance basis after the fact.
+ * The doctor's ETA is recomputed against the NEW position, and the patient's
+ * tracker is nudged so the map follows the new pin.
+ */
+export async function updatePatientLocation(
+  requestId: number,
+  latitude: number,
+  longitude: number
+): Promise<SosActionResult> {
+  const patient = await requirePatient();
+  if (!Number.isInteger(requestId) || requestId <= 0) return { error: "Invalid request." };
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: "Invalid location." };
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return { error: "Invalid coordinates." };
+
+  // Ownership + open-case guard in one predicate.
+  const [caseRow] = await db
+    .select({
+      sosRequestId: sosCases.sosRequestId,
+      doctorId: sosCases.doctorId,
+      doctorLatitude: sosCases.doctorLatitude,
+      doctorLongitude: sosCases.doctorLongitude,
+      storedEta: sosCases.etaMinutes,
+    })
+    .from(sosCases)
+    .innerJoin(sosRequests, eq(sosRequests.id, sosCases.sosRequestId))
+    .where(
+      and(
+        eq(sosCases.sosRequestId, requestId),
+        eq(sosRequests.patientId, patient.id),
+        eq(sosCases.status, "open")
+      )
+    )
+    .limit(1);
+  if (!caseRow) return { error: "This emergency case is not yours to update." };
+
+  // Same ping throttle as the doctor's, keyed on the case's own timestamp so
+  // the two clients cannot starve each other's updates.
+  const [fresh] = await db
+    .select({ updatedAt: sosCases.updatedAt })
+    .from(sosCases)
+    .where(eq(sosCases.sosRequestId, requestId))
+    .limit(1);
+  if (SOS_LOCATION_PING_INTERVAL_S > 0 && fresh?.updatedAt) {
+    const sinceLastMs = Date.now() - fresh.updatedAt.getTime();
+    if (sinceLastMs < SOS_LOCATION_PING_INTERVAL_S * 1000) {
+      return { error: null, etaMinutes: caseRow.storedEta ?? undefined, throttled: true };
+    }
+  }
+
+  await db
+    .update(sosRequests)
+    .set({ latitude: String(latitude), longitude: String(longitude), updatedAt: new Date() })
+    .where(and(eq(sosRequests.id, requestId), eq(sosRequests.patientId, patient.id)));
+
+  // Recompute the doctor's ETA against the patient's NEW position so their
+  // countdown tracks the real pickup point, not the one from ten minutes ago.
+  const doctorLat = parseCoord(caseRow.doctorLatitude);
+  const doctorLng = parseCoord(caseRow.doctorLongitude);
+  let etaMinutes: number | null = null;
+  let etaBasis: "road" | "straight-line" | undefined;
+  if (doctorLat !== null && doctorLng !== null) {
+    const dist = haversineKm(doctorLat, doctorLng, latitude, longitude);
+    const eta = await estimateEtaMinutes({
+      from: { lat: doctorLat, lng: doctorLng },
+      to: { lat: latitude, lng: longitude },
+      straightLineKm: dist,
+    });
+    etaMinutes = eta.minutes;
+    etaBasis = eta.basis;
+    await db
+      .update(sosCases)
+      .set({ etaMinutes, updatedAt: new Date() })
+      .where(and(eq(sosCases.sosRequestId, requestId), eq(sosCases.status, "open")));
+  }
+
+  broadcastToPatient(patient.id, { type: "sos:status", requestId, status: "tracking" });
+  return { error: null, etaMinutes: etaMinutes ?? undefined, etaBasis, throttled: false };
+}
+
+/**
+ * Web action wrapper for the patient's location refresh (audit P8).
+ *
+ * Mirrors `triggerSos`'s FormData contract so the tracker component can call
+ * it the same way it calls the trigger, and both go through the same
+ * `sosSchema` coordinate bounds (so an out-of-range latitude can never reach
+ * the DB). Exists alongside the mobile route in
+ * `app/api/mobile/patient/sos/[id]/location/route.ts` because the native app
+ * cannot hold a server-action reference.
+ */
+export async function refreshPatientLocation(
+  _prev: SosActionResult,
+  formData: FormData
+): Promise<SosActionResult> {
+  const requestId = Number(formData.get("requestId"));
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    return { error: "Invalid request." };
+  }
+  const coords = sosSchema
+    .pick({ latitude: true, longitude: true })
+    .safeParse({ latitude: formData.get("latitude"), longitude: formData.get("longitude") });
+  if (!coords.success) {
+    return { error: coords.error.issues[0]?.message ?? "Invalid location." };
+  }
+  return updatePatientLocation(requestId, coords.data.latitude, coords.data.longitude);
 }
 
 /** Doctor's own broadcast offers (initial load / polling fallback). */

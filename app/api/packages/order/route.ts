@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { packagePayments } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
+import { csrfGuard } from "@/app/api/mobile/_helpers";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { getPackagePricing, type PackagePeriod } from "@/lib/packages/config";
 import { resolvePlanPurchaseTarget } from "@/lib/packages/buyers";
@@ -19,6 +20,10 @@ import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/packages/razorpay";
  * Body: { packageId, period }
  */
 export async function POST(request: Request) {
+  // CSRF (audit V4): this route starts a purchase and writes a
+  // package_payments row, so it is checked for a foreign Origin.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
   // Role-only gate: buying a package is how an expired trial pays its way
   // back in (self-serve renewal from /trial-expired and /pricing), so this
   // route deliberately does NOT reject expired trials — the previous

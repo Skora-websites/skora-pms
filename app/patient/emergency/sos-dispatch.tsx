@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition, type RefObject } from "react";
 import { Loader2, MapPin, Phone, X } from "lucide-react";
-import { cancelSos, rateSosCase, triggerSos } from "@/lib/dispatch/actions";
+import { cancelSos, rateSosCase, triggerSos, refreshPatientLocation } from "@/lib/dispatch/actions";
 import { SosLiveMap } from "@/components/sos/sos-live-map";
 import { useWakeLock } from "@/components/sos/use-wake-lock";
 import { SOS_FARE, estimateSosFare } from "@/lib/config";
@@ -296,6 +296,51 @@ export function SosDispatchButton({ initialRequestId = null }: { initialRequestI
       clearInterval(poll);
     };
   }, [requestId, streamBroken, fetchStatus]);
+
+  // Location refresh while a doctor is en route (audit P8): the pickup point
+  // was frozen at trigger, so a patient who moved — walked to the gate, told
+  // to wait under a lamp post — kept a stale pin steering the doctor's ETA.
+  //
+  // Only runs while the case is tracked (status === "accepted") and only when
+  // the browser is granted geolocation; a denial is silent because the
+  // trigger-time position is still a perfectly valid pickup point.
+  //
+  // Cadence is coarse (30s) on purpose. The server coalesces faster pings
+  // anyway (SOS_LOCATION_PING_INTERVAL_S), so a chatty interval would only
+  // cost requests, not accuracy — and a backgrounded tab should not be
+  // pinging at all, hence the interval rather than watchPosition.
+  useEffect(() => {
+    if (!requestId || status?.status !== "accepted") return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    let cancelled = false;
+    const sendCurrentPosition = () => {
+      if (cancelled) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          const fd = new FormData();
+          fd.set("requestId", String(requestId));
+          fd.set("latitude", String(pos.coords.latitude));
+          fd.set("longitude", String(pos.coords.longitude));
+          void refreshPatientLocation({ error: null }, fd).catch(() => undefined);
+        },
+        () => {
+          /* denied or unavailable — the trigger-time pin stands */
+        },
+        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 }
+      );
+    };
+
+    // Deferred so the first read doesn't race the tracker's own first paint.
+    const prime = setTimeout(sendCurrentPosition, 1_500);
+    const poll = setInterval(sendCurrentPosition, 30_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(prime);
+      clearInterval(poll);
+    };
+  }, [requestId, status?.status]);
 
   // Transition toasts — exactly once per transition (previous snapshot in a
   // ref, so re-renders never re-fire).

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireStalePendingRequests } from "@/lib/dispatch/expiry";
+import { escalateAllStaleRequests } from "@/lib/dispatch/escalation";
 import { resolveApiTokenHeader, touchApiToken } from "@/lib/auth/api-token";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { getClientIp } from "@/lib/security/ip";
@@ -53,9 +54,19 @@ export async function GET(request: NextRequest) {
   void touchApiToken(authHeader);
 
   const expired = await expireStalePendingRequests();
+  // Offer-timeout escalation (audit P5). A patient who closed the tab or
+  // killed the app never polls, so the poll-driven escalation never runs for
+  // them — and those are exactly the patients most likely to be in an area
+  // with thin supply. Driving the same rule from the cron means the widening
+  // happens whether or not anybody is watching the tracker.
+  //
+  // Ordered AFTER expiry deliberately: expiry flips stale requests to
+  // `expired`, so those are already terminal and the escalation sweep (which
+  // only widens `pending` requests) skips them cleanly.
+  const escalated = await escalateAllStaleRequests();
 
   return NextResponse.json(
-    { data: { expiredRequests: expired } },
+    { data: { expiredRequests: expired, escalatedRequests: escalated } },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

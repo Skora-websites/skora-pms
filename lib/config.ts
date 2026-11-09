@@ -15,12 +15,39 @@ function num(value: string | undefined, fallback: number): number {
 // ── App identity ─────────────────────────────────────────────────────────
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
+// ── Multi-instance deployment (audit V1/V2) ───────────────────────────────
+/**
+ * Optional Redis connection string. When set, rate-limit windows and the SOS
+ * dispatch event hub are meant to be shared across instances rather than being
+ * per-process — without it, running two Node processes multiplies every limit
+ * by instance count and silently drops emergency broadcasts that crossed a
+ * process boundary.
+ *
+ * Left undefined, the app runs single-instance by design: the limiter and the
+ * hub are in-memory, which is correct for one process on one aaPanel box. The
+ * requirement is documented in docs/planning/DEPLOY_AND_MOBILE_PLAN.md §1.8.
+ */
+export const REDIS_URL = process.env.REDIS_URL?.trim() || undefined;
+
+/** True when a shared backend is configured. */
+export const IS_MULTI_INSTANCE_READY = Boolean(REDIS_URL);
+
 // ── Database (pool tuning; connection string lives in lib/db/index.ts) ───
 export const DB_POOL_CONNECTION_LIMIT = num(process.env.DB_POOL_CONNECTION_LIMIT, 10);
 export const DB_POOL_QUEUE_LIMIT = num(process.env.DB_POOL_QUEUE_LIMIT, 0);
 export const DB_CONNECT_TIMEOUT_MS = num(process.env.DB_CONNECT_TIMEOUT, 10_000);
 
 // ── Sessions ─────────────────────────────────────────────────────────────
+/**
+ * Optional dedicated key for secret encryption at rest.
+ *
+ * When unset, the encryption key is derived from AUTH_SECRET via HKDF with a
+ * purpose label (see lib/security/crypto.ts) — session signing and at-rest
+ * confidentiality then use two DISTINCT keys even though only one secret is
+ * configured, so rotating AUTH_SECRET to kill sessions no longer silently
+ * orphans every encrypted value.
+ */
+export const SECRETS_ENCRYPTION_KEY = process.env.SECRETS_ENCRYPTION_KEY?.trim() || undefined;
 /** Session lifetime in seconds (cookie maxAge = JWT expiry). */
 export const SESSION_MAX_AGE_S = num(process.env.SESSION_MAX_AGE, 60 * 60 * 24 * 30);
 /** Idle timeout in seconds (audit F-10): a session unused this long is
@@ -72,6 +99,16 @@ export const RATE_LIMIT = {
   loginWindowMs: num(process.env.RATE_LIMIT_LOGIN_WINDOW_MINUTES, 15) * 60_000,
   /** Signups per email per hour. */
   signup: num(process.env.RATE_LIMIT_SIGNUP, 3),
+  /**
+   * Authenticated request budget for the `/api/mobile/**` namespace (audit V5).
+   *
+   * The auth actions above are throttled, but the ~70 mobile read routes were
+   * not — a valid token could hammer `available-slots`, `doctors` or `records`
+   * and only the database would stop it. Keyed on the resolved USER id rather
+   * than the IP, since mobile clients share NAT.
+   */
+  mobileApi: num(process.env.RATE_LIMIT_MOBILE_API, 300),
+  mobileApiWindowMs: num(process.env.RATE_LIMIT_MOBILE_API_WINDOW_MINUTES, 1) * 60_000,
   /** Signup OTP verification attempts per email per 10-minute OTP window. */
   otpVerify: num(process.env.RATE_LIMIT_OTP_VERIFY, 10),
   /** Consent submissions per slug per hour. */
@@ -124,6 +161,55 @@ export const INDIA_API_TIMEOUT_MS = num(process.env.INDIA_API_TIMEOUT_MS, 8000);
  *  Client-safe: the patient booking copy and the doctor offer countdown
  *  both need it without touching the server-only geo/db modules. */
 export const SOS_TTL_MIN = num(process.env.SOS_TTL_MIN, 5);
+
+/**
+ * Offer timeout (minutes) — how long a broadcast offer stands before the
+ * dispatch widens its search (audit P5: Uber/Ola re-dispatch loop).
+ *
+ * This is a DIFFERENT clock from SOS_TTL_MIN, and that separation is the
+ * feature. The request TTL is the outer bound on a patient's wait; the offer
+ * TTL governs how quickly the system concludes "nobody within this radius
+ * wants this" and reaches further out. Before this existed, a patient in a
+ * thin-supply area waited the full request TTL even though a doctor at 1.5x
+ * the radius could have served them — the offer set was a snapshot frozen at
+ * trigger time, and only the 20s late-joiner sweep (which re-runs the SAME
+ * radius) could add to it. 0 disables the escalation entirely, restoring the
+ * old behaviour.
+ */
+export const SOS_OFFER_TTL_MIN = num(process.env.SOS_OFFER_TTL_MIN, 1);
+
+/**
+ * Radius multiplier per escalation round, and the hard ceiling. Each round
+ * re-discovers at `currentRadius * multiplier`, capped at SOS_ESCALATION_MAX
+ * — a widening ring that stops rather than dispatching the whole continent.
+ * The patient's submitted `radius_km` (schema-capped at 50) is round 1, so
+ * these are multipliers/ceilings, not absolute radii.
+ */
+export const SOS_ESCALATION_FACTOR = num(process.env.SOS_ESCALATION_FACTOR, 1.5);
+export const SOS_ESCALATION_MAX_KM = num(process.env.SOS_ESCALATION_MAX_KM, 50);
+/** Highest escalation round index we will run (round 0 is the initial broadcast). */
+export const SOS_MAX_ESCALATION_ROUND = num(process.env.SOS_MAX_ESCALATION_ROUND, 2);
+
+/** Shared cap for road/ETA speed lookups, mirroring the public-API pattern. */
+export const SOS_ETA_SPEED_KMH = num(process.env.SOS_ETA_SPEED_KMH, 30);
+
+/**
+ * Minimum seconds between accepted doctor location pings for one case
+ * (audit P7).
+ *
+ * A GPS-driven client that pings as fast as it likes turns the emergency hot
+ * path into an unthrottled write stream: every ping rewrites a sos_cases row,
+ * and the patient's tracker re-fetches on each ETA change. Uber caps its
+ * driver location stream at roughly one update per 4 seconds for the same
+ * reason — the cadence is a *sampling* compromise between smooth tracking and
+ * a write path that survives a fleet of phones.
+ *
+ * Pings arriving faster than this are ACCEPTED but COALESCED: the endpoint
+ * returns the currently stored ETA rather than a 429. A client that respects
+ * the cadence sees no difference; one that does not gets the last known ETA
+ * instead of hammering the database. 0 disables the throttle.
+ */
+export const SOS_LOCATION_PING_INTERVAL_S = num(process.env.SOS_LOCATION_PING_INTERVAL_S, 4);
 
 // ── SOS emergency dispatch fare ─────────────────────────────────────────
 // Base + per-km, floored at a minimum. Per-minute is priced but not charged

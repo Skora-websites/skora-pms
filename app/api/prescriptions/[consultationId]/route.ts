@@ -5,7 +5,11 @@ import { db } from "@/lib/db";
 import { consultations } from "@/lib/db/schema";
 import { requireApiDoctorOnly, requireApiRole } from "@/lib/auth/guard";
 import { getConsultationForPdf } from "@/lib/queries/doctor";
+import { audit } from "@/lib/security/audit-log";
+import { createLogger } from "@/lib/security/logger";
 import { PrescriptionPdf } from "@/components/pdf/prescription-pdf";
+
+const log = createLogger("prescriptions");
 
 export const runtime = "nodejs";
 
@@ -18,14 +22,18 @@ export async function GET(
   // too. Patients keep read access to their OWN prescription below.
   let doctorId: number;
   let patientId: number | null = null;
+  /** The authenticated reader, for the PHI read trail (audit R3). */
+  let actorId = 0;
   const doctor = await requireApiDoctorOnly();
   if (doctor instanceof Response) {
     const patient = await requireApiRole(["patient"]);
     if (patient instanceof Response) return patient;
     patientId = patient.id;
+    actorId = patient.id;
     doctorId = 0; // resolved from the patient's own consultation below
   } else {
     doctorId = doctor.id;
+    actorId = doctor.id;
   }
 
   const { consultationId } = await params;
@@ -66,6 +74,9 @@ export async function GET(
     const buffer = await renderToBuffer(element);
 
     const patientName = data.patient?.name?.replace(/[^\w\s-]/g, "").trim() || "patient";
+    // PHI read trail (audit R3): a prescription is the most sensitive record
+    // in the system, and "who read this" was previously unanswerable.
+    void audit.phiRead(actorId, "prescription", id);
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",
@@ -74,7 +85,10 @@ export async function GET(
       },
     });
   } catch (err) {
-    console.error("Prescription PDF generation failed:", err);
+    log.error("Prescription PDF generation failed.", {
+      consultationId: id,
+      err,
+    });
     return new Response("PDF generation failed", { status: 500 });
   }
 }

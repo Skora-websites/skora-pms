@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createPatientAppointment } from "@/app/patient/appointments/actions";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { requireApiRole } from "@/lib/auth/guard";
-import { apiError, apiOk, redirectError } from "@/app/api/mobile/_helpers";
+
+import { apiError, apiOk, redirectError, csrfGuard } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,10 @@ export async function GET() {
  * redirect target — not a 403 blanket mapping — decides the outcome.
  */
 export async function POST(request: Request) {
+  // CSRF (audit V4): a foreign Origin means a browser page is driving this
+  // booking write with the signed-in user's session cookie.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
   // Same guard the action applies internally (patient role only). Applied
   // here first so an unauthenticated or out-of-role call is refused before
   // any write; the action's own guard stays authoritative.

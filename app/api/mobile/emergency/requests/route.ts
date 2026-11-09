@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { triggerSos } from "@/lib/dispatch/actions";
 import { requireApiRole } from "@/lib/auth/guard";
-import { apiError, redirectError } from "@/app/api/mobile/_helpers";
+
+import { apiError, redirectError, csrfGuard } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,11 @@ export const runtime = "nodejs";
  * immediately expired. Follow with GET /api/patient/sos/status/{id}.
  */
 export async function POST(request: Request) {
+  // CSRF (audit V4): a foreign Origin means a browser page is driving this
+  // write with the signed-in user's session cookie. No Origin at all is a
+  // native client fetch, which cannot be CSRF'd, so it passes untouched.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
   // Same guard triggerSos applies internally (patient role only, never a
   // receptionist). Applied here as the existing exported route guard so an
   // unauthenticated or out-of-role call is refused before any write.

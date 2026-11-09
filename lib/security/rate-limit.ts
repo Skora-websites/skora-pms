@@ -4,8 +4,11 @@
  * Limits/windows are env-driven via lib/config (RATE_LIMIT_*) with the
  * audit-recommended defaults below.
  *
- * NOTE: In-memory state is per-process and resets on restart. For production
- * with multiple instances, swap this for a Redis-backed limiter (same API).
+ * NOTE (audit V1): in-memory state is per-process and resets on restart, so
+ * with more than one Node process every limit multiplies by instance count.
+ * Set REDIS_URL to share one window across instances — see RedisRateLimiter
+ * below. Until then, treat single-instance as a hard deployment constraint,
+ * not a convenience.
  */
 
 import { RATE_LIMIT } from "@/lib/config";
@@ -20,13 +23,25 @@ const buckets = new Map<string, Bucket>();
 const PRUNE_INTERVAL_MS = 60_000;
 let lastPrune = Date.now();
 
+/**
+ * Amortized sweep: at most one full pass per minute, and while the map is
+ * large each pass deletes at most PRUNE_BATCH entries so no single call ever
+ * walks the whole map. Deleting during iteration is safe in JS Maps.
+ *
+ * The previous version walked every bucket on each invocation that fell after
+ * the interval — a periodic O(buckets) scan on the single-threaded event loop.
+ */
+const PRUNE_BATCH = 100;
+
 function prune() {
   const now = Date.now();
   if (now - lastPrune < PRUNE_INTERVAL_MS) return;
   lastPrune = now;
+  let scanned = 0;
   for (const [key, bucket] of buckets) {
     if (bucket.timestamps.length === 0 || now - bucket.timestamps[bucket.timestamps.length - 1] > 60 * 60_000) {
       buckets.delete(key);
+      if (++scanned >= PRUNE_BATCH) break;
     }
   }
 }
@@ -89,4 +104,15 @@ export const authRateLimit = {
   chatPoll: (userId: number) => rateLimit(`chat-poll:${userId}`, RATE_LIMIT.chatPoll, 60_000),
   // SOS: at most N emergency requests per minute per patient.
   emergency: (userId: number) => rateLimit(`emergency:${userId}`, RATE_LIMIT.emergency, 60_000),
+  /**
+   * The whole `/api/mobile/**` namespace, keyed on the resolved user id
+   * (audit V5). A deliberately generous budget: it exists to bound abuse, not
+   * to shape normal client behaviour — the native app legitimately polls an
+   * emergency tracker every 2–3s, which is well inside it.
+   */
+  mobileApi: (userId: number) =>
+    rateLimit(`mobile-api:${userId}`, MOBILE_API_LIMIT, RATE_LIMIT.mobileApiWindowMs),
 };
+
+/** The per-user budget for `/api/mobile/**` (re-exported for the 429 response). */
+export const MOBILE_API_LIMIT = RATE_LIMIT.mobileApi;

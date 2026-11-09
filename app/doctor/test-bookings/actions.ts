@@ -481,20 +481,26 @@ export async function deleteTestBooking(bookingId: number): Promise<TestBookingA
   // same transaction as the booking delete. The FK (test_booking_id →
   // test_bookings ON DELETE SET NULL) would otherwise keep hard-deleted
   // bookings' bills alive as orphans (audit found 4).
+  //
+  // The cascade is two bulk statements, not a per-bill loop: 2N sequential
+  // round-trips held the transaction open longer for every bill, which
+  // lengthened lock duration and raised deadlock odds under concurrency.
+  const now = new Date();
   const linkedBills = await db.transaction(async (tx) => {
     const bills = await tx
       .select({ id: billings.id })
       .from(billings)
       .where(eq(billings.testBookingId, bookingId));
-    for (const bill of bills) {
+    if (bills.length > 0) {
+      const billIds = bills.map((b) => b.id);
       await tx
         .update(transactions)
-        .set({ deletedAt: new Date() })
-        .where(eq(transactions.billingId, bill.id));
+        .set({ deletedAt: now })
+        .where(inArray(transactions.billingId, billIds));
       await tx
         .update(billings)
-        .set({ deletedAt: new Date(), testBookingId: null })
-        .where(eq(billings.id, bill.id));
+        .set({ deletedAt: now, testBookingId: null })
+        .where(inArray(billings.id, billIds));
     }
     await tx.delete(testBookings).where(eq(testBookings.id, bookingId));
     return bills;

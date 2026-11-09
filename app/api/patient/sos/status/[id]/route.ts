@@ -5,6 +5,7 @@ import { sosRequests, sosCases, users, billings } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
 import { expireStalePendingRequest } from "@/lib/dispatch/expiry";
 import { sweepPendingRequest } from "@/lib/dispatch/discovery";
+import { escalateStaleRequest } from "@/lib/dispatch/escalation";
 
 export const runtime = "nodejs";
 
@@ -52,6 +53,17 @@ export async function GET(
       // Late-joiner sweep: still pending, periodically re-run nearby
       // discovery so doctors who went on-duty after the broadcast get it.
       void sweepPendingRequest(requestId);
+      // Offer-timeout escalation (audit P5): if the CURRENT offer set has
+      // stood longer than SOS_OFFER_TTL_MIN with no accept, widen the ring
+      // rather than letting the patient wait out the whole request TTL
+      // staring at an offer set that was frozen at trigger time.
+      //
+      // Runs on the same poll the sweep runs on — the patient is the
+      // motivated poller, so no extra infrastructure is required, and the
+      // same reasoning as the sweep applies to multi-instance: each instance
+      // escalates at most once per interval and the conditional round
+      // advance keeps the outcome globally correct.
+      void escalateStaleRequest(requestId);
     }
   }
 

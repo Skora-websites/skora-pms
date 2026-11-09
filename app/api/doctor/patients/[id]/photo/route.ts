@@ -3,6 +3,7 @@ import path from "node:path";
 import { requireApiPermission } from "@/lib/auth/guard";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
+import { audit } from "@/lib/security/audit-log";
 import { getPatientPhotoPath } from "@/lib/queries/doctor";
 
 export const runtime = "nodejs";
@@ -45,6 +46,8 @@ export async function GET(
   if (!filePath) return new Response("Forbidden", { status: 403 });
   try {
     const bytes = await fs.readFile(filePath);
+    // PHI read trail (audit R3) — a patient photo is identifying health data.
+    void audit.phiRead(user.id, "patient_photo", patientId);
     return new Response(bytes, {
       headers: {
         "Content-Type": contentType,

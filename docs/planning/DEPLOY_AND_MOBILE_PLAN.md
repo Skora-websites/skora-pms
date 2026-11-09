@@ -105,15 +105,21 @@ Rollback: `git checkout <previous-sha> && npm run build && pm2 restart skoracare
 
 ## 1.8 Production readiness on aaPanel
 
+0. **Run ONE process — this is a hard constraint, not a convenience (audit V1/V2).**
+   Two things are in-memory per process: the rate limiter (`lib/security/rate-limit.ts`) and the SOS event hub (`lib/dispatch/hub.ts`). Add a second Node process and:
+   - every rate limit multiplies by instance count (5 logins/15min becomes 10), and `pm2 restart` wipes all windows — an attacker gains a fresh one on every deploy. The emergency limiter (1 request/minute/patient) is the exposed one.
+   - `triggerSos` broadcasting in process A never reaches a doctor streaming from process B. For emergency dispatch that is a correctness failure, and it fails silently.
+   So: `pm2 start npm --name skoracare -- start` (single instance, as documented above). Do **not** use `pm2 start -i max`. If you ever need to scale, add `REDIS_URL` (see `lib/config.ts`) and move the limiter and the hub onto a shared backend **first** — the deploy plan's own risk section already marks the Redis upgrade as mandatory before multi-instance.
 1. **PM2 + reboot survival** (above).
 2. **Cron for SOS expiry — shipped.** `GET /api/cron/expire-sos` exists (`app/api/cron/expire-sos/route.ts`) and wraps the new bulk sweep `expireStalePendingRequests()` (`lib/dispatch/expiry.ts`), which drives the existing per-request TTL rule over the whole table so requests nobody polls for still end. aaPanel cron every minute, authenticated with a bearer token exactly like the Shule integration:
    `curl -s -H "Authorization: Bearer <token>" https://pms.skorainfotech.com/api/cron/expire-sos`
    Provision the token with `node scripts/provision-api-token.mjs <staff-email> cron-expire-sos`.
 3. **Backups (daily, off-server):** aaPanel backup job for (a) MySQL dump, (b) the `uploads/` directory. Uploads live outside the DB — a .sql restore does not restore consent files/photos.
-4. **Logs:** `pm2 logs skoracare` + log rotation (`pm2 install pm2-logrotate`).
+4. **Logs:** `pm2 logs skoracare` + log rotation (`pm2 install pm2-logrotate`, with `max_size` set — a full disk on an emergency-dispatch box is an outage).
 5. **Firewall:** only 80/443 public; MySQL (3306) never exposed.
 6. **HTTPS:** aaPanel SSL (Let's Encrypt) on, force-redirect.
-7. **Health monitoring:** uptime monitor on `/api/health` with alerting.
+7. **Health monitoring:** uptime monitor on `/api/health` with alerting. The probe now covers the database **and** storage writability, so a read-only upload volume or a full disk pages the operator instead of silently breaking patient-photo and lab-report serving.
+8. **Env hygiene:** `EXPOSE_DEV_OTP` must be **absent** in production (it only ever echoes a signup OTP, and only when also non-production — but its presence in the file is a needless footgun).
 
 ## 1.9 Branch strategy (lightweight, solo-friendly)
 
@@ -171,10 +177,14 @@ panel behind it, which is what `GlassSurface` implements.
   so an undeclared route inside a tabs folder is silently unreachable — found by driving
   the real app, not by a test.
 - **TanStack Query** for all `app/api/mobile/*` consumption.
-- **MMKV** for fast local storage (session identity only — the credential is the server's
-  session cookie, held by React Native's native cookie jar). No Zustand: the only client
-  state is the session.
-- **`expo-sqlite`** only if an offline queue proves needed (defer).
+- **No Zustand: the only client state is the session** — and the session is
+  process-lifetime, not persisted (see §2.10 for why MMKV was dropped: the
+  credential is the server's session cookie in the native cookie jar, so a cold
+  start re-confirms via `GET /api/mobile/session` rather than trusting a local
+  copy, which is the safe direction to fail).
+- **`expo-sqlite`** only if an offline queue proves needed (defer). If durable
+  local storage ever is needed, it must be a module that does not throw on
+  import, proven in a dev build before it is trusted.
 - **Own repository, `skora-mobile`** — kept out of the web repo (its deploys are EAS, not
   aaPanel). It lives beside the other projects rather than inside the sites volume: that
   volume has ~6 GB free and an Expo toolchain plus its caches needs more.
@@ -201,14 +211,111 @@ Skeleton at `~/skora-mobile` (Expo SDK 58, TypeScript, committed):
   pill — never clinical content, which stays on opaque `Card`s.
 - **API transport** (`src/lib/api.ts`): zod-validated envelope unwrapping, 401 classified for
   sign-out, network and malformed-body failures resolved rather than thrown.
-- **Tests:** 38 (`tsx --test`) over the transport, auth client, role routing, theme
-  tokens, the API response schemas (against verbatim server captures) and the booking
-  mapper — each suite watched failing before the module existed.
-- **Verified by running it:** the app was driven through a real sign-in against the live
-  API and every phase-3 screen exercised with live data (that run also caught the two
-  defects noted above). The production Android Hermes bundle exports cleanly. No virtual
-  device exists on this machine, so on-device rendering is still unchecked — a dev build
-  on real hardware is the next verification step.
+- **Tests:** 101 (`tsx --test`, split across `src/__tests__/` and a dedicated
+  `tsconfig.test.json` because `tsx` needs Node types the Expo one omits) over the
+  transport, auth client, role routing, theme tokens, session/storage, the push
+  key + origin rule, the API response schemas and the emergency/booking schemas.
+- **Verified by running it:** `npx tsc -p tsconfig.json` (app) and
+  `npx tsc -p tsconfig.test.json` (tests) both clean; `npx expo export --platform
+  android` produces a Hermes bundle. No virtual device exists on this machine, so
+  on-device rendering is still unchecked — a dev build on real hardware is the next
+  verification step.
+
+### 2.3.2 The dependency gap that blocked everything (closed 2026-11-02)
+
+The phase-2 source was complete but **the app could not build**: `import`ed
+packages were missing from `package.json` and absent from `node_modules`, so
+`tsc` failed at line 1 of the root layout. Added and installed:
+
+`zod`, `@tanstack/react-query`, `expo-blur`, `react-native-mmkv`,
+`expo-notifications`, `expo-location`, `expo-haptics`, `expo-dev-client`,
+`@expo-google-fonts/plus-jakarta-sans`, `@expo-google-fonts/geist-mono`,
+`@react-native-community/datetimepicker`.
+
+Three code defects surfaced once it compiled: the native-tabs API is
+`NativeTabs.Trigger.Label` / `.Icon md="…"` (not standalone `Icon`/`Label`
+exports), `(patient)/patient-home.tsx` imported at one level too shallow, and
+`home.tsx` had a duplicated import block with a missing `styles`.
+
+**Why it matters:** a missing dependency is invisible to `git status` — the source
+looks finished. Any future "why won't it start" in this app: check
+`node_modules` against the import list before anything else.
+
+## 2.3.3 Shipped in phases 3–5
+
+- **Patient shell** (`src/app/(patient)/`): native tabs — home, doctors, records,
+  SOS. Booking (`src/app/book/[doctorId].push`), the live tracker
+  (`src/app/book/[doctorId].tsx`), the live tracker
+  (`src/app/emergency/[requestId].tsx`) and the doctor's emergency screen
+  (`src/app/doctor-emergency.tsx`) live at the root, because a native tabs folder
+  only renders routes declared with a Trigger.
+- **Records** (`src/app/(patient)/records.tsx`): prescriptions (with medication
+  lines), test reports, bills and visits — four segments over four endpoints,
+  each with its own loading/error/empty state.
+- **SOS trigger** (`src/app/(patient)/sos.tsx`): hold-to-confirm (1.5 s, haptic
+  beat, countdown ring), foreground GPS capture, live accent-500 ring, and a
+  permission explanation *before* the emergency rather than during it.
+- **Live tracker** (`src/app/emergency/[requestId].tsx`): deep-forest takeover,
+  doctor identity + live ETA + tap-to-call, the assigned → arrived →
+  identity-confirmed steps, cancel-while-pending, and the post-completion rating.
+- **Doctor emergency** (`src/app/doctor-emergency.tsx` + `src/components/doctor/sos-alert.tsx`):
+  the incoming-SOS glass alert on the doctor home, accept/decline, the case panel
+  with arrival code, and periodic foreground location reporting (the server alone
+  computes the ETA). `expo-keep-awake` holds the screen on while a case is open.
+- **Backend mirrors added** so the native clients can reach what only the web
+  could: `GET /api/mobile/patient/sos/status/{id}` (the tracker's poll target),
+  `GET /api/mobile/doctor/sos/feed`, `GET /api/mobile/patient/available-slots`.
+  The slot-building logic moved into `lib/queries/available-slots.ts` so the web
+  route and the mobile one cannot drift on what a patient is allowed to book.
+
+## 2.3.5 Uber-style ride-tracking interaction (2026-11-03)
+
+The emergency tracker was rebuilt against the delivery-app tracking pattern
+rather than a "page with a map on it". What actually changed:
+
+- **The map is the screen.** It fills the window behind everything else; the
+  status card no longer lives in a scroll under it.
+- **`src/components/ui/bottom-sheet.tsx`** — a snap-point sheet (peek / half /
+  full) that drags with `react-native-gesture-handler` and settles with
+  `react-native-reanimated` springs. Two behaviours make it feel like the real
+  thing:
+  1. **The sheet drives ITSELF.** The ride phase asks for a snap, and the sheet
+     animates there — dispatch finding a doctor lifts it to the driver card
+     without the patient going looking. A phase change beats a gesture.
+  2. **Snap decision uses distance AND velocity.** A slow drag near the midpoint
+     settles at the nearest snap; a fling continues in the direction of travel
+     and skips a snap point if it has the speed.
+- **`src/hooks/use-smoothed-position.ts`** — the doctor reports roughly every
+  5 s, and a marker drawn straight onto each fix teleports. The hook holds the
+  marker at the last fix and travels it to the next over a distance-scaled
+  duration, driven by `requestAnimationFrame` (so a slow frame slows the
+  animation rather than skipping it) and paused when the app is backgrounded
+  (a backgrounded app must not animate a marker nobody can see).
+- **`src/lib/sos-marker.ts`** — the maths the smoothing and both maps share:
+  compass bearing, the shortest turn between headings (a marker that spins the
+  long way round looks broken even when it ends up pointing right), distance,
+  and the hop duration. The easing is deliberately monotonic and clamped — no
+  curve may overshoot and place the marker somewhere the doctor never was.
+
+**The smoothed position is presentation only.** The ETA, the distance and every
+other fact still come from the server, which remains the only thing allowed to
+compute them (plan §2.5). This split is the point: the map is allowed to be
+pretty, never allowed to be authoritative.
+
+Still not built: turn-by-turn navigation (deferred in §2.4) — it needs a routing
+provider the web app doesn't have either.
+
+## 2.3.4 Live SOS map (2026-11-03)
+
+The emergency screens are now map-first, the shape the delivery apps made familiar: the map fills the top and one status card is docked to the bottom, so "who is coming" and "how long" are readable at a glance without scrolling.
+
+- **`expo-maps`** (Expo's own native maps) drives `GoogleMaps.View` — the app is Android-only (§2.3), so the Apple branch is never used. Required lazily like every other native module: without it (Expo Go) the screen degrades to a readable status panel rather than crashing the one screen that must render.
+- **`src/components/sos/sos-live-map.tsx`** (patient) and **`src/components/sos/doctor-sos-map.tsx`** (doctor) draw the SAME pair the web's `components/sos/sos-live-map.tsx` draws — a fixed red patient pin and a moving blue doctor pin — mirrored: the patient's camera frames both as the doctor converges, the doctor's camera holds their own position and keeps the patient in view, so their screen reads as "the way there".
+- **`src/lib/sos-map.ts`** holds the framing maths both views share (zoom by distance, midpoint, varchar→number coordinate parsing), so the two cannot drift. Zoom is banded 16 (same building) → 10 (city-scale), which keeps two pins distinguishable on arrival and both on screen while the doctor is far out; a test pins that the zoom only ever tightens as the approach closes.
+- **The camera never receives NaN.** `sos_requests.latitude/longitude` and `sos_cases.doctor_*` are varchar in the schema, so an absent value arrives as null or "" and a corrupt one as arbitrary text. `parseStoredCoordPair` treats all of those as null — never 0/0, which the server would accept as a real coordinate (the null island off Africa) and would silently send a doctor to the wrong place.
+- Doctor position reporting is unchanged at the web's own ~5 s cadence; the server still computes every ETA, so the map's local `lastFix` is only what the camera follows, never what the ETA is derived from.
+
+Not yet done: turn-by-turn navigation. The plan defers it (§2.4, "turn-by-turn later") and it would need a routing provider the web app does not have either.
 
 ## 2.4 Screens by role (mapping to existing API)
 
@@ -241,11 +348,16 @@ Backend half is done; only the app-side registration and credential setup remain
 
 **Expo message shape for an emergency:** `priority: high`, iOS `interruptionLevel: critical`, `sound: default`, bounded `ttl` (10 min — a queued SOS alert must not fire hours later). Dead tokens are pruned on `DeviceNotRegistered`, so a device that uninstalled stops being dispatched to.
 
-**Still to do on the app side (phase 5):**
-- Call `getExpoPushTokenAsync()` and POST it to `/api/mobile/device-tokens` on login; DELETE it on sign-out.
-- Android: battery-optimization exemption request (killed app = dead push), and create a notification channel with high importance.
-- iOS: Critical Alerts entitlement for SOS.
-- EAS push credentials (FCM V1 service account for Android, APNs key for iOS) in the Expo dashboard; if push *security* is enabled there, set `EXPO_PUSH_ACCESS_TOKEN`.
+**Shipped on the app side (2026-11-02):**
+- `getExpoPushTokenAsync()` → POST `/api/mobile/device-tokens` on login; DELETE on sign-out (`src/lib/push.ts`).
+- Android SOS notification channel at `AndroidImportance.MAX` with a vibration pattern and lockscreen visibility (`src/lib/push.ts`).
+- Registration is fully best-effort: no projectId (EAS not linked yet), no native module outside a dev build, or a dead network all resolve silently — sign-in never waits on push.
+
+**Still to do:**
+- Android: battery-optimization exemption request (killed app = dead push). Without it the plan's own risk §2.8 stands: OEM killers will silently drop alerts.
+- EAS push credentials — an FCM V1 service account for Android — in the Expo dashboard; if push *security* is enabled there, set `EXPO_PUSH_ACCESS_TOKEN`.
+- End-to-end delivery test on hardware: the token returns null until a projectId exists, so none of the above is observable in Expo Go or a plain `expo start`.
+- iOS is out of scope: this app is Android-only (§2.3), so the Critical Alerts entitlement is not needed.
 
 ## 2.7 Build order (6–7 weeks)
 
@@ -254,9 +366,9 @@ Backend half is done; only the app-side registration and credential setup remain
 | 0 | now | Commit mobile API (Part 1), deploy current state to aaPanel via git flow — **done** |
 | 1 | 1 | Backend: FCM device tokens + native push sender + cron expiry endpoint — **done** (see 2.6) |
 | 2 | 1–2 | Expo app skeleton: auth, role routing, theme system (tokens above), glass component kit — **done** (see 2.3.1) |
-| 3 | 2–4 | Patient app: home, doctors, booking, records — **done** (see 2.3.1) |
-| 4 | 3–4 | Doctor app: schedule, patients, on-duty, chat |
-| 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, FCM wiring end-to-end (app-side push registration lands here) |
+| 3 | 2–4 | Patient app: home, doctors, booking, records — **done** (see 2.3.3) |
+| 4 | 3–4 | Doctor app: schedule, patients, on-duty, chat — **done** (see 2.3.3) |
+| 5 | 4–5 | Emergency UX both sides: SOS trigger, tracker, accept/arrive/OTP/complete, app-side push registration — **done** (see 2.3.3). App-side push registration now exists in `src/lib/push.ts`: `getExpoPushTokenAsync()` + POST on login, DELETE on sign-out, and a MAX-importance Android channel. Still outstanding: EAS push credentials in the Expo dashboard (FCM V1 service account for Android; the plan's app is Android-only), the battery-optimization exemption request, and an end-to-end push delivery test on hardware. |
 | 6 | 5–6 | Polish: dark mode, haptics, offline states, Android blur fallback, reduced-motion |
 | 7 | 6–7 | Beta (TestFlight + Play internal track) with real clinics; fix field bugs; store submission |
 
@@ -273,3 +385,55 @@ Backend half is done; only the app-side registration and credential setup remain
 - Don't rebuild the mobile API — it exists; consume it.
 - Don't put glass material on clinical data surfaces.
 - Don't deploy from manual file copies — the git flow in Part 1 replaces it permanently.
+
+## 2.10 Expo Go compatibility (2026-11-03)
+
+Expo Go ships a **fixed set of native modules** and cannot load any other native
+code — so an app that imports one at module scope crashes before its first screen,
+even though `tsc` and `expo export` both pass. This project hit that on first launch.
+
+**Every native import is now lazy and guarded.** `src/lib/native.ts` resolves
+`expo-haptics` and `expo-location` inside try/catch on first use and degrades to
+no-ops; `src/lib/keep-awake.ts` resolves `expo-keep-awake` at module load and
+hands back either the real hook or a no-op (a hook call can never be conditional,
+so the guard has to live in the module, not at the call site); `GlassSurface`
+requires `expo-blur` inside a `BlurLayer` component whose fallback — the
+translucent solid underlay — is already the whole Android design.
+
+Two changes made this cleaner:
+
+- `react-native-mmkv` was **removed as a dependency** after a guarded probe
+  still crashed Expo Go. First attempt guarded the call — `require` inside
+  try/catch, then create, then touch — and it did NOT work, which is worth
+  recording precisely: MMKV 4's `src/index.ts` re-exports `createMMKV`, whose
+  module-level `import { NitroModules }` evaluates `NativeNitroModules.ts:39`
+  **on require**. Metro does not route a require-time throw into the caller's
+  try/catch, so the throw escapes no matter how the call is wrapped. A
+  require-time failure cannot be caught at the call site; only not importing it
+  fixes it. `src/lib/storage.ts` is therefore dependency-free and the store is
+  process-lifetime.
+  Cost, stated plainly: the session identity no longer survives a restart, so a
+  cold start re-confirms against `GET /api/mobile/session` instead of reading a
+  local copy. That is the safe direction to fail — the identity was never
+  authoritative (the credential is the server's cookie) — and it costs a slower
+  launch, never a wrong sign-in state.
+- `@react-native-community/datetimepicker` was removed and booking uses a
+  14-day date-chip strip instead. Same information, no native dependency, and
+  booking is nearly always this week.
+
+**Testing on Expo Go** (`exp://<lan-ip>:8081`): everything runs except GPS,
+haptics, wake lock and blur (glass renders as solid translucent panels), and
+`GET /api/mobile/session` — the whole `/api/mobile/**` tree is **not on
+production** yet, so login has nothing to call until those commits are pushed and
+the server rebuilt. Push stays dead — no `projectId`, and no EAS credentials.
+**A dev build** (`eas build --profile development`) restores haptics, wake lock,
+blur and GPS.
+
+**Do not** re-add a module-scope native import without checking whether Expo Go
+bundles it. The check that actually matters: does `require("<module>")` throw
+**at import time** in a client without that native module? A throw on *call* can
+be guarded; a throw on *import* cannot be caught at the call site at all — Metro
+does not route it into the caller's try/catch — so the dependency has to go, not
+the guard. Where a guard is possible, it belongs in the module (see
+`src/lib/keep-awake.ts`, where a hook call can never be conditional), so a plain
+screen never has to think about it.

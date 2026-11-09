@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getConsultations } from "@/lib/queries/doctor";
+import { audit } from "@/lib/security/audit-log";
 import { apiOk, parsePage, requireDoctorActor, resolveDoctorScope } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
@@ -23,6 +24,10 @@ export async function GET(request: NextRequest) {
   const page = parsePage(request.nextUrl.searchParams);
   const doctorIds = await resolveDoctorScope(user);
   const { rows, hasMore } = await getConsultations(doctorIds, { page });
+
+  // PHI read trail (audit R3): the consultation records hold diagnoses and
+  // prescriptions, so reading the list is itself a recordable access.
+  void audit.phiRead(user.id, "consultations", page);
 
   return apiOk({ rows, hasMore, page });
 }

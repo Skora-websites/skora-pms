@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { verifyRazorpayWebhookSignature } from "@/lib/packages/razorpay";
 import { fulfillPackagePayment } from "@/lib/packages/fulfillment";
+import { createLogger } from "@/lib/security/logger";
+
+const log = createLogger("packages/webhook");
 
 /**
  * Razorpay webhook (redundant fulfillment path — covers browsers that close
@@ -14,7 +17,10 @@ export async function POST(request: Request) {
   const signature = request.headers.get("x-razorpay-signature") ?? "";
 
   if (!verifyRazorpayWebhookSignature(rawBody, signature)) {
-    console.error("[packages/webhook] Invalid webhook signature.");
+    log.error("Invalid webhook signature.", {
+      bodyBytes: rawBody.length,
+      signaturePresent: signature.length > 0,
+    });
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
   }
 
@@ -42,9 +48,11 @@ export async function POST(request: Request) {
         // completes the work or reports alreadyFulfilled — never a
         // double-grant. A 200 here would silently deny the customer
         // the access they paid for.
-        console.error(
-          `[packages/webhook] Fulfillment failed for order ${entity.order_id}: ${result.error}`
-        );
+        log.error("Fulfillment failed; returning 5xx so Razorpay retries.", {
+          orderId: entity.order_id,
+          paymentId: entity.id,
+          error: result.error,
+        });
         return NextResponse.json({ error: result.error }, { status: 500 });
       }
     }

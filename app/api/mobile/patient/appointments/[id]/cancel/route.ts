@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { cancelPatientAppointment } from "@/app/patient/appointments/actions";
 import { requireApiRole } from "@/lib/auth/guard";
-import { apiError, redirectError } from "@/app/api/mobile/_helpers";
+
+import { apiError, redirectError, csrfGuard } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
 
@@ -19,9 +20,14 @@ export const runtime = "nodejs";
  * `redirect()` into 401/403 so a native client never sees a 307.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // CSRF (audit V4): cancellation is a state change worth protecting from a
+  // foreign-origin browser write.
+  const forbidden = csrfGuard(request);
+  if (forbidden) return forbidden;
+
   // Same guard the action applies internally (patient role only). Applied
   // here first so an unauthenticated or out-of-role call is refused before
   // any write; the action's own guard stays authoritative.

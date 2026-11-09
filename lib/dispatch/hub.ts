@@ -36,23 +36,63 @@ type HubRegistry = {
   listeners: Map<number, Set<Listener>>;
   /** Patient trackers keyed by patient id — separate namespace, same shape. */
   patientListeners: Map<number, Set<Listener>>;
+  /**
+   * Live stream count per doctor (audit P2). The SSE route cleans up on abort,
+   * but nothing previously BOUND the number of open streams: a client that
+   * repeatedly opened and aborted a stream could accumulate connections until
+   * the process ran out of file descriptors. A doctor needs one stream, so a
+   * second connection evicts the oldest — the browser reconnects anyway.
+   */
+  streams: Map<number, number>;
+  /** Count of listener exceptions swallowed (audit R2) — surfaced, not silent. */
+  swallowedListenerErrors: number;
 };
 const g = globalThis as typeof globalThis & { [HUB_KEY]?: HubRegistry };
-const registry: HubRegistry = (g[HUB_KEY] ??= { listeners: new Map(), patientListeners: new Map() });
+const registry: HubRegistry = (g[HUB_KEY] ??= {
+  listeners: new Map(),
+  patientListeners: new Map(),
+  streams: new Map(),
+  swallowedListenerErrors: 0,
+});
 const listeners = registry.listeners;
 const patientListeners = registry.patientListeners;
+const openStreams = registry.streams;
+
+/** Concurrent SSE streams allowed per doctor. One is enough; two tolerates a reconnect race. */
+export const MAX_STREAMS_PER_DOCTOR = 2;
 
 /** Subscribe a doctor to live events. Returns an unsubscribe function. */
 export function subscribe(doctorId: number, listener: Listener): () => void {
+  // Evict the oldest connection(s) once this doctor is at the cap, so a
+  // reconnect storm cannot exhaust the process. The evicted listener's own
+  // route handler sees the abort and closes its controller.
+  const live = openStreams.get(doctorId) ?? 0;
+  if (live >= MAX_STREAMS_PER_DOCTOR) {
+    const set = listeners.get(doctorId);
+    if (set && set.size > 0) {
+      const oldest = set.values().next().value;
+      if (oldest) set.delete(oldest);
+    }
+  } else {
+    openStreams.set(doctorId, live + 1);
+  }
+
   let set = listeners.get(doctorId);
   if (!set) {
     set = new Set();
     listeners.set(doctorId, set);
   }
   set.add(listener);
+  let counted = true;
   return () => {
     set!.delete(listener);
-    if (set!.size === 0) listeners.delete(doctorId);
+    if (counted && set!.size === 0) {
+      listeners.delete(doctorId);
+      const n = openStreams.get(doctorId) ?? 1;
+      if (n <= 1) openStreams.delete(doctorId);
+      else openStreams.set(doctorId, n - 1);
+      counted = false;
+    }
   };
 }
 
@@ -63,7 +103,11 @@ export function broadcastToDoctor(doctorId: number, event: SosEvent) {
     try {
       listener(event);
     } catch {
-      // A listener error must never break the dispatch.
+      // A listener error must never break the dispatch — an SSE subscriber
+      // closing its controller mid-enqueue must not stop the others. But a
+      // listener that throws CONSISTENTLY would otherwise stay silent
+      // forever (audit R2), so the count is surfaced.
+      registry.swallowedListenerErrors++;
     }
   }
 }
@@ -88,7 +132,27 @@ export function subscribePatient(patientId: number, listener: Listener): () => v
 
 /** Push a status nudge to one patient's open trackers. */
 export function broadcastToPatient(patientId: number, event: SosEvent) {
-  patientListeners.get(patientId)?.forEach((l) => l(event));
+  // A tracker that already closed must never break the notification path for
+  // the others, so each listener is isolated — but the swallow is counted
+  // (audit R2), so a consistently-throwing subscriber is visible.
+  patientListeners.get(patientId)?.forEach((l) => {
+    try {
+      l(event);
+    } catch {
+      registry.swallowedListenerErrors++;
+    }
+  });
+}
+
+/**
+ * Listener exceptions swallowed since this process started (audit R2).
+ *
+ * Non-zero and rising means a subscriber throws on every event — a bug that
+ * the swallow-and-continue policy would otherwise hide completely. Exposed so
+ * a debug route or a metric scrape can see it.
+ */
+export function swallowedListenerErrors(): number {
+  return registry.swallowedListenerErrors;
 }
 
 /**
