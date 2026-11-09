@@ -41,6 +41,7 @@ export default async function AdminShopPage({
             name="q"
             defaultValue={q ?? ""}
             placeholder="Search by name, strength or form…"
+            aria-label="Search medicines by name, strength or form"
             className="input !pl-10"
           />
         </form>

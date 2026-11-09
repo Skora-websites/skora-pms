@@ -26,7 +26,7 @@ export default async function DoctorsPage({
         subtitle={`${doctors.length} registered doctor${doctors.length === 1 ? "" : "s"}`}
       />
       <form className="mb-5 flex max-w-md gap-2">
-        <input name="q" defaultValue={q} placeholder="Search by name, email or phone…" className="input" />
+        <input name="q" defaultValue={q} placeholder="Search by name, email or phone…" aria-label="Search doctors by name, email or phone" className="input" />
         <button type="submit" className="btn-primary shrink-0">Search</button>
       </form>
 

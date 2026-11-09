@@ -25,6 +25,7 @@ export function PhotoUpload({
           type="file"
           name="photo"
           accept="image/jpeg,image/png"
+          aria-label="Profile photo file"
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) e.target.form?.requestSubmit();

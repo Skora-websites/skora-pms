@@ -32,15 +32,16 @@ export function ManagerForm({
           Creates a `manager`-role user. Assign them to a clinic below.
         </p>
         <form action={createAction} className="mt-4 space-y-3">
-          <input name="name" required placeholder="Full name" className="input w-full" />
-          <input name="email" type="email" required placeholder="Email" className="input w-full" />
-          <input name="phone" placeholder="Phone (optional)" className="input w-full" />
+          <input name="name" required placeholder="Full name" aria-label="Full name" className="input w-full" />
+          <input name="email" type="email" required placeholder="Email" aria-label="Email" className="input w-full" />
+          <input name="phone" placeholder="Phone (optional)" aria-label="Phone (optional)" className="input w-full" />
           <input
             name="password"
             type="password"
             required
             minLength={8}
             placeholder="Temporary password (min 8 chars)"
+            aria-label="Temporary password (minimum 8 characters)"
             className="input w-full"
           />
           <button type="submit" disabled={createPending} className="btn-primary w-full">
@@ -57,7 +58,7 @@ export function ManagerForm({
           The manager will only see data for the clinics assigned here.
         </p>
         <form action={assignAction} className="mt-4 space-y-3">
-          <select name="userId" required className="input w-full" defaultValue="">
+          <select name="userId" required className="input w-full" defaultValue="" aria-label="Manager account">
             <option value="" disabled>
               Select manager
             </option>
@@ -67,7 +68,7 @@ export function ManagerForm({
               </option>
             ))}
           </select>
-          <select name="clinicId" required className="input w-full" defaultValue="">
+          <select name="clinicId" required className="input w-full" defaultValue="" aria-label="Clinic">
             <option value="" disabled>
               Select clinic
             </option>

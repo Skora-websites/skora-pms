@@ -854,3 +854,16 @@ export const getOwnerDashboard = cache(
     };
   }
 );
+
+/**
+ * True when at least one scoped clinic has a weekly schedule row — the
+ * "Set the weekly schedule" step of the owner onboarding checklist.
+ */
+export const hasAnyScopedSchedule = cache(async (clinicIds: number[]) => {
+  if (clinicIds.length === 0) return false;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(doctorSchedules)
+    .where(inArray(doctorSchedules.doctorClinicId, clinicIds));
+  return Number(row?.count ?? 0) > 0;
+});

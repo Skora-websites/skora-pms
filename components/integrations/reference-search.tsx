@@ -42,6 +42,7 @@ export function ReferenceSearch() {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), search())}
           placeholder="e.g. hypertension guidelines"
+          aria-label="Search medical literature"
           className="input flex-1"
           maxLength={120}
         />

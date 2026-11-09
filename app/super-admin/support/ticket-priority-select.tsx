@@ -39,6 +39,7 @@ export function TicketPrioritySelect({
       value={value}
       disabled={pending}
       onChange={(e) => handleChange(e.target.value)}
+      aria-label={`Ticket priority (ticket #${ticketId})`}
       className={cn(
         "rounded-lg border px-2.5 py-1 text-xs font-semibold capitalize disabled:opacity-50",
         PRIORITY_TONES[value] ?? PRIORITY_TONES.normal

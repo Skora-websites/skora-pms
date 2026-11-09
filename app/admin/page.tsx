@@ -9,6 +9,8 @@ import { requireAdminTier } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { getRates, getArAging, getDoctorPerformance, getCohorts } from "@/lib/queries/analytics";
 import { PageHeader, StatCard, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
+import { OnboardingChecklist, type OnboardingStep } from "@/components/dashboard/onboarding-checklist";
+import { hasAnyScopedSchedule } from "@/lib/queries/admin";
 import { ClinicOsDashboard } from "@/app/admin/clinic-os";
 import { formatDate, formatINR } from "@/lib/utils";
 
@@ -153,6 +155,49 @@ export default async function AdminOverviewPage() {
     },
   ];
 
+  // ── First-run setup checklist (owners only, audit UX §7.2.2) ──────────
+  // Each step's state is derived from real entity counts — the checklist
+  // reflects actual setup progress, not clicks. Hidden entirely once every
+  // step is done; the client component handles per-browser dismissal.
+  let onboardingSteps: OnboardingStep[] | null = null;
+  if (isOwner) {
+    const hasSchedule = await hasAnyScopedSchedule(clinicIds);
+    const hasFirstBooking = todayAppts > 0 || recentAppointments.length > 0;
+    onboardingSteps = [
+      {
+        label: "Add your clinic",
+        hint: "Where your practice operates",
+        href: "/admin/clinics",
+        done: clinicIds.length > 0,
+      },
+      {
+        label: "Link a doctor",
+        hint: "The practice anchor for your plan",
+        href: "/admin/clinics",
+        done: doctorIds.length > 0,
+      },
+      {
+        label: "Set the weekly schedule",
+        hint: "Patients book inside these hours",
+        href: "/admin/schedule",
+        done: hasSchedule,
+      },
+      {
+        label: "Invite your staff",
+        hint: "Managers and receptionists",
+        href: "/admin/staff",
+        done: activeStaff > 0,
+      },
+      {
+        label: "Book the first appointment",
+        hint: "Everything is ready — see it work",
+        href: "/admin/appointments/book",
+        done: hasFirstBooking,
+      },
+    ];
+    if (onboardingSteps.every((s) => s.done)) onboardingSteps = null;
+  }
+
   return (
     <div>
       <PageHeader
@@ -163,6 +208,12 @@ export default async function AdminOverviewPage() {
             : "Business overview"
         }
       />
+
+      {onboardingSteps && (
+        <div className="mb-4">
+          <OnboardingChecklist steps={onboardingSteps} businessName={businessName ?? "your business"} />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (

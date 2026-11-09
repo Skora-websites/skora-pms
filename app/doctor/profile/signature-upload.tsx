@@ -22,6 +22,7 @@ export function SignatureUpload({ signatureUrl }: { signatureUrl: string | null 
           type="file"
           name="signature"
           accept="image/jpeg,image/png"
+          aria-label="Signature file"
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) e.target.form?.requestSubmit();

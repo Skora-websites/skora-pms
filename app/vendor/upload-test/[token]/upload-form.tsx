@@ -48,6 +48,7 @@ export function VendorUploadForm({ token }: { token: string }) {
         ref={fileRef}
         type="file"
         accept="application/pdf,image/jpeg,image/png"
+        aria-label="Lab report file"
         className="hidden"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />

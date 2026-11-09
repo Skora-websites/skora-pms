@@ -156,6 +156,7 @@ export function TestBookingsTable({
                   value={b.status ?? "pending"}
                   disabled={busyId === b.id}
                   onChange={(e) => run(b.id, () => updateTestBookingStatus(b.id, e.target.value))}
+                  aria-label={`Booking status for ${b.patientName ?? "patient"}`}
                   className="input !w-auto !py-1.5 !text-xs"
                 >
                   {(TRANSITIONS[b.status ?? "pending"] ?? STATUSES).map((s) => (
@@ -262,6 +263,7 @@ export function TestBookingsTable({
                         value={b.status ?? "pending"}
                         disabled={busyId === b.id}
                         onChange={(e) => run(b.id, () => updateTestBookingStatus(b.id, e.target.value))}
+                        aria-label={`Booking status for ${b.patientName ?? "patient"}`}
                         className="input !w-auto !py-1.5 !text-xs"
                       >
                         {(TRANSITIONS[b.status ?? "pending"] ?? STATUSES).map((s) => (

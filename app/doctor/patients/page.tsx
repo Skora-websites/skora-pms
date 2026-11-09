@@ -37,6 +37,7 @@ export default async function PatientsPage({
             name="q"
             defaultValue={q}
             placeholder="Search by name, phone or email..."
+            aria-label="Search patients by name, phone or email"
             className="input"
           />
         </div>
@@ -47,6 +48,7 @@ export default async function PatientsPage({
             defaultValue={start_date ?? ""}
             className="input"
             title="From date"
+            aria-label="Filter from date"
           />
         </div>
         <div className="w-40">
@@ -56,6 +58,7 @@ export default async function PatientsPage({
             defaultValue={end_date ?? ""}
             className="input"
             title="To date"
+            aria-label="Filter to date"
           />
         </div>
         <button type="submit" className="btn-primary shrink-0">Search</button>

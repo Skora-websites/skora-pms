@@ -29,7 +29,7 @@ export default async function AuditLogsPage({ searchParams }: Props) {
       />
 
       <form action="" method="GET" className="mb-5 flex max-w-xs gap-2">
-        <select name="action" className="input" defaultValue={action ?? ""}>
+        <select name="action" className="input" defaultValue={action ?? ""} aria-label="Filter by action">
           <option value="">All actions</option>
           {actions.map((a) => (
             <option key={a} value={a}>{a.replace(/_/g, " ")}</option>

@@ -58,7 +58,7 @@ export default async function UsersPage({
           ))}
         </div>
         <form className="ml-auto flex max-w-xs flex-1 gap-2">
-          <input name="q" defaultValue={q} placeholder="Search…" className="input" />
+          <input name="q" defaultValue={q} placeholder="Search…" aria-label="Search users" className="input" />
           <input type="hidden" name="role" value={role} />
           <button type="submit" className="btn-primary shrink-0">Go</button>
         </form>

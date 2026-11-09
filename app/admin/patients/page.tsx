@@ -43,6 +43,7 @@ export default async function AdminPatientsPage({
           name="q"
           defaultValue={q}
           placeholder="Search name, phone, email…"
+          aria-label="Search patients by name, phone or email"
           className="input flex-1"
         />
         <button type="submit" className="btn-secondary">
