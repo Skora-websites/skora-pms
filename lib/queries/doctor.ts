@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { LIST_HARD_CAP } from "@/lib/constants";
 import { db } from "@/lib/db";
 import {
@@ -960,19 +960,73 @@ export const getHomeVisitPatientDetail = cache(
 
 // ── Shop / medicine inventory ───────────────────────────────────────────────
 
-export const getMedicineInventory = cache(async (search?: string, form?: string) => {
+export type MedicineRow = typeof medicines.$inferSelect;
+
+export type MedicineInventoryPage = {
+  /** One page of rows (pageBounds-sized). */
+  rows: MedicineRow[];
+  /** ALL rows matching the search/form filter — the header's true count. */
+  total: number;
+  /** SUM(quantity_available) over EVERY matching row, not just the page. */
+  totalUnits: number;
+  /** Matching rows at or below zero, over EVERY matching row. */
+  outOfStock: number;
+  /** Distinct forms among matching rows — the filter chips. */
+  forms: string[];
+};
+
+/**
+ * F-04 paginated medicine catalogue. The catalog is seeded and grows one
+ * medicine at a time; before this, EVERY page load pulled the whole table to
+ * compute the header's totals in JS (§5c product decision → server-side
+ * pagination). Aggregates now live in SQL so they stay correct while the
+ * page stays small; the mobile route keeps list semantics via pageSize.
+ */
+export const getMedicineInventory = cache(async (
+  search?: string,
+  form?: string,
+  listPage?: ListPage
+): Promise<MedicineInventoryPage> => {
   const conds = [];
   if (search) {
     const like = `%${search}%`;
     conds.push(sql`(${medicines.name} LIKE ${like} OR ${medicines.strength} LIKE ${like} OR ${medicines.form} LIKE ${like})`);
   }
   if (form) conds.push(eq(medicines.form, form));
-  const rows = await db
-    .select()
-    .from(medicines)
-    .where(conds.length ? and(...conds) : undefined)
-    .orderBy(asc(medicines.name));
-  return rows;
+  const where = conds.length ? and(...conds) : undefined;
+
+  const { offset, limit } = pageBounds({ pageSize: 24, ...listPage });
+
+  const [rows, [agg], formRows] = await Promise.all([
+    db
+      .select()
+      .from(medicines)
+      .where(where)
+      .orderBy(asc(medicines.name), asc(medicines.id))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({
+        total: count(),
+        totalUnits: sql<number>`coalesce(sum(${medicines.quantityAvailable}), 0)`,
+        outOfStock: sql<number>`sum(case when ${medicines.quantityAvailable} <= 0 then 1 else 0 end)`,
+      })
+      .from(medicines)
+      .where(where),
+    db
+      .selectDistinct({ form: medicines.form })
+      .from(medicines)
+      .where(where)
+      .orderBy(asc(medicines.form)),
+  ]);
+
+  return {
+    rows,
+    total: Number(agg?.total ?? 0),
+    totalUnits: Number(agg?.totalUnits ?? 0),
+    outOfStock: Number(agg?.outOfStock ?? 0),
+    forms: formRows.map((r) => r.form).filter((f): f is string => !!f),
+  };
 });
 
 // ── Consultation data for prescription PDF ──────────────────────────────────

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Search, Pill, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
+import { Search, Pill, SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getMedicineInventory } from "@/lib/queries/doctor";
 import { PageHeader } from "@/components/ui/dashboard-ui";
@@ -8,25 +9,42 @@ import { AddMedicineButton, MedicineCardActions } from "./medicine-forms";
 
 export const metadata: Metadata = { title: "Shop · Medicine Inventory · Doctor" };
 
+const PAGE_SIZE = 24;
+
+/** Pager link that carries the active search and form filter. */
+function pageHref(page: number, q?: string, form?: string): string {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (form) params.set("form", form);
+  if (page > 1) params.set("page", String(page));
+  const qs = params.toString();
+  return `/doctor/shop${qs ? `?${qs}` : ""}`;
+}
+
 export default async function ShopPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; form?: string }>;
+  searchParams: Promise<{ q?: string; form?: string; page?: string }>;
 }) {
   await requireRole(["doctor", "receptionist"]);
-  const { q, form } = await searchParams;
-  const inventory = await getMedicineInventory(q, form);
-  const totalUnits = inventory.reduce((sum, m) => sum + (m.quantityAvailable ?? 0), 0);
-  const outOfStock = inventory.filter((m) => (m.quantityAvailable ?? 0) <= 0).length;
+  const { q, form, page: pageParam } = await searchParams;
+  const requestedPage = Number(pageParam);
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const forms = [...new Set(inventory.map((m) => m.form).filter(Boolean))].sort() as string[];
-  const activeForm = form ?? "";
+  const data0 = await getMedicineInventory(q, form, { page, pageSize: PAGE_SIZE });
+  const pageCount = Math.max(1, Math.ceil(data0.total / PAGE_SIZE));
+  // A stale page param beyond the last page (after deletions) resolves to
+  // empty rows — treat it as the last page instead of a broken blank screen.
+  const pageNumber = Math.min(page, pageCount);
+  const data =
+    pageNumber === page ? data0 : await getMedicineInventory(q, form, { page: pageNumber, pageSize: PAGE_SIZE });
+  const inventory = data.rows;
 
   return (
     <div>
       <PageHeader
         title="Medicine Inventory"
-        subtitle={`${inventory.length} medicine${inventory.length === 1 ? "" : "s"} in the shared catalogue · ${totalUnits} unit${totalUnits === 1 ? "" : "s"} available${outOfStock > 0 ? ` · ${outOfStock} out of stock` : ""}`}
+        subtitle={`${data.total} medicine${data.total === 1 ? "" : "s"} in the shared catalogue · ${data.totalUnits} unit${data.totalUnits === 1 ? "" : "s"} available${data.outOfStock > 0 ? ` · ${data.outOfStock} out of stock` : ""}`}
         action={<AddMedicineButton />}
       />
 
@@ -42,10 +60,10 @@ export default async function ShopPage({
             className="input !pl-10"
           />
         </form>
-        {forms.length > 0 && (
+        {data.forms.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <SlidersHorizontal className="mr-1 h-4 w-4 text-slate-400" />
-            {forms.map((f) => (
+            {data.forms.map((f) => (
               <form key={f} action="/doctor/shop">
                 <input type="hidden" name="q" value={q ?? ""} />
                 <button
@@ -53,7 +71,7 @@ export default async function ShopPage({
                   name="form"
                   value={f}
                   className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                    activeForm === f
+                    (form ?? "") === f
                       ? "bg-brand-700 text-white shadow-pop"
                       : "bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-brand-800"
                   }`}
@@ -86,40 +104,77 @@ export default async function ShopPage({
           )}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {inventory.map((m) => (
-            <div key={m.id} className="card card-hover group p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-md transition-transform group-hover:scale-105">
-                    <Pill className="h-6 w-6" />
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h3>
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      {[m.strength, m.unit].filter(Boolean).join(" ")} · {m.form}
-                    </p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {inventory.map((m) => (
+              <div key={m.id} className="card card-hover group p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-md transition-transform group-hover:scale-105">
+                      <Pill className="h-6 w-6" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h3>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {[m.strength, m.unit].filter(Boolean).join(" ")} · {m.form}
+                      </p>
+                    </div>
                   </div>
+                  <MedicineCardActions
+                    medicine={{
+                      id: m.id,
+                      name: m.name,
+                      strength: m.strength,
+                      form: m.form,
+                      unit: m.unit,
+                    }}
+                  />
                 </div>
-                <MedicineCardActions
-                  medicine={{
-                    id: m.id,
-                    name: m.name,
-                    strength: m.strength,
-                    form: m.form,
-                    unit: m.unit,
-                  }}
-                />
+                <MedicineStockControl medicineId={m.id} initialQuantity={m.quantityAvailable ?? 0} />
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">
+                    Added {m.createdAt ? new Date(m.createdAt).toLocaleDateString("en-IN") : "—"}
+                  </span>
+                </div>
               </div>
-              <MedicineStockControl medicineId={m.id} initialQuantity={m.quantityAvailable ?? 0} />
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">
-                  Added {m.createdAt ? new Date(m.createdAt).toLocaleDateString("en-IN") : "—"}
+            ))}
+          </div>
+
+          {pageCount > 1 && (
+            <nav
+              aria-label="Catalogue pages"
+              className="mt-8 flex items-center justify-center gap-3"
+            >
+              {pageNumber > 1 ? (
+                <Link
+                  href={pageHref(pageNumber - 1, q, form)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-300">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Previous
                 </span>
-              </div>
-            </div>
-          ))}
-        </div>
+              )}
+              <span className="text-xs text-slate-500">
+                Page {pageNumber} of {pageCount} · {data.total} medicines
+              </span>
+              {pageNumber < pageCount ? (
+                <Link
+                  href={pageHref(pageNumber + 1, q, form)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                >
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 px-3 py-2 text-xs font-semibold text-slate-300">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </span>
+              )}
+            </nav>
+          )}
+        </>
       )}
     </div>
   );
