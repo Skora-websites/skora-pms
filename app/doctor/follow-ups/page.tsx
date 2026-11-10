@@ -12,6 +12,8 @@ import { PageHeader, EmptyState, StatusBadge, QuickContactActions } from "@/comp
 import { FollowUpList } from "@/components/mobile-view/follow-ups-list";
 import { formatDate, formatDateTime, todayStr } from "@/lib/utils";
 import { NewFollowUpForm, FollowUpFlowActions, ReminderActions } from "./follow-up-forms";
+import { getPatientNoShowRisk } from "@/lib/queries/no-show";
+import { NoShowRiskBadge } from "@/components/doctor/no-show-risk-badge";
 
 export const metadata: Metadata = { title: "Follow Ups · Doctor" };
 
@@ -34,6 +36,18 @@ export default async function FollowUpsPage() {
   const doneReminders = reminders.filter((r) => (r.status ?? "pending") !== "pending");
   const overdueCount = pending.filter((f) => (f.followUpDate ?? "") < today).length
     + pendingReminders.filter((r) => r.followUpDate < today).length;
+
+  // §7.4 no-show prediction: one scoped history read for every patient with a
+  // PENDING call-list item. Done rows don't need prioritizing, so they're
+  // excluded (keeps the read proportional to the actionable list).
+  const pendingPatientIds = [
+    ...new Set(
+      [...pending, ...pendingReminders]
+        .map((item) => item.patientId)
+        .filter((id): id is number => id != null)
+    ),
+  ];
+  const noShowRisk = await getPatientNoShowRisk(doctorIds, pendingPatientIds);
 
   return (
     <div>
@@ -68,6 +82,7 @@ export default async function FollowUpsPage() {
                         <th>Last consultation</th>
                         <th>Note</th>
                         <th>Status</th>
+                        <th>No-show risk</th>
                         <th className="text-right">Actions</th>
                       </tr>
                     </thead>
@@ -92,6 +107,7 @@ export default async function FollowUpsPage() {
                             {f.followUpComment ?? "—"}
                           </td>
                           <td><StatusBadge status={f.followUpStatus ?? "pending"} /></td>
+                          <td><NoShowRiskBadge risk={noShowRisk} patientId={f.patientId} /></td>
                           <td className="text-right">
                             <FollowUpFlowActions
                               consultationId={f.id}
@@ -144,7 +160,10 @@ export default async function FollowUpsPage() {
                         <p className="truncate text-sm font-semibold text-ink">{r.patientName}</p>
                         <p className="truncate text-xs text-slate-400">{r.patientPhone ?? "—"}</p>
                       </div>
-                      <StatusBadge status={r.status ?? "pending"} />
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <StatusBadge status={r.status ?? "pending"} />
+                        <NoShowRiskBadge risk={noShowRisk} patientId={r.patientId} />
+                      </span>
                     </div>
                     <div className="mt-2"><QuickContactActions phone={r.patientPhone} size="xs" /></div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
@@ -177,6 +196,7 @@ export default async function FollowUpsPage() {
                       <th>Created</th>
                       <th>Note</th>
                       <th>Status</th>
+                      <th>No-show risk</th>
                       <th className="text-right">Actions</th>
                     </tr>
                   </thead>
@@ -200,9 +220,10 @@ export default async function FollowUpsPage() {
                         <td className="max-w-[220px] truncate text-xs text-slate-500" title={r.note ?? ""}>
                           {r.note ?? "—"}
                         </td>
-                        <td><StatusBadge status={r.status ?? "pending"} /></td>
-                        <td className="text-right">
-                          <ReminderActions reminderId={r.id} status={r.status ?? "pending"} />
+                         <td><StatusBadge status={r.status ?? "pending"} /></td>
+                         <td><NoShowRiskBadge risk={noShowRisk} patientId={r.patientId} /></td>
+                         <td className="text-right">
+                           <ReminderActions reminderId={r.id} status={r.status ?? "pending"} />
                         </td>
                       </tr>
                     ))}

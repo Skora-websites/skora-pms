@@ -586,6 +586,7 @@ export const getFollowUps = cache(async (doctorIds: number[]) => {
       followUpStatus: consultations.followUpStatus,
       followUpComment: consultations.followUpComment,
       consultationDate: consultations.consultationDate,
+      patientId: consultations.patientId,
       patientName: users.name,
       patientPhone: users.phone,
     })
