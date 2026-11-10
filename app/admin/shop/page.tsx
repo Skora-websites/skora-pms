@@ -47,9 +47,6 @@ export default async function AdminShopPage({
   const totalUnits = data.totalUnits;
   const outOfStock = data.outOfStock;
 
-  const forms = [...new Set(inventory.map((m) => m.form).filter(Boolean))].sort() as string[];
-  const activeForm = form ?? "";
-
   return (
     <div>
       <PageHeader
