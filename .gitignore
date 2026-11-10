@@ -72,6 +72,10 @@ tmp-shot-*.png
 .idea/
 *.iml
 
+# the native Expo mobile app lives IN-REPO but is local-only: its own git
+# history, its own node_modules, NOT pushed with the web app (user decision)
+/skora-mobile/
+
 # large local archives — never commit
 /pms.zip
 *.zip
