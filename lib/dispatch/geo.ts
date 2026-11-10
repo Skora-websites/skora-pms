@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, doctorClinics, sosOffers } from "@/lib/db/schema";
 import { SOS_TTL_MIN } from "@/lib/config";
@@ -48,13 +48,32 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
 }
 
 /**
- * Find active on-duty doctors within `radiusKm` of the patient location.
+ * The lat/lng extents that CONTAIN a haversine circle of `radiusKm`.
  *
- * Primary source is the doctor's active clinics (doctor_clinics stores
- * coordinates as varchar). A doctor whose clinics carry no usable coordinates
- * is NOT silently dropped: they fall back to their own `users.latitude` /
- * `users.longitude` and are emitted as a mobile entry (`clinicId: null`).
+ * Longitude degrees shrink with latitude (1° lon ≈ cos(lat) × 111.32 km), so
+ * the east-west half-width is widened by 1/cos(clamped centre latitude) —
+ * the standard corner-correcting box that stays a superset of the circle
+ * anywhere on Earth below the poles. The haversine pass afterwards is what
+ * actually decides "in radius"; the box only decides what reaches it.
+ * Used in SQL with the numeric-coordinate indexes from migration 0027, this
+ * turns discovery from "every active clinic of every on-duty doctor, walked
+ * in JS" into an index range scan (§4 item 10 acceptance).
  */
+export function boundingBox(
+  lat: number,
+  lng: number,
+  radiusKm: number
+): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
+  const KM_PER_DEG_LAT = 111.32;
+  const latDelta = radiusKm / KM_PER_DEG_LAT;
+  const lngDelta = radiusKm / (KM_PER_DEG_LAT * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
+  return {
+    latMin: lat - latDelta,
+    latMax: lat + latDelta,
+    lngMin: lng - lngDelta,
+    lngMax: lng + lngDelta,
+  };
+}
 /**
  * Offer-response history for a set of doctors, over a bounded recent window
  * (audit P5).
@@ -135,72 +154,99 @@ export async function findNearbyOnDutyDoctors(
   lng: number,
   radiusKm: number
 ): Promise<NearbyDoctor[]> {
-  const onDutyDoctors = await db
-    .select({
-      id: users.id,
-      name: users.name,
-      latitude: users.latitude,
-      longitude: users.longitude,
-    })
-    .from(users)
-    .where(and(eq(users.role, "doctor"), eq(users.status, "active"), eq(users.onDuty, true)));
+  // Bounding-box prefilter (audit §4 item 10): the SQL indices from migration
+  // 0027 do the first cut — haversine only sees rows already inside the box,
+  // and both reads are index range scans instead of "every active clinic of
+  // every on-duty doctor".
+  const box = boundingBox(lat, lng, radiusKm);
 
-  if (onDutyDoctors.length === 0) return [];
-
-  const clinics = await db
+  // ── In-box clinics of on-duty doctors (primary source) ──
+  const clinicRows = await db
     .select({
-      id: doctorClinics.id,
-      doctorId: doctorClinics.doctorId,
+      doctorId: users.id,
+      doctorName: users.name,
+      clinicId: doctorClinics.id,
       clinicName: doctorClinics.clinicName,
-      latitude: doctorClinics.latitude,
-      longitude: doctorClinics.longitude,
+      cLat: doctorClinics.latitude,
+      cLng: doctorClinics.longitude,
     })
     .from(doctorClinics)
+    .innerJoin(users, eq(users.id, doctorClinics.doctorId))
     .where(
       and(
+        // On-duty + active is the authority filter (kept even though the
+        // composite index starts on on_duty — equality terms only help it).
+        eq(users.role, "doctor"),
+        eq(users.status, "active"),
+        eq(users.onDuty, true),
         eq(doctorClinics.isActive, true),
-        inArray(
-          doctorClinics.doctorId,
-          onDutyDoctors.map((d) => d.id)
-        )
+        gt(doctorClinics.latitude, box.latMin.toFixed(7)),
+        lt(doctorClinics.latitude, box.latMax.toFixed(7)),
+        gt(doctorClinics.longitude, box.lngMin.toFixed(7)),
+        lt(doctorClinics.longitude, box.lngMax.toFixed(7))
       )
     );
 
   const nearby: NearbyDoctor[] = [];
   const doctorsWithClinic = new Set<number>();
 
-  for (const clinic of clinics) {
-    const cLat = Number(clinic.latitude);
-    const cLng = Number(clinic.longitude);
-    if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) continue;
+  for (const row of clinicRows) {
+    const cLat = Number(row.cLat);
+    const cLng = Number(row.cLng);
+    // Junk coordinates can no longer pass the numeric columns, but an exact
+    // haversine check still guards the box's corners.
     const dist = haversineKm(lat, lng, cLat, cLng);
     if (dist <= radiusKm) {
-      const doctor = onDutyDoctors.find((d) => d.id === clinic.doctorId);
-      doctorsWithClinic.add(clinic.doctorId);
+      doctorsWithClinic.add(row.doctorId);
       nearby.push({
-        doctorId: clinic.doctorId,
-        name: doctor?.name ?? "Doctor",
-        clinicId: clinic.id,
-        clinicName: clinic.clinicName,
+        doctorId: row.doctorId,
+        name: row.doctorName,
+        clinicId: row.clinicId,
+        clinicName: row.clinicName,
         distanceKm: Math.round(dist * 100) / 100,
       });
     }
   }
 
-  // Doctor-GPS fallback: no clinic coordinates in range, but the doctor
-  // shared their own location while on duty — dispatch on that instead.
-  for (const doctor of onDutyDoctors) {
-    if (doctorsWithClinic.has(doctor.id)) continue;
-    const dLat = Number(doctor.latitude);
-    const dLng = Number(doctor.longitude);
+  // ── Doctor-GPS fallback (mobile dispatch) ──
+  //
+  // Same box scan on `users`. Semantics preserved exactly: a doctor whose
+  // clinic was in radius is skipped (clinic entry already emitted); a doctor
+  // whose clinic is out of radius — or has no usable coordinates at all —
+  // still gets their OWN location considered, so nobody silently drops out
+  // of the offer set when their clinic moved out of range.
+  const mobileRows = await db
+    .select({
+      doctorId: users.id,
+      doctorName: users.name,
+      dLat: users.latitude,
+      dLng: users.longitude,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.role, "doctor"),
+        eq(users.status, "active"),
+        eq(users.onDuty, true),
+        gt(users.latitude, box.latMin.toFixed(7)),
+        lt(users.latitude, box.latMax.toFixed(7)),
+        gt(users.longitude, box.lngMin.toFixed(7)),
+        lt(users.longitude, box.lngMax.toFixed(7))
+      )
+    );
+
+  for (const doctor of mobileRows) {
+    if (doctorsWithClinic.has(doctor.doctorId)) continue;
+    const dLat = Number(doctor.dLat);
+    const dLng = Number(doctor.dLng);
     if (!Number.isFinite(dLat) || !Number.isFinite(dLng)) continue;
     const dist = haversineKm(lat, lng, dLat, dLng);
     if (dist <= radiusKm) {
       nearby.push({
-        doctorId: doctor.id,
-        name: doctor.name,
+        doctorId: doctor.doctorId,
+        name: doctor.doctorName,
         clinicId: null,
-        clinicName: `${doctor.name} (mobile)`,
+        clinicName: `${doctor.doctorName} (mobile)`,
         distanceKm: Math.round(dist * 100) / 100,
       });
     }
