@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { requireRole } from "@/lib/auth/guard";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
 import { Bell } from "lucide-react";
-import { getPatientNotifications } from "./actions";
+import { getPatientNotifications, getPatientNotificationPreferences } from "./actions";
 import { PatientNotificationsList } from "./notifications-list";
+import { PatientNotificationPreferences } from "./preferences";
 
 export const metadata: Metadata = { title: "Notifications · Patient" };
 export const dynamic = "force-dynamic";
@@ -18,7 +19,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function PatientNotificationsPage() {
   await requireRole(["patient"]);
-  const notifications = await getPatientNotifications();
+  const [notifications, prefs] = await Promise.all([
+    getPatientNotifications(),
+    getPatientNotificationPreferences(),
+  ]);
 
   return (
     <>
@@ -35,6 +39,7 @@ export default async function PatientNotificationsPage() {
       ) : (
         <PatientNotificationsList notifications={notifications} />
       )}
+      {prefs && <PatientNotificationPreferences prefs={prefs} />}
     </>
   );
 }

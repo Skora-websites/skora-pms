@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { notifications } from "@/lib/db/schema";
+import { notifications, users } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 
 export type PatientNotifRow = {
@@ -80,4 +80,55 @@ export async function getPatientUnreadCount(): Promise<number> {
     .from(notifications)
     .where(and(eq(notifications.userId, patientId), eq(notifications.read, false)));
   return rows.length;
+}
+
+// ── Per-channel preferences (F10) ──────────────────────────────────────────
+
+import {
+  PATIENT_PREF_CHANNELS,
+  PATIENT_PREF_EVENTS,
+  mergePatientPrefs,
+  type PatientPrefState,
+} from "./prefs-shared";
+
+export async function getPatientNotificationPreferences() {
+  const patientId = await requirePatient();
+  if (!patientId) return null;
+  const [row] = await db
+    .select({ prefs: users.notificationPreferences })
+    .from(users)
+    .where(eq(users.id, patientId));
+  return mergePatientPrefs(row?.prefs ?? null);
+}
+
+/**
+ * Persist per-channel prefs for the CALLER's own user row (the column is
+ * user-keyed, so there is no foreign-row path to defend). Unchecked
+ * checkboxes are NOT submitted — read every known event_channel pair and
+ * treat absence as off, exactly like the doctor settings action. The stored
+ * shape holds only the two patient-facing events; every other event/channel
+ * key stays unset and keeps its "allowed" default.
+ */
+export async function updatePatientNotificationPreferences(
+  _prev: PatientPrefState,
+  formData: FormData
+): Promise<PatientPrefState> {
+  const patientId = await requirePatient();
+  if (!patientId) return { error: "Not authorised.", success: false };
+
+  const prefs: Record<string, Record<string, boolean>> = {};
+  for (const event of PATIENT_PREF_EVENTS) {
+    prefs[event] = {};
+    for (const channel of PATIENT_PREF_CHANNELS) {
+      prefs[event][channel] = formData.get(`${event}_${channel}`) === "on";
+    }
+  }
+
+  await db
+    .update(users)
+    .set({ notificationPreferences: prefs, updatedAt: new Date() })
+    .where(eq(users.id, patientId));
+
+  revalidatePath("/patient/notifications");
+  return { error: null, success: true };
 }
