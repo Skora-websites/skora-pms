@@ -15,13 +15,15 @@ function num(value: string | undefined, fallback: number): number {
 // ── App identity ─────────────────────────────────────────────────────────
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-// ── Multi-instance deployment (audit V1/V2) ───────────────────────────────
+// ── Multi-instance deployment (audit V1/V2, R6) ───────────────────────────
 /**
  * Optional Redis connection string. When set, rate-limit windows and the SOS
- * dispatch event hub are meant to be shared across instances rather than being
- * per-process — without it, running two Node processes multiplies every limit
- * by instance count and silently drops emergency broadcasts that crossed a
- * process boundary.
+ * dispatch event hub ARE shared across instances rather than per-process
+ * (R6, session 12): the limiter runs an atomic Lua sliding window on Redis
+ * and the hub bridges broadcasts across pub/sub. Without it, running two
+ * Node processes multiplies every limit by instance count and silently drops
+ * emergency broadcasts that crossed a process boundary — verify with
+ * scripts/smoke-r6.ts (two-instance smoke test).
  *
  * Left undefined, the app runs single-instance by design: the limiter and the
  * hub are in-memory, which is correct for one process on one aaPanel box. The
