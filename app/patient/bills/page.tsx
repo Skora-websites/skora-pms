@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { ReceiptText } from "lucide-react";
+import { ReceiptText, IndianRupee } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
-import { getPatientBills } from "@/lib/queries/patient";
+import { getPatientBills, getPatientPaymentHistory } from "@/lib/queries/patient";
 import { PageHeader, EmptyState, StatusBadge } from "@/components/ui/dashboard-ui";
 import { formatDate, formatINR } from "@/lib/utils";
 
@@ -10,7 +10,11 @@ export const dynamic = "force-dynamic";
 
 export default async function PatientBillsPage() {
   const user = await requireRole(["patient"]);
-  const bills = await getPatientBills(user.id);
+  const [bills, payments] = await Promise.all([
+    getPatientBills(user.id),
+    getPatientPaymentHistory(user.id),
+  ]);
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
   return (
     <div>
@@ -18,6 +22,50 @@ export default async function PatientBillsPage() {
         title="My bills"
         subtitle="Your payment receipts from consultations and tests"
       />
+
+      {payments.length > 0 && (
+        <div className="card mb-4 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-6 py-4">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-600 text-white">
+              <IndianRupee className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Payment history</h2>
+              <p className="text-xs text-slate-400">
+                {payments.length} payment{payments.length === 1 ? "" : "s"} recorded
+              </p>
+            </div>
+            <div className="ml-auto text-right">
+              <p className="text-xs text-slate-500">Total paid</p>
+              <p className="text-lg font-bold text-accent-700">{formatINR(totalPaid)}</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Bill</th>
+                  <th>Method</th>
+                  <th>Reference</th>
+                  <th className="text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id}>
+                    <td>{formatDate(p.date)}</td>
+                    <td className="font-medium text-ink">{p.billNumber}</td>
+                    <td className="capitalize">{p.paymentMethod ?? "—"}</td>
+                    <td className="text-slate-500">{p.referenceNumber ?? "—"}</td>
+                    <td className="text-right font-semibold text-accent-700">{formatINR(p.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {bills.length === 0 ? (
         <EmptyState

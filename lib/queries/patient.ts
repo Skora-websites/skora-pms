@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors } from "@/lib/db/schema";
+import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors, transactions } from "@/lib/db/schema";
 import { todayStr } from "@/lib/utils";
 import { LIST_HARD_CAP } from "@/lib/constants";
 
@@ -26,9 +26,43 @@ export const getPatientBills = cache(async (patientId: number) => {
     .leftJoin(billingTypes, eq(billingTypes.id, billings.billingTypeId))
     .where(and(eq(billings.patientId, patientId), isNull(billings.deletedAt)))
     .orderBy(desc(billings.billDate))
-    // Hard cap (audit P4): newest 500 — the query must not grow without bound.
-    .limit(LIST_HARD_CAP);
   return rows;
+});
+
+/**
+ * Patient's payment history — the individual payment events (one `transactions`
+ * row per collection, type 1 = income) behind their bills, which the bill
+ * summaries alone do not show. Scoped through the bill's patientId (the
+ * transaction's own userId is the OWNING DOCTOR — it is a practice-ledger
+ * row, not a patient-attributed one). Only approved entries are patient-visible;
+ * unapproved/pending rows are internal bookkeeping states.
+ */
+export const getPatientPaymentHistory = cache(async (patientId: number) => {
+  return db
+    .select({
+      id: transactions.id,
+      amount: transactions.amount,
+      date: transactions.date,
+      paymentMethod: transactions.paymentMethod,
+      referenceNumber: transactions.referenceNumber,
+      description: transactions.description,
+      billNumber: billings.billNumber,
+      billId: billings.id,
+    })
+    .from(transactions)
+    .innerJoin(billings, eq(transactions.billingId, billings.id))
+    .where(
+      and(
+        eq(billings.patientId, patientId),
+        isNull(billings.deletedAt),
+        isNull(transactions.deletedAt),
+        eq(transactions.status, "approved"),
+        eq(transactions.type, 1)
+      )
+    )
+    .orderBy(desc(transactions.date), desc(transactions.id))
+    // Hard cap (audit P4): newest 500.
+    .limit(LIST_HARD_CAP);
 });
 
 /** All medications for the given consultations, in one grouped query. */
