@@ -6,6 +6,7 @@ import { getPatientAppointments } from "@/lib/queries/patient";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
 import { formatDate } from "@/lib/utils";
 import { CancelAppointmentButton } from "./cancel-appointment-button";
+import { RescheduleAppointmentButton } from "./reschedule-appointment-button";
 
 export const metadata: Metadata = { title: "Appointments · Patient" };
 export const dynamic = "force-dynamic";
@@ -79,7 +80,14 @@ export default async function PatientAppointmentsPage({
                   <td><StatusBadge status={a.status} /></td>
                   <td className="text-right">
                     {a.status !== "cancelled" && a.status !== "completed" && (
-                      <CancelAppointmentButton appointmentId={a.id} />
+                      <span className="inline-flex items-start gap-1.5">
+                        <RescheduleAppointmentButton
+                          appointmentId={a.id}
+                          currentDate={a.date}
+                          currentTime={a.time}
+                        />
+                        <CancelAppointmentButton appointmentId={a.id} />
+                      </span>
                     )}
                   </td>
                 </tr>

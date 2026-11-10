@@ -60,6 +60,46 @@ function timeInSchedule(timeMin: number, schedule: typeof doctorSchedules.$infer
   return t >= start && t <= endAdj;
 }
 
+/**
+ * Shared availability check for patient booking AND rescheduling: the doctor
+ * must have an active clinic, an active schedule for the weekday, and the
+ * time must fall inside it. Returns a user-facing error message or null.
+ * Extracted from createPatientAppointment so the two flows cannot drift.
+ */
+async function validateSlotAvailability(
+  doctorId: number,
+  date: string,
+  tMin: number
+): Promise<string | null> {
+  const clinics = await db
+    .select({ id: doctorClinics.id })
+    .from(doctorClinics)
+    .where(and(eq(doctorClinics.doctorId, doctorId), eq(doctorClinics.isActive, true)));
+  if (clinics.length === 0) return "This doctor has no active clinic.";
+
+  const schedules = await db
+    .select()
+    .from(doctorSchedules)
+    .where(
+      and(
+        eq(doctorSchedules.dayOfWeek, weekdayName(date) as never),
+        eq(doctorSchedules.isActive, true),
+        inArray(
+          doctorSchedules.doctorClinicId,
+          clinics.map((c) => c.id)
+        )
+      )
+    );
+  if (schedules.length === 0) {
+    return "The doctor is not available on this day. Please choose another date.";
+  }
+  const matching = schedules.find((s) => timeInSchedule(tMin, s));
+  if (!matching) {
+    return "The selected time is outside the doctor's available schedule.";
+  }
+  return null;
+}
+
 export async function createPatientAppointment(
   _prev: PatientBookingState,
   formData: FormData
@@ -104,26 +144,8 @@ export async function createPatientAppointment(
     .where(and(eq(doctorClinics.doctorId, doctorId), eq(doctorClinics.isActive, true)));
   if (clinics.length === 0) return { error: "This doctor has no active clinic." };
 
-  const schedules = await db
-    .select()
-    .from(doctorSchedules)
-    .where(
-      and(
-        eq(doctorSchedules.dayOfWeek, weekdayName(date) as never),
-        eq(doctorSchedules.isActive, true),
-        inArray(
-          doctorSchedules.doctorClinicId,
-          clinics.map((c) => c.id)
-        )
-      )
-    );
-  if (schedules.length === 0) {
-    return { error: "The doctor is not available on this day. Please choose another date." };
-  }
-  const matching = schedules.find((s) => timeInSchedule(tMin, s));
-  if (!matching) {
-    return { error: "The selected time is outside the doctor's available schedule." };
-  }
+  const slotError = await validateSlotAvailability(doctorId, date, tMin);
+  if (slotError) return { error: slotError };
 
   const time = toLegacyTime(timeRaw);
 
@@ -272,6 +294,132 @@ export async function cancelPatientAppointment(appointmentId: number): Promise<P
     userId: appt.doctorId,
     title: "Appointment cancelled by patient",
     message: `${user.name} cancelled the ${appt.date} appointment.`,
+    type: "warning",
+    link: "/doctor/appointments",
+  });
+
+  revalidatePath("/patient");
+  revalidatePath("/patient/appointments");
+  return { error: null };
+}
+
+/**
+ * Patient reschedules one of their own upcoming appointments to a new date
+ * and time with the SAME doctor. Every guard mirrors the booking flow
+ * (availability, duplicates, slot conflict under the doctor-row lock) so a
+ * reschedule can never land where a fresh booking would have been refused.
+ * `timeRaw` is 24-hour "HH:MM" (from <input type="time">); it is stored in
+ * the legacy "H:MM AM/PM" format the rest of the appointment system uses.
+ */
+export async function reschedulePatientAppointment(
+  appointmentId: number,
+  date: string,
+  timeRaw: string
+): Promise<PatientBookingState> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "patient") return { error: "Only patients can reschedule appointments." };
+  if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
+  if (!/^\d{2}:\d{2}$/.test(timeRaw)) return { error: "Invalid time." };
+
+  const [appt] = await db
+    .select({
+      id: appointments.id,
+      status: appointments.status,
+      date: appointments.date,
+      time: appointments.time,
+      doctorId: appointments.doctorId,
+    })
+    .from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, user.id)));
+  if (!appt) return { error: "Appointment not found." };
+  if (appt.status === "cancelled") return { error: "Cancelled appointments cannot be rescheduled." };
+  if (appt.status === "completed") return { error: "Completed appointments cannot be rescheduled." };
+
+  // Business rule: past / already-started appointments cannot be rescheduled
+  // (mirrors the cancel guard — history is not rewritten).
+  const now = new Date();
+  const today = todayStr(now);
+  const tMin = parseTimeToMinutes(timeRaw);
+  if (tMin === null) return { error: "Invalid time." };
+  if (date < today) return { error: "Appointment date must be today or later." };
+  if (date === today && tMin <= now.getHours() * 60 + now.getMinutes()) {
+    return { error: "Appointment time must be in the future." };
+  }
+
+  // A reschedule to the very slot it already occupies is a no-op — refuse it
+  // rather than silently "succeeding" (and tripping the duplicate check on
+  // the appointment itself).
+  const currentMinutes = parseTimeToMinutes(appt.time);
+  if (appt.date === date && currentMinutes === tMin) {
+    return { error: "Pick a different date or time — that is the current appointment slot." };
+  }
+
+  // Same availability rules as booking: active clinic, weekday schedule,
+  // time inside it.
+  const slotError = await validateSlotAvailability(appt.doctorId, date, tMin);
+  if (slotError) return { error: slotError };
+
+  const time = toLegacyTime(timeRaw);
+
+  // Duplicate check against the patient's OTHER appointments (excluding the
+  // one being moved).
+  const duplicate = await findDuplicateBooking({
+    patientId: user.id,
+    date,
+    time,
+    excludeId: appointmentId,
+  });
+  if (duplicate) return { error: duplicateBookingError(duplicate) };
+
+  // Move under the same doctor-row lock as booking — closes the
+  // check-then-update double-booking race.
+  try {
+    await db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, appt.doctorId)).for("update");
+      const [conflict] = await tx
+        .select({ id: appointments.id })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.doctorId, appt.doctorId),
+            eq(appointments.date, date as never),
+            eq(appointments.time, time),
+            ne(appointments.status, "cancelled"),
+            ne(appointments.id, appointmentId) // never conflict with itself
+          )
+        )
+        .limit(1);
+      if (conflict) throw new Error(`Time slot ${time} is already booked.`);
+
+      await tx
+        .update(appointments)
+        .set({ date: date as never, time, updatedAt: now })
+        .where(eq(appointments.id, appointmentId));
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("already booked")) {
+      return { error: err.message };
+    }
+    throw err;
+  }
+
+  void audit.appointmentUpdated(user.id, {
+    source: "patient_reschedule",
+    appointmentId,
+    doctorId: appt.doctorId,
+    fromDate: appt.date,
+    fromTime: appt.time,
+    toDate: date,
+    toTime: time,
+  });
+
+  // Notify the doctor their patient moved the appointment (in-app), fire-and-forget.
+  void notifyUser({
+    userId: appt.doctorId,
+    title: "Appointment rescheduled by patient",
+    message: `${user.name} moved their appointment from ${appt.date} ${appt.time} to ${date} ${time}.`,
     type: "warning",
     link: "/doctor/appointments",
   });
