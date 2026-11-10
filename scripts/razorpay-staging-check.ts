@@ -12,6 +12,13 @@
  *             Razorpay allowlist (frame-src + connect-src). V6 shipped this
  *             behind an isDev flag, so the URL must be a PRODUCTION build
  *             (staging host, or `npm run build && npm run start` locally).
+ *  --verify   AFTER Stage B: proves the Rs.1 order actually FULFILLED -
+ *             latest package_payments row is 'paid' with a payment id, and
+ *             the credited account's users.package_id / trial_ends_at moved
+ *             in step. This is the audit's acceptance criterion, automated.
+ *
+ * NOTE: --verify connects to the live MySQL; it must run with
+ *   npx tsx --conditions react-server scripts/razorpay-staging-check.ts --verify
  *
  * The BROWSER step (the actual acceptance: one Rs.1 test payment through the
  * Checkout modal) is described in docs/staging-razorpay-runbook.md. Nothing
@@ -23,6 +30,8 @@
  */
 
 import "dotenv/config";
+
+import { desc, eq } from "drizzle-orm";
 
 async function checkConfig(): Promise<boolean> {
   const keyId = process.env.RAZORPAY_KEY_ID?.trim() ?? "";
@@ -62,6 +71,94 @@ async function checkOrder(): Promise<boolean> {
     console.error(`FAIL [order]: ${(err as Error).message}`);
     return false;
   }
+}
+
+/**
+ * Post-drill proof: was the Rs.1 order actually FULFILLED end to end?
+ * Reads the latest package_payments rows and checks fulfillment's invariants
+ * on the newest one: status flipped created -> paid, a payment id recorded,
+ * and users.package_id / trial_ends_at extended on the credited account.
+ * This is the SQL stage of the runbook, automated so "did it work?" is one
+ * command instead of pasting SQL. Run it AFTER Stage B (the browser payment).
+ */
+async function checkFulfillment(): Promise<boolean> {
+  // db is imported dynamically because it connects to the live MySQL and the
+  // module needs --conditions react-server when run standalone; keep the rest
+  // of the stages db-free so the config/order/CSP drills work anywhere.
+  const { db } = await import("../lib/db");
+  const { packagePayments, users } = await import("../lib/db/schema");
+
+  const rows = await db
+    .select({
+      id: packagePayments.id,
+      packageId: packagePayments.packageId,
+      packageName: packagePayments.packageName,
+      period: packagePayments.period,
+      amount: packagePayments.amount,
+      status: packagePayments.status,
+      orderId: packagePayments.razorpayOrderId,
+      paymentId: packagePayments.razorpayPaymentId,
+      accessUntil: packagePayments.accessUntil,
+      userId: packagePayments.userId,
+      createdAt: packagePayments.createdAt,
+    })
+    .from(packagePayments)
+    .orderBy(desc(packagePayments.id))
+    .limit(5);
+
+  if (rows.length === 0) {
+    console.error(
+      "FAIL [verify]: no package_payments rows at all - run the drill first (Stage B in docs/staging-razorpay-runbook.md)."
+    );
+    return false;
+  }
+
+  console.log("Latest package payments (newest first):");
+  for (const r of rows) {
+    console.log(
+      `  #${r.id} ${r.orderId} ${r.packageName}(${r.period}) ${(r.amount / 100).toFixed(2)} INR -> ${r.status}` +
+        `${r.paymentId ? ` payment=${r.paymentId}` : ""}` +
+        `${r.accessUntil ? ` accessUntil=${r.accessUntil.toISOString()}` : ""}`
+    );
+  }
+
+  const latest = rows[0];
+  if (latest.status === "created") {
+    console.error(
+      "FAIL [verify]: the newest order is still 'created' - checkout never completed for it.\n" +
+        "  Finish Stage B and rerun, or check the Razorpay dashboard for that order id."
+    );
+    return false;
+  }
+  if (!latest.paymentId) {
+    console.error("FAIL [verify]: latest paid row has no razorpay_payment_id recorded.");
+    return false;
+  }
+
+  const [credited] = await db
+    .select({ id: users.id, packageId: users.packageId, trialEndsAt: users.trialEndsAt })
+    .from(users)
+    .where(eq(users.id, latest.userId))
+    .limit(1);
+  if (!credited) {
+    console.error(`FAIL [verify]: credited user ${latest.userId} not found.`);
+    return false;
+  }
+  const consistent = credited.packageId === latest.packageId &&
+    credited.trialEndsAt !== null &&
+    (!latest.accessUntil || new Date(latest.accessUntil).getTime() === credited.trialEndsAt.getTime());
+  if (!consistent) {
+    console.error(
+      `FAIL [verify]: credited account state disagreed with the payment row ` +
+        `(users.packageId=${credited.packageId ?? "null"}, users.trialEndsAt=${credited.trialEndsAt?.toISOString() ?? "null"}).`
+    );
+    return false;
+  }
+
+  console.log(
+    `PASS [verify]: fulfillment is complete - access extended for user ${credited.id} (users.package_id=${credited.packageId}, trial_ends_at=${credited.trialEndsAt?.toISOString()}).`
+  );
+  return true;
 }
 
 async function checkCsp(baseUrl: string): Promise<boolean> {
@@ -104,7 +201,8 @@ async function main(): Promise<void> {
       "No stage selected. Usage:\n" +
         "  npx tsx scripts/razorpay-staging-check.ts --config\n" +
         "  npx tsx scripts/razorpay-staging-check.ts --config --order\n" +
-        "  npx tsx scripts/razorpay-staging-check.ts --config --url https://your-staging-host"
+        "  npx tsx scripts/razorpay-staging-check.ts --config --url https://your-staging-host\n" +
+        "  npx tsx --conditions react-server scripts/razorpay-staging-check.ts --verify   # AFTER Stage B"
     );
     process.exit(2);
   }
@@ -112,13 +210,19 @@ async function main(): Promise<void> {
   let ok = true;
   if (args.has("--config")) ok = (await checkConfig()) && ok;
   if (args.has("--order")) ok = (await checkOrder()) && ok;
+  if (args.has("--verify")) ok = (await checkFulfillment()) && ok;
   const urlIdx = process.argv.indexOf("--url");
   if (urlIdx !== -1 && process.argv[urlIdx + 1]) {
     ok = (await checkCsp(process.argv[urlIdx + 1])) && ok;
   }
 
   if (ok) {
-    console.log("\nAll requestable stages passed. Finish the drill per docs/staging-razorpay-runbook.md (the Rs.1 payment in the browser).");
+    console.log(
+      "\nAll requestable stages passed." +
+        (args.has("--verify")
+          ? " Staging criterion MET: one live test order completed end to end."
+          : " Finish the drill per docs/staging-razorpay-runbook.md (the Rs.1 payment in the browser).")
+    );
     process.exit(0);
   }
   process.exit(1);

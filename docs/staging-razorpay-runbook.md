@@ -54,15 +54,19 @@ npx tsx scripts/razorpay-staging-check.ts --config --order --url http://localhos
 4. Pay with the test instrument the modal offers (test netbanking / UPI
    "success" flow — no real money).
 5. The modal closes → the client POSTs `/api/packages/verify`.
-6. **Verify fulfillment for real:**
-   - the doctor's panel shows the plan active (guard re-evaluates on
-     refresh), and the trial-expired wall is gone if they were expired;
-   - SQL: `SELECT status, razorpay_payment_id, access_until FROM
-     package_payments ORDER BY id DESC LIMIT 1;` → status `paid`, non-null
-     payment id;
-   - `users.trial_ends_at` moved out and `users.package_id` is the bought
-     package id;
-   - an audit-log row with `metadata->event = "package_purchased"`.
+6. **Verify fulfillment** — one command now:
+   ```bash
+   npx tsx --conditions react-server scripts/razorpay-staging-check.ts --verify
+   ```
+   It reports the last 5 `package_payments` rows, and passes only when the
+   newest one is `status = paid` with a recorded payment id AND the credited
+   account's `users.package_id` / `users.trial_ends_at` actually moved
+   (fulfillment's own invariants, not just a row read). Manual spot check if
+   you want it:
+   `SELECT status, razorpay_payment_id, access_until FROM package_payments
+   ORDER BY id DESC LIMIT 1;`
+   Also the doctor's panel shows the plan active (guard re-evaluates on
+   refresh), and the trial-expired wall is gone if they were expired.
 7. **Webhook redundancy (separate pass):** in the Razorpay dashboard set the
    webhook URL `<staging origin>/api/packages/webhook` with a secret → put it
    in `RAZORPAY_WEBHOOK_SECRET`. Trigger a second purchase and kill the
