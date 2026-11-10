@@ -105,7 +105,7 @@ export default async function TrialExpiredPage() {
                 "Clinic management and staff portal access in one place.",
                 "Secure, cloud-based access to patient medical records.",
                 "E-prescriptions with less paperwork.",
-                "AI-powered smart prescriptions.",
+                "Guided follow-up prioritisation with no-show risk signals.",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs text-brand-800">
