@@ -120,7 +120,7 @@ export async function signupAction(
   if (!otp) return { error: "Please enter the OTP sent to your email." };
   // Rate limit BEFORE verifying the OTP: the signup bucket (3/hour) must
   // also cover failed OTP guesses, not only completed signups.
-  const { allowed, retryAfterMs } = authRateLimit.signup(rawEmail);
+  const { allowed, retryAfterMs } = await authRateLimit.signup(rawEmail);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { error: `Too many signup attempts. Try again in ${minutes} minute(s).` };

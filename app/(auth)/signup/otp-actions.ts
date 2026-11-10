@@ -23,7 +23,7 @@ export async function sendSignupOtp(
     return { error: "Enter a valid email address first." };
   }
 
-  const { allowed, retryAfterMs } = authRateLimit.signup(`otp:${email}`);
+  const { allowed, retryAfterMs } = await authRateLimit.signup(`otp:${email}`);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { error: `Too many OTP requests. Try again in ${minutes} minute(s).` };
@@ -70,7 +70,7 @@ export async function verifySignupOtp(email: string, otp: string): Promise<boole
   // and guards a security decision, so failed attempts must be throttled
   // here — not only in signupAction. 10 guesses per 10-minute OTP window
   // keeps brute-forcing the 6-digit code impractical.
-  const { allowed } = authRateLimit.otpVerify(normalized);
+  const { allowed } = await authRateLimit.otpVerify(normalized);
   if (!allowed) return false;
 
   const [row] = await db

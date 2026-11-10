@@ -1,13 +1,30 @@
 /**
- * In-memory event hub for real-time SOS dispatch.
+ * Event hub for real-time SOS dispatch.
  *
- * Single-instance only. For multi-instance deployments, replace this with a
- * Redis pub/sub (same API shape) — documented upgrade path.
+ * DEFAULT (no REDIS_URL): purely in-process — correct for the documented
+ * single-instance deployment.
+ *
+ * WITH REDIS_URL (audit R6): the registry stays process-local (SSE routes
+ * are inherently local), and every broadcast is ALSO published to a shared
+ * Redis channel. Each instance receives the message and delivers it to its
+ * own listeners — so a broadcast from instance A reaches the doctors whose
+ * SSE streams hang off instance B, which is the acceptance criterion of the
+ * two-instance smoke test. The publisher marks its own messages and skips
+ * them on receipt: local delivery already happened synchronously.
+ *
+ * Failure semantics: a Redis outage never stops the LOCAL delivery path —
+ * the publish is fire-and-forget. "sos:taken"/"sos:cancelled" also have
+ * durable in-app + push channels downstream, so a dropped cross-instance
+ * event degrades to the notifyUser/push fan-out rather than a silent dead
+ * screen (see announceSosToDoctors' callers).
  */
+
+import { randomUUID } from "node:crypto";
 
 import { notifyUser } from "@/lib/notifications";
 import { sendPushToUser } from "@/lib/push/client";
 import { sendNativePushToUser } from "@/lib/push/native";
+import { redisClient } from "@/lib/redis";
 
 export type SosEvent =
   | {
@@ -61,8 +78,86 @@ const openStreams = registry.streams;
 /** Concurrent SSE streams allowed per doctor. One is enough; two tolerates a reconnect race. */
 export const MAX_STREAMS_PER_DOCTOR = 2;
 
+// ── Cross-instance bridge (audit R6) ───────────────────────────────────────
+
+const CHANNEL = "skoracare:sos-hub";
+const INSTANCE_ID = randomUUID();
+
+type BridgeMessage = {
+  /** Who delivered it remotely — the origin instance skips its own message. */
+  from: string;
+  /** Either doctorIds (doctor listeners) or patientId (patient trackers). */
+  doctorIds?: number[];
+  patientId?: number;
+  event: SosEvent;
+};
+
+let bridgeCommitted = false;
+
+let bridgeSubscribed = false;
+
+function ensureBridge(): void {
+  if (bridgeCommitted) return;
+  bridgeCommitted = true;
+  const client = redisClient();
+  if (!client) return;
+  const subscriber = client.duplicate();
+  subscriber.on("message", (_channel, raw) => {
+    try {
+      const msg = JSON.parse(raw) as BridgeMessage;
+      if (msg.from === INSTANCE_ID) return; // delivered locally already
+      if (Array.isArray(msg.doctorIds)) {
+        for (const id of msg.doctorIds) deliverToDoctorLocally(id, msg.event);
+      } else if (typeof msg.patientId === "number") {
+        deliverToPatientLocally(msg.patientId, msg.event);
+      }
+    } catch {
+      registry.swallowedListenerErrors++; // malformed message — surfaced, not silent
+    }
+  });
+  subscriber.subscribe(CHANNEL, (err) => {
+    bridgeSubscribed = !err;
+    if (err) console.error("[sos-hub] Redis bridge subscribe failed; local-only delivery.");
+  });
+}
+
+function publishRemote(msg: Omit<BridgeMessage, "from">): void {
+  ensureBridge();
+  const client = redisClient();
+  if (!client) return;
+  // Fire-and-forget: local delivery already happened; an outage here must
+  // never block a dispatch. Publishing is still tried even if OUR subscribe
+  // errored — other instances' channels still exist.
+  void client.publish(CHANNEL, JSON.stringify({ ...msg, from: INSTANCE_ID })).catch(() => {});
+}
+
+/** Deliver ONLY to this process's listeners (no remote fan-out). */
+function deliverToDoctorLocally(doctorId: number, event: SosEvent) {
+  const set = listeners.get(doctorId);
+  if (!set) return;
+  for (const listener of set) {
+    try {
+      listener(event);
+    } catch {
+      registry.swallowedListenerErrors++;
+    }
+  }
+}
+
+/** Deliver ONLY to this process's patient trackers. */
+function deliverToPatientLocally(patientId: number, event: SosEvent) {
+  patientListeners.get(patientId)?.forEach((l) => {
+    try {
+      l(event);
+    } catch {
+      registry.swallowedListenerErrors++;
+    }
+  });
+}
+
 /** Subscribe a doctor to live events. Returns an unsubscribe function. */
 export function subscribe(doctorId: number, listener: Listener): () => void {
+  ensureBridge();
   // Evict the oldest connection(s) once this doctor is at the cap, so a
   // reconnect storm cannot exhaust the process. The evicted listener's own
   // route handler sees the abort and closes its controller.
@@ -96,28 +191,28 @@ export function subscribe(doctorId: number, listener: Listener): () => void {
   };
 }
 
+/** Push an event to one doctor, here AND on every other instance (audit R6). */
 export function broadcastToDoctor(doctorId: number, event: SosEvent) {
-  const set = listeners.get(doctorId);
-  if (!set) return;
-  for (const listener of set) {
-    try {
-      listener(event);
-    } catch {
-      // A listener error must never break the dispatch — an SSE subscriber
-      // closing its controller mid-enqueue must not stop the others. But a
-      // listener that throws CONSISTENTLY would otherwise stay silent
-      // forever (audit R2), so the count is surfaced.
-      registry.swallowedListenerErrors++;
-    }
-  }
+  // Local first, synchronously: this process's SSE subscribers must get the
+  // emergency even mid-Redis-outage. Then fan out cross-instance.
+  deliverToDoctorLocally(doctorId, event);
+  publishRemote({ doctorIds: [doctorId], event });
 }
 
+/**
+ * Push an event to many doctors. ONE remote publish (not one per doctor):
+ * announcements routinely target the whole discovery candidate set, and the
+ * message already carries the full id list.
+ */
 export function broadcastToMany(doctorIds: number[], event: SosEvent) {
-  for (const id of doctorIds) broadcastToDoctor(id, event);
+  if (doctorIds.length === 0) return;
+  for (const id of doctorIds) deliverToDoctorLocally(id, event);
+  publishRemote({ doctorIds, event });
 }
 
 /** Subscribe a patient's live tracker. Returns an unsubscribe function. */
 export function subscribePatient(patientId: number, listener: Listener): () => void {
+  ensureBridge(); // needed to RECEIVE cross-instance broadcasts on this process
   let set = patientListeners.get(patientId);
   if (!set) {
     set = new Set();
@@ -130,18 +225,10 @@ export function subscribePatient(patientId: number, listener: Listener): () => v
   };
 }
 
-/** Push a status nudge to one patient's open trackers. */
+/** Push a status nudge to one patient's open trackers, here AND cross-instance. */
 export function broadcastToPatient(patientId: number, event: SosEvent) {
-  // A tracker that already closed must never break the notification path for
-  // the others, so each listener is isolated — but the swallow is counted
-  // (audit R2), so a consistently-throwing subscriber is visible.
-  patientListeners.get(patientId)?.forEach((l) => {
-    try {
-      l(event);
-    } catch {
-      registry.swallowedListenerErrors++;
-    }
-  });
+  deliverToPatientLocally(patientId, event);
+  publishRemote({ patientId, event });
 }
 
 /**

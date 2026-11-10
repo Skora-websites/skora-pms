@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const clientKey =
     ip !== "unknown" ? `ip:${ip}` : `token:${authHeader ? authHeader.slice(-16) : "anonymous"}`;
-  const { allowed } = rateLimit(`shule-doctors:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const { allowed } = await rateLimit(`shule-doctors:${clientKey}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

@@ -107,7 +107,7 @@ function withThrottle(
     const user = await actor();
     if (user instanceof Response) return user; // auth failure passes through untouched
 
-    const { allowed, retryAfterMs } = authRateLimit.mobileApi(user.id);
+    const { allowed, retryAfterMs } = await authRateLimit.mobileApi(user.id);
     if (!allowed) {
       return NextResponse.json(
         { error: "Too many requests — slow down and retry shortly." },

@@ -106,7 +106,7 @@ export async function triggerSos(
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
 
-  const { allowed } = authRateLimit.emergency(user.id);
+  const { allowed } = await authRateLimit.emergency(user.id);
   if (!allowed) return { error: "Too many SOS requests. Please wait a minute." };
 
   // Server-side re-trigger guard: if the patient already has an active

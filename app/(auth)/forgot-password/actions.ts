@@ -36,7 +36,7 @@ export async function requestPasswordReset(
   }
   const { email } = parsed.data;
 
-  const { allowed, retryAfterMs } = rateLimit(`pwreset:${email}`, 3, 60 * 60_000);
+  const { allowed, retryAfterMs } = await rateLimit(`pwreset:${email}`, 3, 60 * 60_000);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { error: `Too many reset requests. Try again in ${minutes} minute(s).`, sent: false };

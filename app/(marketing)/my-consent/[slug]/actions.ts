@@ -84,7 +84,7 @@ export async function respondConsent(
     return { error: "Invalid request." };
   }
 
-  const { allowed, retryAfterMs } = authRateLimit.consent(slug);
+  const { allowed, retryAfterMs } = await authRateLimit.consent(slug);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { error: `Too many attempts. Try again in ${minutes} minute(s).` };

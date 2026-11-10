@@ -53,7 +53,7 @@ export async function uploadTestReport(
   // Rate limit (audit V5): this endpoint is token-gated, not authenticated,
   // so bound upload attempts per client IP before any DB or file I/O. Runs
   // first — a throttled caller learns nothing about whether the token is real.
-  const throttle = authRateLimit.vendorUploadIp(await getClientIp());
+  const throttle = await authRateLimit.vendorUploadIp(await getClientIp());
   if (!throttle.allowed) {
     return { error: "Too many upload attempts. Please try again later." };
   }

@@ -30,7 +30,7 @@ export async function bookDemo(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const { allowed, retryAfterMs } = authRateLimit.demo(email);
+  const { allowed, retryAfterMs } = await authRateLimit.demo(email);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { success: false, error: `Too many requests. Try again in ${minutes} minute(s).` };

@@ -77,7 +77,7 @@ export async function sendChatMessage(
 export async function pollChatMessages(sinceId: number) {
   const user = await authedUser();
   if (!(await requireChatView(user))) return [];
-  const { allowed } = authRateLimit.chatPoll(user.id);
+  const { allowed } = await authRateLimit.chatPoll(user.id);
   if (!allowed) {
     // Quietly return nothing so the poller just retries next tick.
     return [];

@@ -44,13 +44,13 @@ export async function loginAction(
       "[login] client IP unresolved (TRUSTED_PROXY_HEADER unset?) — per-IP login throttling is disabled; per-email throttling still applies."
     );
   }
-  const ipCheck = authRateLimit.loginIp(clientIp);
+  const ipCheck = await authRateLimit.loginIp(clientIp);
   if (!ipCheck.allowed) {
     const minutes = Math.ceil(ipCheck.retryAfterMs / 60_000);
     return { error: `Too many login attempts. Try again in ${minutes} minute(s).` };
   }
 
-  const { allowed, retryAfterMs } = authRateLimit.login(email);
+  const { allowed, retryAfterMs } = await authRateLimit.login(email);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return { error: `Too many login attempts. Try again in ${minutes} minute(s).` };

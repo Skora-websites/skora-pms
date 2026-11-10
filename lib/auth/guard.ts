@@ -49,7 +49,7 @@ export async function requireApiRole(
   // route. Same ordering rationale: only an authenticated, in-role caller can
   // consume their budget, and a 429 never masks an auth failure. Mobile routes
   // keep their own identical-budget bucket; the two bind at the same rate.
-  const throttle = authRateLimit.apiGuard(user.id);
+  const throttle = await authRateLimit.apiGuard(user.id);
   if (!throttle.allowed) {
     return new Response(
       JSON.stringify({ error: "Too many requests — slow down and retry shortly." }),

@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   // proxy header configured) — a shared "unknown" bucket would let one
   // client lock out every user on the deployment.
   const clientIp = await getClientIp();
-  const ipCheck = authRateLimit.loginIp(clientIp);
+  const ipCheck = await authRateLimit.loginIp(clientIp);
   if (!ipCheck.allowed) {
     const minutes = Math.ceil(ipCheck.retryAfterMs / 60_000);
     return NextResponse.json(
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { allowed, retryAfterMs } = authRateLimit.login(email);
+  const { allowed, retryAfterMs } = await authRateLimit.login(email);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     return NextResponse.json(
