@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/guard";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import type { NavItem } from "@/components/dashboard/sidebar";
+import { getPatientUnreadCount } from "./notifications/actions";
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/patient", icon: "layout-dashboard", exact: true },
@@ -29,6 +30,7 @@ export default async function PatientLayout({
         email: user.email,
         profilePhotoPath: user.profilePhotoPath,
       }}
+      unreadCount={await getPatientUnreadCount()}
       footerHref="/"
       footerLabel="Back to website"
     >

@@ -134,8 +134,10 @@ test("shells without a destination get an explicit null, never a bounce", () => 
   assert.equal(PAGE_DESTINATIONS.consultationDetailPath.receptionist, null);
   assert.equal(PAGE_DESTINATIONS.consultationDetailPath.patient, null);
   assert.equal(PAGE_DESTINATIONS.consultationDetailPath.super_admin, null);
-  assert.equal(PAGE_DESTINATIONS.notificationsPath.patient, null);
   assert.equal(PAGE_DESTINATIONS.notificationsPath.super_admin, null);
+  // The patient notification centre closes the dead end where a patient's
+  // header bell pointed nowhere despite notifications existing for them.
+  assert.equal(PAGE_DESTINATIONS.notificationsPath.patient, "/patient/notifications");
 });
 
 test("the API purposes admit the shells audit H11 allows and refuse the rest", () => {

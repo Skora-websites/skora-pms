@@ -76,6 +76,8 @@ export function notificationsPath(shell: Shell): string | null {
       return doctorPathToReceptionist("/doctor/notifications");
     case "admin":
       return "/admin/notifications";
+    case "patient":
+      return "/patient/notifications";
     default:
       return null;
   }
