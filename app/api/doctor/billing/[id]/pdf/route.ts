@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { getBillById } from "@/lib/queries/doctor";
 import { audit } from "@/lib/security/audit-log";
 import { getBusinessScope } from "@/lib/auth/scope";
@@ -32,7 +33,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid bill id" }, { status: 400 });
   }
 
-  let doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  let doctorId = resolvePracticeDoctorId(user);
   if (user.role === "admin" || user.role === "manager") {
     // Verify the bill belongs to the caller's business, then render under the
     // bill's owning doctor (clinic letterhead must match the issuing doctor).

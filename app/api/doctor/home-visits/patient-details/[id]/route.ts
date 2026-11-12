@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { getHomeVisitPatientDetail } from "@/lib/queries/doctor";
 
@@ -16,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   // Read scope, not a practice anchor: doctors see strictly their own rows
   // (rule D4); receptionists see the practice they operate in.
-  const anchor = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const anchor = resolvePracticeDoctorId(user);
   const doctorIds =
     user.role === "doctor" ? [user.id] : await getPracticeDoctorIds(anchor);
 

@@ -13,6 +13,8 @@ import {
   sessions,
   users,
 } from "@/lib/db/schema";
+import { todayStr } from "@/lib/utils";
+import { WEEK_DAYS } from "@/lib/constants";
 
 /**
  * Derived analytics for the owner/manager dashboards — the "rates layer" the
@@ -35,14 +37,8 @@ const RANGE_DAYS = 30;
 function windowStart(days = RANGE_DAYS): string {
   const d = new Date();
   d.setDate(d.getDate() - (days - 1));
-  return d.toISOString().slice(0, 10);
+  return todayStr(d);
 }
-
-const todayStr = () => new Date().toISOString().slice(0, 10);
-
-const WEEKDAY_ENUM = [
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-] as const;
 
 export type Rates = {
   collectionRatePct: number | null; // null = no billing activity in the window
@@ -100,8 +96,8 @@ export const getRates = cache(
       .where(and(apptTenancy, eq(appointments.date, today), ne(appointments.status, "cancelled")));
 
     // Capacity: today's weekday's active schedules at the scoped clinics.
-    // today.getDay(): 0=Sunday…6=Saturday → WEEKDAY_ENUM order.
-    const weekday = WEEKDAY_ENUM[(new Date().getDay() + 6) % 7];
+    // today.getDay(): 0=Sunday…6=Saturday → WEEK_DAYS order.
+    const weekday = WEEK_DAYS[(new Date().getDay() + 6) % 7];
     const scheduleRows = await db
       .select({ maxPatients: doctorSchedules.maxPatients })
       .from(doctorSchedules)

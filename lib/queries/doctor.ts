@@ -32,19 +32,7 @@ import { todayStr } from "@/lib/utils";
 
 // ── Shared helpers (doctor-id resolution + list pagination) ─────────────────
 
-/**
- * Single source of truth for "whose data am I looking at" (F-07).
- * Receptionists AND admins are practice staff attached to the practice owner
- * via `user.doctorId`; doctors act as themselves.
- */
-export function resolvePracticeDoctorId(user: { role: string; id: number; doctorId: number | null }): number {
-  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
-}
-
-/** True for practice-wide viewers (receptionists) — they get the getPractice* query variants. */
-export function isPracticeWideUser(role: string): boolean {
-  return role === "receptionist";
-}
+export { resolvePracticeDoctorId, isPracticeWideUser } from "@/lib/auth/user";
 
 /** Pagination params for dashboard list queries (F-04). */
 export type ListPage = { page?: number; pageSize?: number };
@@ -115,23 +103,17 @@ async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit
   }));
 }
 
-export const getTodaysAppointments = cache(async (doctorId: number) => {
+export const getTodaysAppointments = cache(async (target: number | number[]) => {
+  const ids = Array.isArray(target) ? target : [target];
+  if (ids.length === 0) return [];
   const today = todayStr();
   return appointmentRows(
-    and(eq(appointments.doctorId, doctorId), eq(appointments.date, today)),
+    and(inArray(appointments.doctorId, ids), eq(appointments.date, today)),
     asc(appointments.time)
   );
 });
 
-/** Today's appointments across all practice doctors (receptionist view). */
-export const getPracticeTodaysAppointments = cache(async (doctorIds: number[]) => {
-  const today = todayStr();
-  if (doctorIds.length === 0) return [];
-  return appointmentRows(
-    and(inArray(appointments.doctorId, doctorIds), eq(appointments.date, today)),
-    asc(appointments.time)
-  );
-});
+export const getPracticeTodaysAppointments = getTodaysAppointments;
 
 /** All practice doctors' appointments (receptionist view). */
 export const getPracticeAppointments = cache(
@@ -154,24 +136,17 @@ export const getPracticeAppointments = cache(
   }
 );
 
-export const getRecentAppointments = cache(async (doctorId: number, limit = 5) => {
-  // "Recent" = most recently BOOKED first (new > old), not by visit date.
-  // The limit is pushed into SQL so the dashboard never transfers the whole
-  // appointment history just to render 5 cards (F-10).
-  return appointmentRows(eq(appointments.doctorId, doctorId), [
-    desc(appointments.createdAt),
-    desc(appointments.id),
-  ], limit);
+export const getRecentAppointments = cache(async (target: number | number[], limit = 5) => {
+  const ids = Array.isArray(target) ? target : [target];
+  if (ids.length === 0) return [];
+  return appointmentRows(
+    inArray(appointments.doctorId, ids),
+    [desc(appointments.createdAt), desc(appointments.id)],
+    limit
+  );
 });
 
-/** Recently booked across all practice doctors (receptionist view). */
-export const getPracticeRecentAppointments = cache(async (doctorIds: number[], limit = 5) => {
-  if (doctorIds.length === 0) return [];
-  return appointmentRows(inArray(appointments.doctorId, doctorIds), [
-    desc(appointments.createdAt),
-    desc(appointments.id),
-  ], limit);
-});
+export const getPracticeRecentAppointments = getRecentAppointments;
 
 /** All practice doctors' online visits (receptionist view). */
 export const getPracticeOnlineConsultations = cache(

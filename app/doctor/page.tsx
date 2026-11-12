@@ -4,8 +4,6 @@ import { requireRole } from "@/lib/auth/guard";
 import {
   getTodaysAppointments,
   getRecentAppointments,
-  getPracticeTodaysAppointments,
-  getPracticeRecentAppointments,
   resolvePracticeDoctorId,
   isPracticeWideUser,
 } from "@/lib/queries/doctor";
@@ -31,12 +29,8 @@ export default async function DoctorDashboardPage() {
   const statsScope = isReceptionist ? practiceIds : [user.id];
 
   const [todays, recent, stats] = await Promise.all([
-    isReceptionist
-      ? getPracticeTodaysAppointments(practiceIds)
-      : getTodaysAppointments(doctorId),
-    isReceptionist
-      ? getPracticeRecentAppointments(practiceIds, 6)
-      : getRecentAppointments(doctorId, 6),
+    getTodaysAppointments(statsScope),
+    getRecentAppointments(statsScope, 6),
     getDashboardStats(statsScope),
   ]);
 

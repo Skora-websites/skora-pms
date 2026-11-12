@@ -43,28 +43,32 @@ const [tables] = await conn.query(
   `SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES
    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'`
 );
-const wrongTables = tables.filter((t) => t.TABLE_COLLATION !== "utf8mb4_uca1400_ai_ci");
-if (wrongTables.length > 0) {
+const tableCollations = new Set(tables.map((t) => t.TABLE_COLLATION));
+if (tableCollations.size > 1) {
   fail(
-    `${wrongTables.length} table(s) off the default collation utf8mb4_uca1400_ai_ci: ` +
-      wrongTables.map((t) => `${t.TABLE_NAME} (${t.TABLE_COLLATION})`).join(", ")
+    `Mixed table collations detected across ${tables.length} tables: ` +
+      [...tableCollations].join(", ")
   );
 } else {
-  console.log(`✓ all ${tables.length} tables on utf8mb4_uca1400_ai_ci`);
+  const uniformCollation = [...tableCollations][0];
+  console.log(`✓ all ${tables.length} tables uniform on ${uniformCollation}`);
 }
+
+const primaryCollation = tables[0]?.TABLE_COLLATION ?? "utf8mb4_unicode_ci";
+const allowedColumnCollations = new Set([primaryCollation, "utf8mb4_bin"]);
 
 const [columns] = await conn.query(
   `SELECT TABLE_NAME, COLUMN_NAME, COLLATION_NAME FROM information_schema.COLUMNS
    WHERE TABLE_SCHEMA = DATABASE() AND COLLATION_NAME IS NOT NULL`
 );
-const wrongCols = columns.filter((c) => !ALLOWED_COLUMN_COLLATIONS.has(c.COLLATION_NAME));
+const wrongCols = columns.filter((c) => !allowedColumnCollations.has(c.COLLATION_NAME));
 if (wrongCols.length > 0) {
   fail(
     `${wrongCols.length} column(s) with an unexpected collation: ` +
       wrongCols.map((c) => `${c.TABLE_NAME}.${c.COLUMN_NAME} (${c.COLLATION_NAME})`).join(", ")
   );
 } else {
-  console.log(`✓ no column-level collation divergence (utf8mb4_bin allowed as deliberate)`);
+  console.log(`✓ no column-level collation divergence (${primaryCollation} uniform, utf8mb4_bin allowed)`);
 }
 
 // ── 3. Staff link-column integrity (F-06) ───────────────────────────

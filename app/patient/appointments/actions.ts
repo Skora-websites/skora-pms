@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
-import { invalidateSlotCache } from "@/lib/queries/available-slots";
+import {
+  invalidateSlotCache,
+  normalizeTime,
+  parseTimeToMinutes,
+  weekdayName,
+} from "@/lib/queries/available-slots";
 import { getCurrentUser } from "@/lib/auth/user";
 import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
 import { sendMail } from "@/lib/mail/send";
@@ -14,40 +19,6 @@ import { audit } from "@/lib/security/audit-log";
 import { todayStr } from "@/lib/utils";
 
 export type PatientBookingState = { error: string | null };
-
-function parseTimeToMinutes(t: string): number | null {
-  const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = Number(m[2]);
-  const meridiem = m[3]?.toUpperCase();
-  if (meridiem) {
-    if (h < 1 || h > 12) return null;
-    if (meridiem === "PM" && h !== 12) h += 12;
-    if (meridiem === "AM" && h === 12) h = 0;
-  } else {
-    if (h > 23) return null;
-  }
-  if (min > 59) return null;
-  return h * 60 + min;
-}
-
-function toLegacyTime(time: string): string {
-  const m = time.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return time;
-  let h = Number(m[1]);
-  const min = m[2];
-  const meridiem = h >= 12 ? "PM" : "AM";
-  if (h === 0) h = 12;
-  else if (h > 12) h -= 12;
-  return `${h}:${min} ${meridiem}`;
-}
-
-function weekdayName(dateStr: string): string {
-  return new Date(`${dateStr}T00:00:00`)
-    .toLocaleDateString("en-US", { weekday: "long" })
-    .toLowerCase();
-}
 
 function timeInSchedule(timeMin: number, schedule: typeof doctorSchedules.$inferSelect): boolean {
   if (schedule.is24Hours) return true;
@@ -149,7 +120,7 @@ export async function createPatientAppointment(
   const slotError = await validateSlotAvailability(doctorId, date, tMin);
   if (slotError) return { error: slotError };
 
-  const time = toLegacyTime(timeRaw);
+  const time = normalizeTime(timeRaw);
 
   // ── Duplicates finder: same patient already booked at this date + time ──
   const duplicate = await findDuplicateBooking({ patientId: user.id, date, time });
@@ -368,7 +339,7 @@ export async function reschedulePatientAppointment(
   const slotError = await validateSlotAvailability(appt.doctorId, date, tMin);
   if (slotError) return { error: slotError };
 
-  const time = toLegacyTime(timeRaw);
+  const time = normalizeTime(timeRaw);
 
   // Duplicate check against the patient's OTHER appointments (excluding the
   // one being moved).

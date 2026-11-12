@@ -2,7 +2,8 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sosOffers, sosRequests, users, sosCases } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
-import { maskPatient, resolveDoctorId, SOS_TTL_MIN } from "@/lib/dispatch/geo";
+import { maskPatient } from "@/lib/dispatch/geo";
+import { SOS_TTL_MIN } from "@/lib/config";
 import { apiError, apiOk } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
@@ -31,7 +32,7 @@ export async function GET() {
   if (user instanceof Response) {
     return apiError(user.status === 401 ? "Unauthorized" : "Forbidden", user.status);
   }
-  const doctorId = resolveDoctorId(user);
+  const doctorId = user.id;
 
   // The TTL bound — a broadcast older than this is already expired, so a
   // stale offer must not keep ringing in the feed.

@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireRole } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { and, eq, ne } from "drizzle-orm";
 import { categories, blogs, blogImages } from "@/lib/db/schema";
@@ -16,10 +15,7 @@ import { saveUploadedImage, deleteStoredUpload } from "@/lib/uploads/media";
 export type AdminActionResult = { error: string | null };
 
 async function requireAdmin() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "super_admin") redirect("/login");
-  return user;
+  return requireRole(["super_admin"]);
 }
 
 // ── Blogs (legacy `BlogController` parity) ──────────────────────────────────

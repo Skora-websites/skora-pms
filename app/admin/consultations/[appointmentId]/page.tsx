@@ -4,7 +4,7 @@ import { requireAdminTier } from "@/lib/auth/guard";
 import { PageHeader } from "@/components/ui/dashboard-ui";
 import { Stethoscope } from "lucide-react";
 import { ConsultationDetailView } from "./consultation-detail-view";
-import { getConsultationRecordForAdmin } from "./actions";
+import { getConsultationRecordForAdmin } from "@/lib/queries/admin";
 
 export const metadata: Metadata = { title: "Consultation · Business" };
 

@@ -107,11 +107,3 @@ export async function searchIndia(kind: IndiaKind, query: string, limit = 10): P
   return { data: searchDataset(kind, q, limit), cached: false, provider: "dataset", notice: NOTICE };
 }
 
-// Named wrappers — the seven consultation-form domains.
-export const searchIndiaMedicines = (q: string, limit?: number) => searchIndia("medicines", q, limit);
-export const searchIndiaSymptoms = (q: string, limit?: number) => searchIndia("symptoms", q, limit);
-export const searchIndiaExaminations = (q: string, limit?: number) => searchIndia("examinations", q, limit);
-export const searchIndiaDiagnoses = (q: string, limit?: number) => searchIndia("diagnoses", q, limit);
-export const searchIndiaLabTests = (q: string, limit?: number) => searchIndia("lab-tests", q, limit);
-export const searchIndiaHistory = (q: string, limit?: number) => searchIndia("history", q, limit);
-export const searchIndiaInstructions = (q: string, limit?: number) => searchIndia("instructions", q, limit);

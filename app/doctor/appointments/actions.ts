@@ -23,52 +23,18 @@ import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
 import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
-import { invalidateSlotCache } from "@/lib/queries/available-slots";
+import {
+  invalidateSlotCache,
+  normalizeTime,
+  parseTimeToMinutes,
+  weekdayName,
+} from "@/lib/queries/available-slots";
 import { todayStr } from "@/lib/utils";
+import { isBloodGroup, isCaseType, isConsentType } from "@/lib/constants";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
 
 export type AppointmentActionResult = { error: string | null };
-
-const CASE_TYPES = ["clinical_visit", "home_visit", "online_visit", "on_call_visit"] as const;
-const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const CONSENT_TYPES = ["otp", "consent", "upload", "skipped", "email"];
-
-/** "h:mm AM/PM" or "HH:MM" -> minutes since midnight, or null. */
-function parseTimeToMinutes(t: string): number | null {
-  const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = Number(m[2]);
-  const meridiem = m[3]?.toUpperCase();
-  if (meridiem) {
-    if (h < 1 || h > 12) return null;
-    if (meridiem === "PM" && h !== 12) h += 12;
-    if (meridiem === "AM" && h === 12) h = 0;
-  } else {
-    if (h > 23) return null;
-  }
-  if (min > 59) return null;
-  return h * 60 + min;
-}
-
-/** "HH:MM" (24h) -> "h:mm AM/PM" matching legacy storage format. */
-function toLegacyTime(time: string): string {
-  const m = time.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return time;
-  let h = Number(m[1]);
-  const min = m[2];
-  const meridiem = h >= 12 ? "PM" : "AM";
-  if (h === 0) h = 12;
-  else if (h > 12) h -= 12;
-  return `${h}:${min} ${meridiem}`;
-}
-
-function weekdayName(dateStr: string): string {
-  return new Date(`${dateStr}T00:00:00`)
-    .toLocaleDateString("en-US", { weekday: "long" })
-    .toLowerCase();
-}
 
 /** Active clinics the doctor practices at — owned or joined (member doctors). */
 async function getActiveClinics(doctorId: number, clinicId?: number | null) {
@@ -289,9 +255,9 @@ export async function createAppointment(
     return { error: "Appointment time must be in the future." };
   }
 
-  if (!CASE_TYPES.includes(caseType as never)) return { error: "Invalid case type." };
-  if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup)) return { error: "Invalid blood group." };
-  if (consentType && !CONSENT_TYPES.includes(consentType)) return { error: "Invalid consent type." };
+  if (!isCaseType(caseType)) return { error: "Invalid case type." };
+  if (bloodGroup && !isBloodGroup(bloodGroup)) return { error: "Invalid blood group." };
+  if (consentType && !isConsentType(consentType)) return { error: "Invalid consent type." };
   if (bp && !/^\d{2,3}\/\d{2,3}$/.test(bp)) return { error: "BP must be like 120/80." };
 
   const weight = weightRaw ? Number(weightRaw) : null;
@@ -318,7 +284,7 @@ export async function createAppointment(
   if (!patientId && !patientString) return { error: "Select a patient or add a walk-in name." };
 
   // ── Time-slot conflict (same doctor, date, time; exclude cancelled) ──
-  const time = toLegacyTime(timeRaw);
+  const time = normalizeTime(timeRaw);
   const conflict = await findTimeConflict(effectiveDoctorId, date, time);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
 
@@ -536,8 +502,8 @@ export async function updateAppointment(
     return { error: "Appointment time must be in the future." };
   }
 
-  if (!CASE_TYPES.includes(caseType as never)) return { error: "Invalid case type." };
-  if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup)) return { error: "Invalid blood group." };
+  if (!isCaseType(caseType)) return { error: "Invalid case type." };
+  if (bloodGroup && !isBloodGroup(bloodGroup)) return { error: "Invalid blood group." };
   if (bp && !/^\d{2,3}\/\d{2,3}$/.test(bp)) return { error: "BP must be like 120/80." };
 
   const weight = weightRaw ? Number(weightRaw) : null;
@@ -582,7 +548,7 @@ export async function updateAppointment(
     effectiveDoctorId = current.doctorId;
   }
 
-  const time = toLegacyTime(timeRaw);
+  const time = normalizeTime(timeRaw);
   const conflict = await findTimeConflict(effectiveDoctorId, date, time, appointmentId);
   if (conflict) return { error: `Time slot ${time} is already booked.` };
 

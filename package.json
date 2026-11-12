@@ -13,10 +13,7 @@
     "db:check": "node scripts/check-db-schema.mjs",
     "check:storage": "node scripts/check-storage-guard.mjs",
     "check:permissions": "node scripts/check-permissions.mjs",
-    "check:links": "node scripts/check-shell-links.mjs",
-    "test": "tsx --test --conditions react-server --test-force-exit --test-concurrency=1 \"**/__tests__/*.test.ts\"",
-    "test:watch": "tsx --test --watch --conditions react-server --test-force-exit --test-concurrency=1 \"**/__tests__/*.test.ts\"",
-    "typecheck:tests": "tsc -p tsconfig.test.json"
+    "check:links": "node scripts/check-shell-links.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

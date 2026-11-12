@@ -3,7 +3,8 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sosOffers, sosRequests, users, sosCases } from "@/lib/db/schema";
 import { requireApiDoctorOnly } from "@/lib/auth/guard";
-import { maskPatient, resolveDoctorId, SOS_TTL_MIN } from "@/lib/dispatch/geo";
+import { maskPatient } from "@/lib/dispatch/geo";
+import { SOS_TTL_MIN } from "@/lib/config";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function GET() {
   // deliberate product boundary the underlying endpoint must share.
   const user = await requireApiDoctorOnly();
   if (user instanceof Response) return user;
-  const doctorId = resolveDoctorId(user);
+  const doctorId = user.id;
 
   const ttlCutoff = new Date(Date.now() - SOS_TTL_MIN * 60_000);
   const rows = await db

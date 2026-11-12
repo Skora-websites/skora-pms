@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import ExcelJS from "exceljs";
-import { getCurrentUser } from "@/lib/auth/user";
-import { redirect } from "next/navigation";
+import { requireRole } from "@/lib/auth/guard";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { symptoms, examinations, diagnoses, labTests, medicines } from "@/lib/db/schema";
@@ -15,10 +14,7 @@ import { audit } from "@/lib/security/audit-log";
 export type AdminActionResult = { error: string | null };
 
 async function requireAdmin() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "super_admin") redirect("/login");
-  return user;
+  return requireRole(["super_admin"]);
 }
 
 // ── Master data CRUD (legacy `MasterController` parity) ─────────────────────

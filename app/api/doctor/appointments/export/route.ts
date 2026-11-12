@@ -3,6 +3,7 @@ import { and, desc, eq, gte, inArray, like, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, users } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { audit } from "@/lib/security/audit-log";
 import { todayStr, sanitizeSpreadsheetCell } from "@/lib/utils";
 
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   // `appointments` module; this endpoint enforces the same (audit F-01).
   const user = await requireApiPermission(["doctor", "receptionist"], "appointments");
   if (user instanceof Response) return user;
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   const url = new URL(request.url);
   const status = url.searchParams.get("status") ?? null;

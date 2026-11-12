@@ -5,6 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testBookings } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
@@ -39,11 +40,9 @@ export async function GET(
   // Row-level scope: staff act as one doctor; the admin tier acts across the
   // doctors of the businesses it owns/is assigned to.
   const doctorIds =
-    user.role === "receptionist"
-      ? [user.doctorId ?? user.id]
-      : user.role === "doctor"
-        ? [user.id]
-        : (await getBusinessScope()).doctorIds;
+    user.role === "receptionist" || user.role === "doctor"
+      ? [resolvePracticeDoctorId(user)]
+      : (await getBusinessScope()).doctorIds;
 
   const { id } = await params;
   const bookingId = Number(id);

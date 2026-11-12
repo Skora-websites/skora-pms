@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireRole } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { users, permissions, modelHasPermissions } from "@/lib/db/schema";
@@ -15,10 +14,7 @@ export type AdminActionResult = { error: string | null };
 const USER_MODEL = "App\\Models\\User";
 
 async function requireAdmin() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "super_admin") redirect("/login");
-  return user;
+  return requireRole(["super_admin"]);
 }
 
 // ── Doctor permissions sync (legacy `syncDoctorPermissions`) ────────────────

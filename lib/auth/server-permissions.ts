@@ -10,8 +10,7 @@ import "server-only";
  */
 
 import { redirect } from "next/navigation";
-import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
-import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired, resolvePracticeDoctorId } from "./user";
 
 /**
  * Default module permissions a brand-new doctor gets so the dashboard is

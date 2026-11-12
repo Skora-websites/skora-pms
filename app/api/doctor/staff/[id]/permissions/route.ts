@@ -3,6 +3,7 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { permissions, modelHasPermissions, users } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // (`roles-permissions`, audit F-01).
   const user = await requireApiPermission(["doctor", "receptionist"], "roles-permissions");
   if (user instanceof Response) return user;
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   const { id } = await params;
   const staffId = Number(id);

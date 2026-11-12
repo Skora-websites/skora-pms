@@ -1,0 +1,135 @@
+API_ID,Method,Endpoint,Module,Auth_Required,Auth_Type,Status,HTTP_Status,Blocking_Reason,Code_Review_Finding
+SYS-001,GET,/api/health,System,No,None,BLOCKED,-,MySQL not running (ECONNREFUSED),Checks DB ping + storage write-delete probe; returns 200 if both up else 503; leaks no config details
+SYS-002,GET,/api/cron/expire-sos,System,Yes,Bearer PAT,BLOCKED,-,MySQL not running,Expires stale SOS requests; authenticates via Bearer PAT or x-vercel-cron header; calls dispatch expiry sweep
+SYS-003,GET,/api/public/file/[...path],System,No,None,BLOCKED,-,MySQL not running,Serves landing/blog images only; ALLOWED_DIRS allowlist; MIME allowlist (jpg/png/webp/gif no SVG); immutable cache
+SYS-004,GET,/api/consents/[slug]/file,System,Yes,Session cookie or slug token,BLOCKED,-,MySQL not running,Slug-bound consent artifact; no-store; path containment enforced; ownership check
+SYS-005,GET,/api/doctors/[id]/photo,System,No,None (public profile photo),BLOCKED,-,MySQL not running,Doctor public profile photo; no-store but public-facing
+SYS-006,GET,/api/medicines/search,System,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,Medicine name autocomplete; session-gated; Drizzle parameterized query
+SYS-007,GET,/api/prescriptions/[consultationId],System,Yes,Session cookie + ownership,BLOCKED,-,MySQL not running,Prescription document access; ownership check before serving
+PAT-001,GET,/api/patient/available-slots,Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Available appointment slots; patient-scoped; pagination
+PAT-002,GET,/api/patient/test-reports/[id],Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient lab test report; ownership check; no-store
+PAT-003,POST,/api/patient/test-reports/[id]/summarize,Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Deterministic test summary extractor; patient-scoped ownership; no external AI dependency
+PAT-004,GET,/api/patient/sos/stream,Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,SSE long-lived stream; patient SOS status updates; no-store; role-scoped
+PAT-005,GET,/api/patient/sos/status/[id],Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,SOS request status polling; patient ownership check
+PAT-006,GET,/api/patient/sos/status/[id],Patient (Web),Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Duplicate of PAT-005 route variant (same path - mobile vs web namespace)
+PKG-001,POST,/api/packages/order,Packages,Yes,Session cookie,BLOCKED,-,MySQL not running,Razorpay order creation; session-gated; amount validation; idempotent
+PKG-002,POST,/api/packages/verify,Packages,Yes,Session cookie,BLOCKED,-,MySQL not running,Payment verification after checkout; signature check; idempotent fulfillment
+PKG-003,POST,/api/packages/webhook,Packages,No,Razorpay HMAC signature,BLOCKED,-,MySQL not running,Razorpay webhook; raw body read before parse for HMAC; idempotent fulfillPackagePayment; retries on 5xx
+INT-001,GET,/api/integrations/email-check,Integrations,Yes,Session cookie (doctor/receptionist/admin/manager/patient),BLOCKED,-,MySQL not running,Email deliverability check; delegates to public-apis integration; 502 on upstream failure
+INT-002,POST,/api/integrations/email-check,Integrations,Yes,Session cookie (doctor/receptionist/admin/manager),BLOCKED,-,MySQL not running,Name hint analytics; role-gated
+INT-003,GET,/api/integrations/geo-data,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Geo reference data proxy; external API backed
+INT-004,GET,/api/integrations/geocode,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Geocoding proxy; external API backed
+INT-005,GET,/api/integrations/health,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Integration flags health (kill-switches); session-gated; not the same as /api/health
+INT-006,GET,/api/integrations/holidays,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Indian holidays reference data; external API backed; HOLIDAY_STATE_DEFAULT env
+INT-007,GET,/api/integrations/india,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Indian clinical data proxy (diagnoses/medicines/symptoms/lab-tests); merged with snapshot
+INT-008,GET,/api/integrations/pincode,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,India pincode lookup; external API backed
+INT-009,GET,/api/integrations/qr,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,QR code generation; external API backed
+INT-010,GET,/api/integrations/reference,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Reference data proxy; external API backed
+INT-011,GET,/api/integrations/weather,Integrations,Yes,Session cookie,BLOCKED,-,MySQL not running,Weather data proxy; external API backed
+SHL-001,GET,/api/shule/doctors,Integration PAT,Yes,Bearer PAT,BLOCKED,-,MySQL not running,Doctor directory for Shule integration; tenant-scoped; staff-tier only; 120 req/min rate limit; unit tests PASS (6/6)
+CRN-001,GET,/api/cron/expire-sos,Cron,Yes,Bearer PAT,BLOCKED,-,MySQL not running,See SYS-002 — same endpoint
+DOC-001,GET,/api/doctor/appointments/export,Doctor Panel,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,CSV/XLSX export of appointments; clinic-scoped; sanitized export
+DOC-002,GET,/api/doctor/appointments/booked-times,Doctor Panel,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,Booked time slots for calendar; clinic-scoped
+DOC-003,GET,/api/doctor/appointments/[id]/consent-file,Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Consent file for specific appointment; ownership check
+DOC-004,GET,/api/doctor/billing/[id]/pdf,Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Billing PDF via react-pdf; ownership check
+DOC-005,GET,/api/doctor/clinic-logo/[id],Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Clinic logo serving; doctor ownership check
+DOC-006,GET,/api/doctor/consult-pdf,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Consultation PDF generation; clinic-scoped
+DOC-007,GET,/api/doctor/home-visits/patient-details/[id],Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Patient details for home visit; scope-checked
+DOC-008,GET,/api/doctor/income-expense/export,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Income/expense CSV export; clinic-scoped
+DOC-009,POST,/api/doctor/income-expense/export,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Income/expense export with filter parameters; clinic-scoped
+DOC-010,GET,/api/doctor/income-expense/[id]/file,Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Income/expense receipt file; ownership check
+DOC-011,GET,/api/doctor/patients/export,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Patient list CSV export; clinic-scoped; sanitized
+DOC-012,GET,/api/doctor/patients/[id]/photo,Doctor Panel,Yes,Session cookie (doctor/receptionist) + ownership,BLOCKED,-,MySQL not running,Patient photo; ownership check; no-store
+DOC-013,GET,/api/doctor/profile/photo,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor own profile photo; authenticated
+DOC-014,GET,/api/doctor/profile/signature,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor signature image; authenticated
+DOC-015,GET,/api/doctor/sos/stream,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,SSE long-lived stream for doctor SOS feed; role-scoped
+DOC-016,GET,/api/doctor/sos/status,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Current SOS duty status; doctor-scoped
+DOC-017,GET,/api/doctor/staff/[id]/permissions,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Staff member permission set; clinic owner only
+DOC-018,GET,/api/doctor/staff/attendance,Doctor Panel,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,Staff attendance records; clinic-scoped
+DOC-019,GET,/api/doctor/staff/attendance/report,Doctor Panel,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Attendance report export; clinic-scoped
+DOC-020,GET,/api/doctor/test-bookings/[id]/report,Doctor Panel,Yes,Session cookie (doctor/receptionist) + ownership,BLOCKED,-,MySQL not running,Lab test booking report file; ownership check
+DOC-021,GET,/api/doctor/test-bookings/patient-details,Doctor Panel,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,Patient details for test booking form; clinic-scoped
+DOC-022,GET,/api/doctor/test-bookings/suggestions,Doctor Panel,Yes,Session cookie (doctor/receptionist),BLOCKED,-,MySQL not running,Test name autocomplete suggestions; clinic-scoped
+DOC-023,GET,/api/doctor/home-visits/patient-details/[id],Doctor Panel,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,See DOC-007 — same endpoint listed for completeness
+SAP-001,GET,/api/super-admin/file/[...path],Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,File serving for super_admin; path containment enforced; restrictive headers
+SAP-002,GET,/api/super-admin/masters/[kind]/export,Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Master data export by kind; super_admin only
+SAP-003,GET,/api/super-admin/support/export,Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Support tickets export; super_admin only
+MOB-SES-001,POST,/api/mobile/session,Mobile Session,No (login endpoint),None required (credential auth),BLOCKED,-,MySQL not running,JSON login for mobile client; same rules as web login action; rate limiting per-email + per-IP; audit log; session cookie
+MOB-SES-002,GET,/api/mobile/session,Mobile Session,Yes,Session cookie,BLOCKED,-,MySQL not running,Who-am-I for mobile; returns user + permissions; 401 on revoked/expired session
+MOB-SES-003,DELETE,/api/mobile/session,Mobile Session,Yes,Session cookie,BLOCKED,-,MySQL not running,Mobile logout; idempotent; clears cookie and revokes session row
+MOB-DEV-001,POST,/api/mobile/device-tokens,Mobile Device,Yes,Session cookie,BLOCKED,-,MySQL not running,Register push notification token; upsert to device_tokens; deduplication
+MOB-DEV-002,DELETE,/api/mobile/device-tokens,Mobile Device,Yes,Session cookie,BLOCKED,-,MySQL not running,Unregister push token; removes caller's own device row
+MOB-PAT-001,GET,/api/mobile/patient/home,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient home screen data; patient-scoped
+MOB-PAT-002,GET,/api/mobile/patient/doctors,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Available doctors list; patient-scoped
+MOB-PAT-003,GET,/api/mobile/patient/available-slots,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Available slots; delegates to same lib/queries/available-slots as web route
+MOB-PAT-004,GET,/api/mobile/patient/appointments,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient appointment history; patient-ownership-scoped
+MOB-PAT-005,POST,/api/mobile/patient/appointments,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Book appointment; patient-scoped; zod validation
+MOB-PAT-006,POST,/api/mobile/patient/appointments/[id]/cancel,Mobile Patient,Yes,Session cookie (patient) + ownership,BLOCKED,-,MySQL not running,Cancel appointment; patient ownership check
+MOB-PAT-007,GET,/api/mobile/patient/prescriptions,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient prescriptions list; patient-scoped
+MOB-PAT-008,GET,/api/mobile/patient/records,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Medical records; patient-scoped
+MOB-PAT-009,GET,/api/mobile/patient/test-reports,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Lab test reports list; patient-scoped
+MOB-PAT-010,GET,/api/mobile/patient/bills,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient bills; patient-scoped; filters internal rows
+MOB-PAT-011,GET,/api/mobile/patient/emergency/history,Mobile Patient,Yes,Session cookie (patient),BLOCKED,-,MySQL not running,Patient SOS history; patient-scoped
+MOB-PAT-012,POST,/api/mobile/patient/sos/[id]/location,Mobile Patient,Yes,Session cookie (patient) + ownership,BLOCKED,-,MySQL not running,Patient GPS location update for active SOS; throttled (SOS_LOCATION_PING_INTERVAL_S)
+MOB-PAT-013,GET,/api/mobile/patient/sos/status/[id],Mobile Patient,Yes,Session cookie (patient) + ownership,BLOCKED,-,MySQL not running,SOS request status polling; patient ownership check
+MOB-DOC-001,GET,/api/mobile/doctor/home,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor home screen data; practice-scoped
+MOB-DOC-002,GET,/api/mobile/doctor/schedule,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor schedule; practice-scoped
+MOB-DOC-003,GET,/api/mobile/doctor/patients,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Patient list; practice-scoped with pagination
+MOB-DOC-004,GET,/api/mobile/doctor/patients/[id],Mobile Doctor,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Single patient detail; doctor ownership check
+MOB-DOC-005,GET,/api/mobile/doctor/appointments,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor appointments; practice-scoped
+MOB-DOC-006,GET,/api/mobile/doctor/consultations,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Consultations list; practice-scoped
+MOB-DOC-007,GET,/api/mobile/doctor/consultations/[appointmentId],Mobile Doctor,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Single consultation; appointment ownership check
+MOB-DOC-008,GET,/api/mobile/doctor/follow-ups,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Follow-up reminders; practice-scoped
+MOB-DOC-009,GET,/api/mobile/doctor/billing,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Billing records; practice-scoped
+MOB-DOC-010,GET,/api/mobile/doctor/income-expense,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Income/expense records; practice-scoped
+MOB-DOC-011,GET,/api/mobile/doctor/test-bookings,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Lab test bookings; practice-scoped
+MOB-DOC-012,GET,/api/mobile/doctor/home-visits,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Home visit requests; practice-scoped
+MOB-DOC-013,GET,/api/mobile/doctor/online-consultations,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Online consultations; practice-scoped
+MOB-DOC-014,GET,/api/mobile/doctor/notifications,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor notifications; user-scoped
+MOB-DOC-015,GET,/api/mobile/doctor/profile,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor profile; self-scoped
+MOB-DOC-016,GET,/api/mobile/doctor/staff,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Staff list; clinic-scoped
+MOB-DOC-017,GET,/api/mobile/doctor/shop,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Shop/inventory; practice-scoped
+MOB-DOC-018,GET,/api/mobile/doctor/chat,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Chat messages; practice-scoped
+MOB-DOC-019,POST,/api/mobile/doctor/chat,Mobile Doctor,Yes,Session cookie (doctor) + CSRF check,BLOCKED,-,MySQL not running,Send chat message; CSRF guard; practice-scoped
+MOB-DOC-020,PUT,/api/mobile/doctor/chat,Mobile Doctor,Yes,Session cookie (doctor) + CSRF check,BLOCKED,-,MySQL not running,Update chat message; CSRF guard; practice-scoped
+MOB-DOC-021,GET,/api/mobile/doctor/emergency/history,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor SOS history; doctor-scoped
+MOB-DOC-022,GET,/api/mobile/doctor/sos/feed,Mobile Doctor,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Live SOS feed for on-duty doctors; dispatch-scoped
+MOB-ADM-001,GET,/api/mobile/admin/home,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Admin home screen metrics; business-scoped
+MOB-ADM-002,GET,/api/mobile/admin/clinics,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Clinic list; business-scoped
+MOB-ADM-003,GET,/api/mobile/admin/managers,Mobile Admin,Yes,Session cookie (admin),BLOCKED,-,MySQL not running,Manager list; owner-only scope
+MOB-ADM-004,GET,/api/mobile/admin/staff,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Staff list; business-scoped
+MOB-ADM-005,GET,/api/mobile/admin/patients,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Patient list; business-scoped
+MOB-ADM-006,GET,/api/mobile/admin/appointments,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Appointment list; business-scoped with permission filter
+MOB-ADM-007,GET,/api/mobile/admin/follow-ups,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Follow-up reminders; business-scoped
+MOB-ADM-008,GET,/api/mobile/admin/test-bookings,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Test bookings; business-scoped
+MOB-ADM-009,GET,/api/mobile/admin/billing,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Billing; business-scoped
+MOB-ADM-010,GET,/api/mobile/admin/income-expense,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Income/expense; business-scoped
+MOB-ADM-011,GET,/api/mobile/admin/home-visits,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Home visits; business-scoped
+MOB-ADM-012,GET,/api/mobile/admin/consultations,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Consultations; business-scoped
+MOB-ADM-013,GET,/api/mobile/admin/online-consultations,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Online consultations; business-scoped
+MOB-ADM-014,GET,/api/mobile/admin/chat,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Chat; business-scoped (read-only for admin)
+MOB-ADM-015,GET,/api/mobile/admin/notifications,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Admin notifications; user-scoped
+MOB-ADM-016,GET,/api/mobile/admin/business-settings,Mobile Admin,Yes,Session cookie (admin),BLOCKED,-,MySQL not running,Business settings; owner-only
+MOB-ADM-017,GET,/api/mobile/admin/schedule,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Doctor schedules; business-scoped
+MOB-ADM-018,GET,/api/mobile/admin/support,Mobile Admin,Yes,Session cookie (admin/manager),BLOCKED,-,MySQL not running,Support tickets; business-scoped
+MOB-SOS-001,PUT,/api/mobile/emergency/availability,Mobile SOS,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Toggle doctor on/off duty for SOS dispatch; updates duty column; triggers hub broadcast
+MOB-SOS-002,POST,/api/mobile/emergency/requests,Mobile SOS,Yes,Session cookie (patient) + CSRF check,BLOCKED,-,MySQL not running,Patient raises SOS; delegates to triggerSos; 1/min rate limit; duplicate-active guard
+MOB-SOS-003,POST,/api/mobile/emergency/requests/[id]/accept,Mobile SOS,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor accepts SOS offer; dispatch state transition; offer ownership check
+MOB-SOS-004,POST,/api/mobile/emergency/requests/[id]/decline,Mobile SOS,Yes,Session cookie (doctor),BLOCKED,-,MySQL not running,Doctor declines SOS offer; offer ownership check
+MOB-SOS-005,POST,/api/mobile/emergency/requests/[id]/cancel,Mobile SOS,Yes,Session cookie (patient) + ownership,BLOCKED,-,MySQL not running,Patient cancels SOS; patient ownership check; terminal state guard
+MOB-SOS-006,POST,/api/mobile/emergency/requests/[id]/arrived,Mobile SOS,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Doctor marks arrived at patient location; dispatch state transition
+MOB-SOS-007,POST,/api/mobile/emergency/requests/[id]/complete,Mobile SOS,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Doctor completes SOS case; fare calculation; triggers fulfillment
+MOB-SOS-008,POST,/api/mobile/emergency/requests/[id]/verify-otp,Mobile SOS,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,OTP verification for SOS case start; prevents impersonation
+MOB-SOS-009,POST,/api/mobile/emergency/requests/[id]/location,Mobile SOS,Yes,Session cookie (doctor) + ownership,BLOCKED,-,MySQL not running,Doctor GPS location update; throttled; smoothed position broadcast
+MOB-SOS-010,GET,/api/mobile/emergency/requests/[id]/case,Mobile SOS,Yes,Session cookie (doctor or patient) + ownership,BLOCKED,-,MySQL not running,SOS case details; role-based ownership check
+MOB-SOS-011,POST,/api/mobile/emergency/requests/[id]/rating,Mobile SOS,Yes,Session cookie (patient) + ownership,BLOCKED,-,MySQL not running,Patient rates doctor post-SOS; patient ownership check; one-time rating guard
+MOB-SUP-001,GET,/api/mobile/super/stats,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Platform stats; super_admin only
+MOB-SUP-002,GET,/api/mobile/super/businesses,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Business list; super_admin only
+MOB-SUP-003,GET,/api/mobile/super/users,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,User list; super_admin only
+MOB-SUP-004,GET,/api/mobile/super/doctors,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Doctor list; super_admin only
+MOB-SUP-005,GET,/api/mobile/super/doctors/[id],Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Single doctor detail; super_admin only
+MOB-SUP-006,GET,/api/mobile/super/clinics,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Clinic list; super_admin only
+MOB-SUP-007,GET,/api/mobile/super/masters,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Master data; super_admin only
+MOB-SUP-008,GET,/api/mobile/super/support,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Support tickets; super_admin only
+MOB-SUP-009,GET,/api/mobile/super/audit-logs,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Audit log; super_admin only
+MOB-SUP-010,GET,/api/mobile/super/payments,Mobile Super-Admin,Yes,Session cookie (super_admin),BLOCKED,-,MySQL not running,Payment records; super_admin only

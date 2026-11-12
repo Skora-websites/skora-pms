@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, mbLabel } from "@/lib/config";
+import { sniffImage } from "@/lib/utils/uploads";
 
 /**
  * Upload helpers shared by the super-admin actions.
@@ -19,31 +20,6 @@ const UPLOAD_ROOT = path.join(process.cwd(), "storage", "uploads");
 
 /** Only allow sane relative storage paths — blocks traversal. */
 const DATE_SAFE = /^[a-zA-Z0-9._/-]+$/;
-
-function sniffImage(bytes: Buffer): "jpg" | "png" | "webp" | "gif" | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
-  if (
-    bytes.length >= 8 &&
-    bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-  ) {
-    return "png";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes.subarray(0, 4).toString("latin1") === "RIFF" &&
-    bytes.subarray(8, 12).toString("latin1") === "WEBP"
-  ) {
-    return "webp";
-  }
-  if (
-    bytes.length >= 6 &&
-    (bytes.subarray(0, 6).toString("latin1") === "GIF87a" ||
-      bytes.subarray(0, 6).toString("latin1") === "GIF89a")
-  ) {
-    return "gif";
-  }
-  return null;
-}
 
 /** Sniff real video containers from magic bytes (extension can be spoofed). */
 function sniffVideo(bytes: Buffer): "mp4" | "webm" | "mov" | "m4v" | null {

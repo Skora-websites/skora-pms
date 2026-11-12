@@ -30,12 +30,12 @@ import {
 } from "@/lib/auth/ownership";
 import { audit } from "@/lib/security/audit-log";
 import { todayStr } from "@/lib/utils";
+import { sniffDocument } from "@/lib/utils/uploads";
 import { supportTicketReplySchema } from "@/lib/validation";
+import { isAppointmentStatus, isBloodGroup, isPaymentMethod } from "@/lib/constants";
 
 type ActionResult = { error: string | null };
 
-const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "checked_in", "completed", "cancelled", "no_show"];
 const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"] as const;
 
 function isFollowUpStatus(s: string): s is (typeof FOLLOW_UP_STATUSES)[number] {
@@ -51,10 +51,9 @@ const FOLLOW_UP_TRANSITIONS: Record<string, string[]> = {
   rescheduled: ["pending"],
   cancelled: [],
 };
-const PAYMENT_METHODS = ["upi", "cash", "card", "netbanking"];
 
 export async function updateAppointmentStatus(appointmentId: number, status: string) {
-  if (!APPOINTMENT_STATUSES.includes(status)) return;
+  if (!isAppointmentStatus(status)) return;
   const scope = await requireWriteScope("appointments-edit");
   if (!scope) return;
   // Business state machine: only the confirm transition (-> confirmed) is a
@@ -156,7 +155,7 @@ export async function createTransaction(
   const amountNum = Number(amount);
   if (!Number.isFinite(amountNum) || amountNum <= 0) return { error: "Invalid amount." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date format." };
-  if (paymentMethod && !PAYMENT_METHODS.includes(paymentMethod)) {
+  if (paymentMethod && !isPaymentMethod(paymentMethod)) {
     return { error: "Invalid payment method." };
   }
 
@@ -244,7 +243,7 @@ export async function saveConsultation(
   if (!Number.isInteger(appointmentId) || !Number.isInteger(patientId)) {
     return { error: "Invalid appointment or patient.", consultationId: null };
   }
-  if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup))
+  if (bloodGroup && !isBloodGroup(bloodGroup))
     return { error: "Invalid blood group.", consultationId: null };
   if (bp && !/^\d{2,3}\/\d{2,3}$/.test(bp)) return { error: "BP must be like 120/80.", consultationId: null };
   const weight = weightRaw ? Number(weightRaw) : null;
@@ -276,7 +275,6 @@ export async function saveConsultation(
     return { error: "Patient consent is required before starting this consultation.", consultationId: null };
   }
 
-  // Verify the patient belongs to this doctor
   if (patientId && !(await ensurePatientOfDoctor(doctorId, patientId))) {
     return { error: "Patient not found for this doctor.", consultationId: null };
   }
@@ -497,7 +495,6 @@ export async function replySupportTicket(ticketId: number, formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  // Verify the ticket belongs to this user
   if (!(await ensureTicketOwner(ticketId, user.id))) {
     return { error: "Ticket not found." };
   }

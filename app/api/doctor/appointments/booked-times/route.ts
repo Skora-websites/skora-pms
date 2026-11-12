@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { isPracticeDoctor } from "@/lib/queries/clinic";
 import { getBusinessScope } from "@/lib/auth/scope";
 
@@ -49,12 +50,9 @@ export async function GET(request: NextRequest) {
       { status: 403 }
     );
   }
-  const resolvedDoctorId =
-    user.role === "receptionist"
-      ? (user.doctorId ?? user.id)
-      : isAdminTier
-        ? (scopeDoctorIds?.[0] ?? 0)
-        : user.id;
+  const resolvedDoctorId = isAdminTier
+    ? (scopeDoctorIds?.[0] ?? 0)
+    : resolvePracticeDoctorId(user);
 
   let doctorId = resolvedDoctorId;
   if (doctorIdRaw) {

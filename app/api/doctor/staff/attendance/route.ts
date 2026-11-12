@@ -3,6 +3,7 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, staffAttendances } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { todayStr } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   // audit F-01) — staff PII + attendance sit behind the same module.
   const user = await requireApiPermission(["doctor", "receptionist"], "roles-permissions");
   if (user instanceof Response) return user;
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   const date = req.nextUrl.searchParams.get("date") ?? todayStr();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

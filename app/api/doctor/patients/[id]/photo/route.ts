@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { ensurePatientOfDoctor } from "@/lib/auth/ownership";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 import { audit } from "@/lib/security/audit-log";
@@ -30,7 +31,7 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
   const owned = await ensurePatientOfDoctor(doctorId, patientId);
   if (!owned) return new Response("Not found", { status: 404 });
 

@@ -32,15 +32,6 @@ export function generateBillNumber(): string {
   return `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
 }
 
-/**
- * Local server date as YYYY-MM-DD.
- *
- * The app is used by Indian clinics (server runs IST, UTC+05:30). Using
- * `toISOString().slice(0,10)` (UTC) makes "today" wrong for 5.5 hours every
- * day (00:00–05:30 IST): bookings, KPI "today" counts, bill dates and
- * patient-facing records would be dated yesterday. This helper is the single
- * source of truth for server-side date-of-day.
- */
 /** Time-of-day greeting for dashboard headers (Good morning/afternoon/evening). */
 export function timeGreeting(d: Date = new Date()): string {
   const h = d.getHours();
@@ -58,6 +49,15 @@ export function firstName(fullName: string | null | undefined): string {
   return tokens[0];
 }
 
+/**
+ * Local server date as YYYY-MM-DD.
+ *
+ * The app is used by Indian clinics (server runs IST, UTC+05:30). Using
+ * `toISOString().slice(0,10)` (UTC) makes "today" wrong for 5.5 hours every
+ * day (00:00–05:30 IST): bookings, KPI "today" counts, bill dates and
+ * patient-facing records would be dated yesterday. This helper is the single
+ * source of truth for server-side date-of-day.
+ */
 export function todayStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -144,13 +144,17 @@ export function waMeLink(phone: string | null | undefined): string | null {
   return `https://wa.me/${withCountry}`;
 }
 
-export function slugify(input: string) {
-  return input
+export function slugify(
+  input: string,
+  opts?: { maxLength?: number; fallback?: string }
+): string {
+  const clean = input
     .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const trimmed = opts?.maxLength ? clean.slice(0, opts.maxLength).replace(/-+$/g, "") : clean;
+  return trimmed || (opts?.fallback ?? "");
 }
 
 /**

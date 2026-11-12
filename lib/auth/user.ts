@@ -189,3 +189,18 @@ export const ROLE_HOME: Record<UserRole, string> = {
 export function homePathForRole(role: string): string {
   return ROLE_HOME[role as UserRole] ?? "/";
 }
+
+/**
+ * Single source of truth for "whose data am I looking at".
+ * Receptionists are practice staff attached to the practice owner
+ * via `user.doctorId`; doctors act as themselves.
+ */
+export function resolvePracticeDoctorId(user: { role: string; id: number; doctorId: number | null }): number {
+  return user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+}
+
+/** True for practice-wide viewers (receptionists). */
+export function isPracticeWideUser(role: string): boolean {
+  return role === "receptionist";
+}
+

@@ -35,8 +35,7 @@ import {
   incomeTypes,
   users,
 } from "@/lib/db/schema";
-import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired } from "./user";
-import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
+import { getCurrentUser, hasPermission, homePathForRole, isTrialExpired, resolvePracticeDoctorId } from "./user";
 import { getPracticeDoctorIds } from "@/lib/queries/clinic";
 import { isPracticeAccessExpired } from "@/lib/queries/packages";
 import { getBusinessScope } from "./scope";

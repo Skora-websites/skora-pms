@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { audit } from "@/lib/security/audit-log";
 import { sanitizeSpreadsheetCell } from "@/lib/utils";
 
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
   // layout guard only runs on page renders (audit F-01).
   const user = await requireApiPermission(["doctor", "receptionist"], "registrations");
   if (user instanceof Response) return user;
-  const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+  const doctorId = resolvePracticeDoctorId(user);
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";

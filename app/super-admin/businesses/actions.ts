@@ -13,15 +13,14 @@ import {
 } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth/user";
 import { hashPassword } from "@/lib/auth/password";
+import { requireRole } from "@/lib/auth/guard";
 import { audit } from "@/lib/security/audit-log";
+import { slugify } from "@/lib/utils";
 
 export type BusinessActionResult = { error: string | null };
 
 async function requireSuperAdmin() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "super_admin") redirect("/login");
-  return user;
+  return requireRole(["super_admin"]);
 }
 
 /** Toggle a business's active state. Inactive businesses hide their owner's /admin views (getBusinessScope filters isActive). */
@@ -136,7 +135,7 @@ export async function createBusinessOwner(
   const now = new Date();
   // `businesses.slug` is unique; derive it from the name plus a short suffix so
   // two similarly-named businesses cannot collide.
-  const slug = `${slugify(businessName)}-${Math.random().toString(36).slice(2, 8)}`;
+  const slug = `${slugify(businessName, { maxLength: 40, fallback: "business" })}-${Math.random().toString(36).slice(2, 8)}`;
 
   const result = await db.transaction(async (tx) => {
     const [owner] = await tx
@@ -208,12 +207,4 @@ export async function createBusinessOwner(
 
   revalidatePath("/super-admin/businesses");
   return { error: null };
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40) || "business";
 }

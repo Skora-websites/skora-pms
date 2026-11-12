@@ -68,6 +68,8 @@ export async function holidayAdvisoryFor(date: string): Promise<{ name: string; 
   }
 }
 
+export const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+
 /**
  * Weekday for a `YYYY-MM-DD` string.
  *
@@ -79,6 +81,11 @@ export async function holidayAdvisoryFor(date: string): Promise<{ name: string; 
  */
 export function weekdayOf(date: string): number {
   return new Date(`${date}T00:00:00Z`).getUTCDay();
+}
+
+/** Name of the weekday (lowercase, e.g. "monday") for a YYYY-MM-DD string. */
+export function weekdayName(date: string): string {
+  return DAY_NAMES[weekdayOf(date)];
 }
 
 /** Cached holiday advisory + schedule/booked windows for one (doctor, date). */
@@ -119,13 +126,12 @@ async function loadSlotContext(doctorId: number, date: string) {
 
   let schedules: (typeof schema.doctorSchedules.$inferSelect)[] = [];
   if (clinics.length > 0) {
-    const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
     schedules = await db
       .select()
       .from(schema.doctorSchedules)
       .where(
         and(
-          eq(schema.doctorSchedules.dayOfWeek, dayNames[weekdayOf(date)] as never),
+          eq(schema.doctorSchedules.dayOfWeek, DAY_NAMES[weekdayOf(date)] as never),
           eq(schema.doctorSchedules.isActive, true),
           inArray(schema.doctorSchedules.doctorClinicId, clinics.map((c) => c.id))
         )

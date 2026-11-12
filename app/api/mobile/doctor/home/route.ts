@@ -1,7 +1,5 @@
 import { getDashboardStats } from "@/lib/queries/analytics";
 import {
-  getPracticeRecentAppointments,
-  getPracticeTodaysAppointments,
   getRecentAppointments,
   getTodaysAppointments,
   isPracticeWideUser,
@@ -29,16 +27,12 @@ export async function GET() {
 
   const doctorId = anchorDoctorId(user);
   const isPracticeWide = isPracticeWideUser(user.role);
-  const practiceIds = isPracticeWide ? await resolveDoctorScope(user) : [];
+  const scope = isPracticeWide ? await resolveDoctorScope(user) : [user.id];
 
   const [todays, recent, stats] = await Promise.all([
-    isPracticeWide
-      ? getPracticeTodaysAppointments(practiceIds)
-      : getTodaysAppointments(doctorId),
-    isPracticeWide
-      ? getPracticeRecentAppointments(practiceIds, 6)
-      : getRecentAppointments(doctorId, 6),
-    getDashboardStats(isPracticeWide ? practiceIds : [user.id]),
+    getTodaysAppointments(scope),
+    getRecentAppointments(scope, 6),
+    getDashboardStats(scope),
   ]);
 
   return apiOk({

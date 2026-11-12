@@ -8,20 +8,11 @@ import { requireAdminPermission } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { audit } from "@/lib/security/audit-log";
 import { isDupKey } from "@/lib/db/dup";
+import { slugify } from "@/lib/utils";
 
 export type SettingsActionResult = { error: string | null };
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 255)
-    .replace(/-+$/g, "");
-}
 
 /**
  * Update the owner's business profile. Editable fields match what the page

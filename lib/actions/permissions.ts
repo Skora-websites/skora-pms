@@ -21,7 +21,6 @@ const USER_MODEL = "App\\Models\\User";
  * actions rather than lib/queries entries.
  */
 
-/** May this caller see the permission catalog at all? */
 async function canViewPermissionData(): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");

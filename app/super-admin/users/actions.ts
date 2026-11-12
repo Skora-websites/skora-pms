@@ -12,7 +12,7 @@ import {
   modelHasRoles,
   roles,
 } from "@/lib/db/schema";
-import { getCurrentUser } from "@/lib/auth/user";
+import { requireRole } from "@/lib/auth/guard";
 import { DEFAULT_DOCTOR_MODULE_PERMS } from "@/lib/auth/server-permissions";
 import { trialEndsInDays } from "@/lib/auth/trial";
 import { getTrialDays } from "@/lib/queries/landing";
@@ -50,12 +50,7 @@ const SYSTEM_ROLE_BY_ROLE: Record<string, string> = {
  */
 
 async function requireAdmin() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  // Admin (business owner) moved to the /admin tier in Phase 3 — the
-  // super-admin surface is super_admin-only now (layout + actions agree).
-  if (user.role !== "super_admin") redirect("/login");
-  return user;
+  return requireRole(["super_admin"]);
 }
 
 function computeNextRegistrationId(role: string, rows: { registrationId: string | null }[]): string {

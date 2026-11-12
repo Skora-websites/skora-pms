@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doctorClinics } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { getBusinessScope } from "@/lib/auth/scope";
 import { resolveWithinStorage } from "@/lib/utils/uploads";
 
@@ -50,7 +51,7 @@ export async function GET(
   if (!clinic?.clinicLogo) return new Response("Not found", { status: 404 });
 
   if (user.role === "doctor" || user.role === "receptionist") {
-    const doctorId = user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id;
+    const doctorId = resolvePracticeDoctorId(user);
     if (clinic.doctorId !== doctorId) return new Response("Forbidden", { status: 403 });
   } else if (user.role === "admin" || user.role === "manager") {
     const scope = await getBusinessScope();

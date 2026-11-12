@@ -1,0 +1,1817 @@
+{
+  "info": {
+    "name": "SkoraCares API Audit Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "skoracare-api-audit-2026-11-12",
+    "description": "Complete API test collection for SkoraCares PMS audit - 2026-11-12. Covers 139 HTTP handler exports across 123 route files."
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "doctor_session_cookie", "value": "", "type": "string", "description": "Value of the skora_session cookie for a doctor account" },
+    { "key": "patient_session_cookie", "value": "", "type": "string", "description": "Value of the skora_session cookie for a patient account" },
+    { "key": "admin_session_cookie", "value": "", "type": "string", "description": "Value of the skora_session cookie for an admin account" },
+    { "key": "super_admin_session_cookie", "value": "", "type": "string", "description": "Value of the skora_session cookie for a super_admin account" },
+    { "key": "bearer_pat", "value": "", "type": "string", "description": "Bearer personal access token (sk_live_* or sk_test_*) for integration endpoints" },
+    { "key": "test_doctor_id", "value": "1", "type": "string" },
+    { "key": "test_patient_id", "value": "1", "type": "string" },
+    { "key": "test_appointment_id", "value": "1", "type": "string" },
+    { "key": "test_consultation_id", "value": "1", "type": "string" },
+    { "key": "test_booking_id", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. System",
+      "item": [
+        {
+          "name": "GET /api/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "health"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Health endpoint responds with 200 or 503', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+                  "});",
+                  "pm.test('Response has status field', function() {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('status');",
+                  "  pm.expect(json).to.have.property('checks');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/public/file/landing/:filename",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/public/file/landing/test.png",
+              "host": ["{{base_url}}"],
+              "path": ["api", "public", "file", "landing", "test.png"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Public file responds (200 or 404)', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "pm.test('No server error', function() {",
+                  "  pm.expect(pm.response.code).to.not.equal(500);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctors/:id/photo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/doctors/{{test_doctor_id}}/photo",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctors", "{{test_doctor_id}}", "photo"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor photo responds (200 or 404)', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Authentication (Mobile)",
+      "item": [
+        {
+          "name": "POST /api/mobile/session — Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@example.com\",\n  \"password\": \"your-password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/session",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "session"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 429]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Response has user and home fields', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('user');",
+                  "    pm.expect(json).to.have.property('home');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/session — Invalid credentials",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody@example.com\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/session",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "session"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid credentials returns 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([401, 429]);",
+                  "});",
+                  "pm.test('Error message is generic', function() {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('error');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/session — Who am I",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/session",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "session"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Session responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Response has user and permissions', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('user');",
+                  "    pm.expect(json).to.have.property('permissions');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/mobile/session — Logout",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/session",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "session"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Logout returns 200 (idempotent)', function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/session — Unauthenticated",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/session",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "session"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('No session returns 401', function() {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Patient (Web)",
+      "item": [
+        {
+          "name": "GET /api/patient/available-slots",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/patient/available-slots?doctorId={{test_doctor_id}}&date=2026-12-01",
+              "host": ["{{base_url}}"],
+              "path": ["api", "patient", "available-slots"],
+              "query": [
+                { "key": "doctorId", "value": "{{test_doctor_id}}" },
+                { "key": "date", "value": "2026-12-01" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Available slots responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/patient/test-reports/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/patient/test-reports/{{test_booking_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "patient", "test-reports", "{{test_booking_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Test report responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/patient/test-reports/:id/summarize",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/patient/test-reports/{{test_booking_id}}/summarize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "patient", "test-reports", "{{test_booking_id}}", "summarize"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Summarize responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/patient/sos/status/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/patient/sos/status/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "patient", "sos", "status", "1"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('SOS status responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Packages / Payments",
+      "item": [
+        {
+          "name": "POST /api/packages/order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"basic\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/packages/order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "packages", "order"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Package order responds 200, 400, or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 422]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/packages/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpay_order_id\": \"order_test\",\n  \"razorpay_payment_id\": \"pay_test\",\n  \"razorpay_signature\": \"sig_test\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/packages/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "packages", "verify"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Package verify responds 200, 400, or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/packages/webhook — invalid signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-razorpay-signature", "value": "invalidsignature" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_test\",\"order_id\":\"order_test\"}}}}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/packages/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "packages", "webhook"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid webhook signature returns 400', function() {",
+                  "  pm.expect(pm.response.code).to.equal(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Integrations",
+      "item": [
+        {
+          "name": "GET /api/integrations/email-check",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/email-check?email=test@example.com",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "email-check"],
+              "query": [{ "key": "email", "value": "test@example.com" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Email check responds 200, 400, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/geo-data",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/geo-data?lat=28.6139&lon=77.2090",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "geo-data"],
+              "query": [
+                { "key": "lat", "value": "28.6139" },
+                { "key": "lon", "value": "77.2090" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Geo-data responds 200, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/geocode",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/geocode?address=New+Delhi",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "geocode"],
+              "query": [{ "key": "address", "value": "New Delhi" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Geocode responds 200, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/weather",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/weather?lat=28.6139&lon=77.2090",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "weather"],
+              "query": [
+                { "key": "lat", "value": "28.6139" },
+                { "key": "lon", "value": "77.2090" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Weather responds 200, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/pincode",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/pincode?pincode=110001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "pincode"],
+              "query": [{ "key": "pincode", "value": "110001" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Pincode responds 200, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/india",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/india?kind=diagnoses&q=fever",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "india"],
+              "query": [
+                { "key": "kind", "value": "diagnoses" },
+                { "key": "q", "value": "fever" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('India reference responds 200, 400, or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/holidays",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/holidays?year=2026",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "holidays"],
+              "query": [{ "key": "year", "value": "2026" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Holidays responds 200, 401, or 502', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/integrations/qr",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/integrations/qr?data=https://example.com",
+              "host": ["{{base_url}}"],
+              "path": ["api", "integrations", "qr"],
+              "query": [{ "key": "data", "value": "https://example.com" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('QR code responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 502]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/shule/doctors (bearer PAT)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{bearer_pat}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/shule/doctors",
+              "host": ["{{base_url}}"],
+              "path": ["api", "shule", "doctors"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Shule doctors responds 200, 401, or 403', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 429]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Response has data array', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('data');",
+                  "    pm.expect(json.data).to.be.an('array');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/shule/doctors — no token (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/shule/doctors",
+              "host": ["{{base_url}}"],
+              "path": ["api", "shule", "doctors"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('No token returns 401', function() {",
+                  "  pm.expect(pm.response.code).to.equal(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Doctor Panel",
+      "item": [
+        {
+          "name": "GET /api/doctor/appointments/export",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/appointments/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "appointments", "export"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Appointments export responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/appointments/booked-times",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/appointments/booked-times?date=2026-12-01",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "appointments", "booked-times"],
+              "query": [{ "key": "date", "value": "2026-12-01" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Booked times responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/billing/:id/pdf",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/billing/1/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "billing", "1", "pdf"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Billing PDF responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/consult-pdf",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/consult-pdf?consultationId={{test_consultation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "consult-pdf"],
+              "query": [{ "key": "consultationId", "value": "{{test_consultation_id}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Consult PDF responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/test-bookings/suggestions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/test-bookings/suggestions?q=blood",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "test-bookings", "suggestions"],
+              "query": [{ "key": "q", "value": "blood" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Test suggestions responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/staff/:id/permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/staff/1/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "staff", "1", "permissions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Staff permissions responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/doctor/patients/export",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/doctor/patients/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doctor", "patients", "export"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patients export responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Super-Admin",
+      "item": [
+        {
+          "name": "GET /api/super-admin/masters/:kind/export",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/super-admin/masters/diagnoses/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "super-admin", "masters", "diagnoses", "export"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Masters export responds 200, 401, or 403', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/super-admin/support/export",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/super-admin/support/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "super-admin", "support", "export"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Support export responds 200, 401, or 403', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/super-admin/file/[path] — unauthorized (expect 401/403)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/super-admin/file/test.pdf",
+              "host": ["{{base_url}}"],
+              "path": ["api", "super-admin", "file", "test.pdf"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super-admin file requires auth', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Mobile — Patient",
+      "item": [
+        {
+          "name": "GET /api/mobile/patient/home",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/home",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "home"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient home responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/patient/doctors",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/doctors",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "doctors"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient doctors responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/patient/appointments",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/appointments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "appointments"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient appointments responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/patient/appointments/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/appointments/{{test_appointment_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "appointments", "{{test_appointment_id}}", "cancel"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cancel appointment responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/patient/prescriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/prescriptions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "prescriptions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient prescriptions responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/patient/bills",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/patient/bills",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "patient", "bills"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient bills responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Mobile — Doctor",
+      "item": [
+        {
+          "name": "GET /api/mobile/doctor/home",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/doctor/home",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "doctor", "home"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor home responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/doctor/schedule",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/doctor/schedule",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "doctor", "schedule"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor schedule responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/doctor/patients",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/doctor/patients",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "doctor", "patients"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor patients responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/doctor/consultations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/doctor/consultations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "doctor", "consultations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor consultations responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/doctor/notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/doctor/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "doctor", "notifications"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctor notifications responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Mobile — Admin",
+      "item": [
+        {
+          "name": "GET /api/mobile/admin/home",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/admin/home",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "admin", "home"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin home responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/admin/clinics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/admin/clinics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "admin", "clinics"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin clinics responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/admin/appointments",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/admin/appointments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "admin", "appointments"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin appointments responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. Mobile — Emergency SOS",
+      "item": [
+        {
+          "name": "PUT /api/mobile/emergency/availability — set on-duty",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"onDuty\": true,\n  \"lat\": 28.6139,\n  \"lon\": 77.2090\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/availability",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "availability"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Availability update responds 200, 400, or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/emergency/requests — raise SOS",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{patient_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 28.6139,\n  \"lon\": 77.2090,\n  \"radius_km\": 10,\n  \"complaint\": \"Chest pain\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/requests",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "requests"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('SOS request responds 200, 400, 401, or 429', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 429]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/emergency/requests/:id/accept",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/requests/1/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "requests", "1", "accept"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Accept SOS responds 200, 401, 403, 404, or 409', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/emergency/requests/:id/decline",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/requests/1/decline",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "requests", "1", "decline"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Decline SOS responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/emergency/requests/:id/case",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/requests/1/case",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "requests", "1", "case"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Emergency case responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/mobile/emergency/requests/:id/location",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{doctor_session_cookie}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 28.6200,\n  \"lon\": 77.2100\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/mobile/emergency/requests/1/location",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "emergency", "requests", "1", "location"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Location update responds 200, 401, 403, or 404', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 403, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. Mobile — Super-Admin",
+      "item": [
+        {
+          "name": "GET /api/mobile/super/stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "stats"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super stats responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/super/businesses",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/businesses",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "businesses"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super businesses responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/super/users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "users"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super users responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/super/doctors",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/doctors",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "doctors"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super doctors responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/super/clinics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/clinics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "clinics"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super clinics responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/mobile/super/payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "skora_session={{super_admin_session_cookie}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/mobile/super/payments",
+              "host": ["{{base_url}}"],
+              "path": ["api", "mobile", "super", "payments"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Super payments responds 200 or 401', function() {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   clinicDoctors,
   appointments,
+  consultations,
   businesses,
   billings,
   businessClinics,
@@ -23,6 +24,7 @@ import {
   roles,
   users,
 } from "@/lib/db/schema";
+import { getBusinessScope } from "@/lib/auth/scope";
 
 /**
  * Admin / super-admin read layer.
@@ -867,3 +869,66 @@ export const hasAnyScopedSchedule = cache(async (clinicIds: number[]) => {
     .where(inArray(doctorSchedules.doctorClinicId, clinicIds));
   return Number(row?.count ?? 0) > 0;
 });
+
+// ── Consultation detail for Admin ───────────────────────────────────
+
+export type AdminConsultationRecord = {
+  appointmentId: number;
+  patientName: string;
+  patientPhone: string | null;
+  doctorName: string | null;
+  consultationDate: string | null;
+  symptomsNote: string | null;
+  examinationNote: string | null;
+  diagnosisNote: string | null;
+  labNote: string | null;
+  medicationsNote: string | null;
+  medicalHistory: string | null;
+  followUpDate: string | null;
+  followUpStatus: string | null;
+};
+
+export const getConsultationRecordForAdmin = cache(
+  async (appointmentId: number): Promise<AdminConsultationRecord | null> => {
+    if (!Number.isInteger(appointmentId) || appointmentId <= 0) return null;
+
+    const { doctorIds } = await getBusinessScope();
+    if (doctorIds.length === 0) return null;
+
+    const [row] = await db
+      .select({
+        appointmentId: appointments.id,
+        consultationDate: consultations.consultationDate,
+        symptomsNote: consultations.symptomsNote,
+        examinationNote: consultations.examinationNote,
+        diagnosisNote: consultations.diagnosisNote,
+        labNote: consultations.labNote,
+        medicationsNote: consultations.medicationsNote,
+        medicalHistory: consultations.medicalHistory,
+        followUpDate: consultations.followUpDate,
+        followUpStatus: consultations.followUpStatus,
+        patientName: users.name,
+        patientPhone: users.phone,
+      })
+      .from(appointments)
+      .innerJoin(consultations, eq(consultations.appointmentId, appointments.id))
+      .innerJoin(users, eq(users.id, appointments.patientId))
+      .where(and(eq(appointments.id, appointmentId), inArray(appointments.doctorId, doctorIds)));
+
+    if (!row) return null;
+
+    const [doctorRow] = await db
+      .select({ doctorId: appointments.doctorId })
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId));
+
+    const [doctor] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, doctorRow?.doctorId ?? 0));
+
+    const formattedDate = row.consultationDate ? row.consultationDate.toISOString().slice(0, 10) : null;
+    return { ...row, consultationDate: formattedDate, doctorName: doctor?.name ?? null };
+  }
+);
+

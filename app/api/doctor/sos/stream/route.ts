@@ -1,5 +1,4 @@
 import { requireApiDoctorOnly } from "@/lib/auth/guard";
-import { resolveDoctorId } from "@/lib/dispatch/geo";
 import { subscribe } from "@/lib/dispatch/hub";
 
 export const runtime = "nodejs";
@@ -18,7 +17,7 @@ export async function GET(request: Request) {
   // SSE connection is left behind for an unauthorized caller.
   const user = await requireApiDoctorOnly();
   if (user instanceof Response) return user;
-  const doctorId = resolveDoctorId(user);
+  const doctorId = user.id;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

@@ -20,16 +20,7 @@
 
 import "server-only";
 
-export {
-  searchIndia,
-  searchIndiaMedicines,
-  searchIndiaSymptoms,
-  searchIndiaExaminations,
-  searchIndiaDiagnoses,
-  searchIndiaLabTests,
-  searchIndiaHistory,
-  searchIndiaInstructions,
-} from "./search";
+export { searchIndia } from "./search";
 export { datasetVersion, datasetSources, datasetCount } from "./dataset";
 export { IndiaDisabledError, IndiaUpstreamError, isLiveProvider } from "./provider";
 export type { IndiaItem, IndiaKind, IndiaSearchResult } from "./types";

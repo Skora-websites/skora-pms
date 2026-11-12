@@ -3,6 +3,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireApiPermission } from "@/lib/auth/guard";
+import { resolvePracticeDoctorId } from "@/lib/auth/user";
 import { getBusinessScope } from "@/lib/auth/scope";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   const isAdminTier = user.role === "admin" || user.role === "manager";
   const ownerIds = isAdminTier
     ? (await getBusinessScope()).doctorIds
-    : [user.role === "receptionist" ? (user.doctorId ?? user.id) : user.id];
+    : [resolvePracticeDoctorId(user)];
 
   const type = req.nextUrl.searchParams.get("type");
   const value = (req.nextUrl.searchParams.get("value") ?? "").trim();

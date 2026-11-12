@@ -9,11 +9,10 @@ import {
 } from "@/lib/auth/guard";
 import { getBusinessScope } from "@/lib/auth/scope";
 import type { BusinessScope } from "@/lib/auth/scope";
-import { getUserPermissions } from "@/lib/auth/user";
+import { getUserPermissions, resolvePracticeDoctorId } from "@/lib/auth/user";
 import type { CurrentUser } from "@/lib/auth/user";
 import { rejectForeignOrigin } from "@/lib/security/csrf";
 import { MOBILE_API_LIMIT, authRateLimit } from "@/lib/security/rate-limit";
-import { resolvePracticeDoctorId } from "@/lib/queries/doctor";
 import { listDoctorIdsFor } from "@/lib/queries/clinic";
 
 /**
