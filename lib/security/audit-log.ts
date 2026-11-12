@@ -57,6 +57,7 @@ export type AuditAction =
    * serve prescriptions, consultation notes, patient photos and lab reports.
    */
   | "phi_read"
+  | "prescription_viewed"
   | "demo_booked"
   | "sos_triggered"
   | "sos_accepted"
@@ -218,6 +219,10 @@ export const audit = {
 
   roleChanged: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "role_changed", metadata }),
+
+
+  prescriptionViewed: (userId: number, metadata?: Record<string, unknown>) =>
+    auditLog({ userId, action: "prescription_viewed", metadata }),
 
   settingsUpdated: (userId: number, metadata?: Record<string, unknown>) =>
     auditLog({ userId, action: "settings_updated", metadata }),

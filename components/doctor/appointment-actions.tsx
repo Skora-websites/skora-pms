@@ -11,7 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import { updateAppointmentStatus } from "@/app/doctor/actions";
-import { cancelAppointment, completeAppointment, deleteAppointment } from "@/app/doctor/appointments/actions";
+import { cancelAppointment, completeAppointment, deleteAppointment, checkInAppointment, markNoShowAppointment } from "@/app/doctor/appointments/actions";
 import Link from "next/link";
 
 export function AppointmentRowActions({
@@ -49,6 +49,16 @@ export function AppointmentRowActions({
   const complete = () =>
     startTransition(async () => {
       await completeAppointment(appointmentId);
+    });
+
+  const checkIn = () =>
+    startTransition(async () => {
+      await checkInAppointment(appointmentId);
+    });
+
+  const noShow = () =>
+    startTransition(async () => {
+      await markNoShowAppointment(appointmentId);
     });
 
   const remove = () => {
@@ -117,6 +127,28 @@ export function AppointmentRowActions({
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50"
         >
           <CheckCircle2 className="h-4 w-4" />
+        </button>
+      )}
+
+      {(status === "confirmed" || status === "pending") && (
+        <button
+          disabled={pending}
+          onClick={checkIn}
+          title="Check in"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50"
+        >
+          <Check className="h-4 w-4" />
+        </button>
+      )}
+
+      {status !== "cancelled" && status !== "completed" && status !== "no_show" && (
+        <button
+          disabled={pending}
+          onClick={noShow}
+          title="Mark no-show"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50"
+        >
+          <XCircle className="h-4 w-4" />
         </button>
       )}
 

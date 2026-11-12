@@ -218,6 +218,28 @@ export function BookAppointmentForm({
           />
         </div>
 
+        <div>
+          <label htmlFor="reason" className="label">Reason for visit</label>
+          <textarea
+            id="reason"
+            name="reason"
+            rows={2}
+            placeholder="Chief complaint / reason for visit..."
+            className="input"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="intake_notes" className="label">Intake notes</label>
+          <textarea
+            id="intake_notes"
+            name="intake_notes"
+            rows={2}
+            placeholder="Allergies, prior meds, pre-check vitals..."
+            className="input"
+          />
+        </div>
+
         {/* Consent summary — shown after the popup is completed */}
         {step === "booking" && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3">

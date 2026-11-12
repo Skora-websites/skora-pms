@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { FileDown, FileHeart } from "lucide-react";
+import { RefillRequestButton } from "./refill-request-button";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientPrescriptions } from "@/lib/queries/patient";
 import { PageHeader, EmptyState } from "@/components/ui/dashboard-ui";
@@ -40,6 +41,15 @@ export default async function PatientPrescriptionsPage() {
                   <p className="text-xs text-slate-400">
                     Dr. {p.doctorName}{p.doctorQualification ? ` (${p.doctorQualification})` : ""}
                   </p>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
+                    p.prescriptionStatus === "issued" ? "bg-emerald-100 text-emerald-800" :
+                    p.prescriptionStatus === "cancelled" ? "bg-red-100 text-red-800" :
+                    p.prescriptionStatus === "amended" ? "bg-green-100 text-green-800" :
+                    p.prescriptionStatus === "draft" ? "bg-slate-100 text-slate-700" :
+                    "bg-slate-100 text-slate-700"
+                  }`}>
+                    {p.prescriptionStatus}
+                  </span>
                 </div>
                 <div className="ml-auto">
                   <a
@@ -72,6 +82,9 @@ export default async function PatientPrescriptionsPage() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-4">
+                    <RefillRequestButton consultationId={p.id} medications={p.medications} />
                   </div>
                 </div>
               )}

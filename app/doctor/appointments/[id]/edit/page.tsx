@@ -70,7 +70,9 @@ export default async function EditAppointmentPage({
           bp: appointment.bp,
           weight: appointment.weight,
           height: appointment.height,
+          reason: appointment.reason,
           remarks: appointment.remarks,
+          intakeNotes: appointment.intakeNotes,
           mobileNumber: appointment.mobileNumber,
         }}
         patients={patients}

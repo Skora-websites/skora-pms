@@ -34,6 +34,7 @@
     "node_modules",
     "**/__tests__/**",
     "tests/**",
-    "**/*.tmp.*"
+    "**/*.tmp.*",
+    "skora-mobile"
   ]
 }

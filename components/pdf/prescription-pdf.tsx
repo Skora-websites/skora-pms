@@ -89,6 +89,9 @@ type PdfData = {
     medicationsNote: string | null;
     medicalHistory: string | null;
     followUpDate: string | null;
+    prescriptionStatus: string | null;
+    signedAt: string | null;
+    issuedAt: string | null;
   };
   patient: { name: string | null; dob: string | null; gender: string | null; phone: string | null; city: string | null; state: string | null } | undefined;
   doctor: { name: string | null; qualification: string | null; registrationNumber: string | null; phone: string | null } | undefined;
@@ -253,6 +256,35 @@ export function PrescriptionPdf({ data }: { data: PdfData }) {
               <Text>
                 <Text style={styles.label}>Follow-up: </Text>
                 {new Date(consultation.followUpDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+              </Text>
+            </View>
+          )}
+
+          {consultation.prescriptionStatus && (
+            <View style={styles.section}>
+              <Text>
+                <Text style={styles.sectionLabel}>Prescription Status: </Text>
+                <span style={{textTransform: 'capitalize', color: '#8e44ad'}}>
+                  {consultation.prescriptionStatus}
+                </span>
+              </Text>
+            </View>
+          )}
+
+          {consultation.signedAt && (
+            <View style={styles.section}>
+              <Text>
+                <Text style={styles.sectionLabel}>Signed: </Text>
+                {new Date(consultation.signedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </Text>
+            </View>
+          )}
+
+          {consultation.issuedAt && (
+            <View style={styles.section}>
+              <Text>
+                <Text style={styles.sectionLabel}>Issued: </Text>
+                {new Date(consultation.issuedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
               </Text>
             </View>
           )}

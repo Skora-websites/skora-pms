@@ -25,7 +25,9 @@ export function EditAppointmentForm({
     bp: string | null;
     weight: string | null;
     height: string | null;
+    reason?: string | null;
     remarks: string | null;
+    intakeNotes?: string | null;
     mobileNumber: string | null;
   };
   patients: Patient[];
@@ -152,6 +154,30 @@ export function EditAppointmentForm({
             type="tel"
             defaultValue={appointment.mobileNumber ?? ""}
             placeholder="e.g., 9876543210"
+            className="input"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="reason" className="label">Reason for visit</label>
+          <textarea
+            id="reason"
+            name="reason"
+            rows={2}
+            defaultValue={appointment.reason ?? ""}
+            placeholder="Chief complaint / reason for visit..."
+            className="input"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="intake_notes" className="label">Intake notes</label>
+          <textarea
+            id="intake_notes"
+            name="intake_notes"
+            rows={2}
+            defaultValue={appointment.intakeNotes ?? ""}
+            placeholder="Allergies, prior meds, pre-check vitals..."
             className="input"
           />
         </div>

@@ -209,6 +209,8 @@ const statusTones: Record<string, string> = {
   no_follow_up: "bg-slate-100 text-slate-600",
   rescheduled: "bg-amber-100 text-amber-800",
   cancelled: "bg-rose-100 text-rose-700",
+  checked_in: "bg-emerald-100 text-emerald-800",
+  no_show: "bg-amber-100 text-amber-800",
   paid: "bg-accent-100 text-accent-800",
   partial: "bg-amber-100 text-amber-800",
   approved: "bg-accent-100 text-accent-800",

@@ -96,7 +96,9 @@ async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit
       bp: appointments.bp,
       weight: appointments.weight,
       height: appointments.height,
+      reason: appointments.reason,
       remarks: appointments.remarks,
+      intakeNotes: appointments.intakeNotes,
       note: appointments.note,
     })
     .from(appointments)

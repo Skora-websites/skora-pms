@@ -45,7 +45,9 @@ export default async function AppointmentsPage({
     { key: "pending", label: "Pending" },
     { key: "pending_consent", label: "Pending consent" },
     { key: "confirmed", label: "Confirmed" },
+    { key: "checked_in", label: "Checked in" },
     { key: "completed", label: "Completed" },
+    { key: "no_show", label: "No-show" },
     { key: "cancelled", label: "Cancelled" },
   ];
 

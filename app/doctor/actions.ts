@@ -14,6 +14,8 @@ import {
   transactions,
   consultations,
   consultationMedications,
+  prescriptionRefillRequests,
+  notifications,
   supportTickets,
   supportTicketMessages,
   users,
@@ -33,7 +35,7 @@ import { supportTicketReplySchema } from "@/lib/validation";
 type ActionResult = { error: string | null };
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "completed", "cancelled"];
+const APPOINTMENT_STATUSES = ["pending", "pending_consent", "confirmed", "checked_in", "completed", "cancelled", "no_show"];
 const FOLLOW_UP_STATUSES = ["pending", "addressed", "no_follow_up", "rescheduled", "cancelled"] as const;
 
 function isFollowUpStatus(s: string): s is (typeof FOLLOW_UP_STATUSES)[number] {
@@ -306,6 +308,10 @@ export async function saveConsultation(
           medicalHistory,
           followUpDate,
           followUpStatus: followUpDate ? "pending" : (current?.followUpStatus ?? "pending"),
+          prescriptionStatus: "issued",
+          signedAt: now,
+          signedByDoctorId: doctorId,
+          issuedAt: now,
           updatedAt: now,
         })
         .where(and(eq(consultations.id, existing.id), eq(consultations.doctorId, doctorId)));
@@ -323,28 +329,46 @@ export async function saveConsultation(
         medicalHistory,
         followUpDate,
         followUpStatus: "pending",
+        prescriptionStatus: "issued",
+        signedAt: now,
+        signedByDoctorId: doctorId,
+        issuedAt: now,
         createdAt: now,
         updatedAt: now,
       });
       consultationId = Number(result.insertId);
     }
 
-    // Medications rows (comma separated medicine names, or per-line)
-    const medLines = String(formData.get("medications") ?? "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (medLines.length > 0) {
+    // Medications rows — now structured (medicineName/dose/frequency/duration/refills/note)
+    const medCount = Number(formData.get("med_count") ?? "0");
+    if (medCount > 0) {
       await tx.delete(consultationMedications).where(eq(consultationMedications.consultationId, consultationId));
-      await tx.insert(consultationMedications).values(
-        medLines.map((line, i) => ({
-          consultationId,
-          medicineName: line,
-          order: i,
-          createdAt: now,
-          updatedAt: now,
-        }))
-      );
+      const newMeds: any[] = [];
+      for (let i = 0; i < medCount; i++) {
+        const medicineName = String(formData.get(`medicineName_${i}`) ?? "").trim();
+        const dose = String(formData.get(`dose_${i}`) ?? "").trim();
+        const frequency = String(formData.get(`frequency_${i}`) ?? "").trim();
+        const duration = String(formData.get(`duration_${i}`) ?? "").trim();
+        const refills = String(formData.get(`refills_${i}`) ?? "0").trim();
+        const note = String(formData.get(`note_${i}`) ?? "").trim();
+        if (medicineName) {
+          newMeds.push({
+            consultationId,
+            medicineName,
+            dose: dose || null,
+            frequency: frequency || null,
+            duration: duration || null,
+            refills: Number.isInteger(Number(refills)) && Number(refills) >= 0 ? Number(refills) : 0,
+            note: note || null,
+            order: i,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      if (newMeds.length > 0) {
+        await tx.insert(consultationMedications).values(newMeds);
+      }
     }
 
     // Persist vitals + mark appointment completed
@@ -489,5 +513,66 @@ export async function replySupportTicket(ticketId: number, formData: FormData) {
   });
 
   revalidatePath("/doctor/support");
+  return { error: null };
+}
+
+export async function resolveRefillRequest(
+  id: number,
+  action: "approve" | "reject"
+): Promise<{ error: string | null }> {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "doctor") {
+    return { error: "Unauthorized." };
+  }
+  if (action !== "approve" && action !== "reject") {
+    return { error: "Invalid action." };
+  }
+
+  const [row] = await db
+    .select({
+      id: prescriptionRefillRequests.id,
+      consultationId: prescriptionRefillRequests.consultationId,
+      patientId: prescriptionRefillRequests.patientId,
+      doctorId: prescriptionRefillRequests.doctorId,
+      medicationName: prescriptionRefillRequests.medicationName,
+      status: prescriptionRefillRequests.status,
+    })
+    .from(prescriptionRefillRequests)
+    .where(eq(prescriptionRefillRequests.id, id))
+    .limit(1);
+
+  if (!row || row.doctorId !== user.id) {
+    return { error: "Refill request not found." };
+  }
+  if (row.status !== "pending") {
+    return { error: "This refill request has already been resolved." };
+  }
+
+  const now = new Date();
+  const nextStatus = action === "approve" ? "approved" : "rejected";
+
+  await db
+    .update(prescriptionRefillRequests)
+    .set({
+      status: nextStatus,
+      resolvedAt: now,
+      resolvedBy: user.id,
+      updatedAt: now,
+    })
+    .where(eq(prescriptionRefillRequests.id, id));
+
+  await db.insert(notifications).values({
+    userId: row.patientId,
+    title: action === "approve" ? "Refill request approved" : "Refill request rejected",
+    message: row.medicationName
+      ? `Your refill request for ${row.medicationName} was ${nextStatus}.`
+      : `Your refill request was ${nextStatus}.`,
+    type: "info",
+    link: "/patient/prescriptions",
+  });
+
+  revalidatePath("/doctor/refills");
+  revalidatePath("/patient/prescriptions");
+  revalidatePath("/patient/records");
   return { error: null };
 }

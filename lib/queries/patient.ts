@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, consultations, consultationMedications, users, billings, billingTypes, doctorClinics, doctorSchedules, testBookings, vendors, transactions } from "@/lib/db/schema";
 import { todayStr } from "@/lib/utils";
@@ -92,6 +92,7 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
       medicationsNote: consultations.medicationsNote,
       symptomsNote: consultations.symptomsNote,
       followUpDate: consultations.followUpDate,
+      prescriptionStatus: consultations.prescriptionStatus,
       doctorName: users.name,
       doctorQualification: users.qualification,
     })

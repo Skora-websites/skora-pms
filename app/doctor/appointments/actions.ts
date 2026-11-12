@@ -23,6 +23,7 @@ import { notifyUser, wantsNotification } from "@/lib/notifications";
 import { sendMail } from "@/lib/mail/send";
 import { appointmentSchema } from "@/lib/validation";
 import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
+import { invalidateSlotCache } from "@/lib/queries/available-slots";
 import { todayStr } from "@/lib/utils";
 
 // ── Shared helpers ────────────────────────────────────────────────────────
@@ -248,6 +249,8 @@ export async function createAppointment(
   const weightRaw = String(formData.get("weight") ?? "").trim();
   const heightRaw = String(formData.get("height") ?? "").trim();
   const remarks = String(formData.get("remarks") ?? "").trim() || null;
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const intakeNotes = String(formData.get("intake_notes") ?? "").trim() || null;
   const consentType = String(formData.get("consent_type") ?? "").trim() || null;
   const mobileNumber = String(formData.get("mobile_number") ?? "").trim() || null;
 
@@ -367,6 +370,8 @@ export async function createAppointment(
         weight: weight !== null ? String(weight) : null,
         height: height !== null ? String(height) : null,
         remarks,
+        reason,
+        intakeNotes,
         consentType: (consentType as never) ?? null,
         consentFile: consentFilePath,
         mobileNumber,
@@ -403,6 +408,8 @@ export async function createAppointment(
     }
     throw err;
   }
+
+  invalidateSlotCache();
 
   let consentLink: string | null = null;
   if ((consentType === "consent" || consentType === "email") && appointmentId && patientId) {
@@ -481,6 +488,8 @@ export async function updateAppointment(
   const weightRaw = String(formData.get("weight") ?? "").trim();
   const heightRaw = String(formData.get("height") ?? "").trim();
   const remarks = String(formData.get("remarks") ?? "").trim() || null;
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const intakeNotes = String(formData.get("intake_notes") ?? "").trim() || null;
   const mobileNumber = String(formData.get("mobile_number") ?? "").trim() || null;
 
   const appointmentId = Number(appointmentIdRaw);
@@ -615,14 +624,18 @@ export async function updateAppointment(
       weight: weight !== null ? String(weight) : null,
       height: height !== null ? String(height) : null,
       remarks,
+      reason,
+      intakeNotes,
       mobileNumber,
       clinicId,
       // consent_type is immutable here by design (a sent consent link must
-      // not silently change meaning mid-flight) — status stays untouched
+      // not silently change meaning mid-flight) - status stays untouched
       // because cancel/complete own it exclusively.
       updatedAt: now,
     })
     .where(eq(appointments.id, appointmentId));
+
+  invalidateSlotCache();
 
   void audit.appointmentUpdated(scope.callerId, {
     appointmentId,
@@ -945,5 +958,75 @@ export async function deleteAppointment(appointmentId: number): Promise<Appointm
   revalidatePath("/doctor/appointments");
   revalidatePath("/admin/appointments");
 
+  return { error: null };
+}
+
+// ── Check-in / No-show lifecycle ───────────────────────────────────────
+
+export async function checkInAppointment(appointmentId: number): Promise<AppointmentActionResult> {
+  const scope = await requireWriteScope("appointments-edit");
+  if (!scope) return { error: "You don't have permission to update appointments." };
+  if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
+  if (!(await ensureAppointmentInScope(appointmentId, scope))) return { error: "Appointment not found." };
+
+  const [current] = await db
+    .select({ status: appointments.status })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId));
+  if (!current) return { error: "Appointment not found." };
+  if (current.status !== "confirmed" && current.status !== "pending") {
+    return { error: "Only confirmed/pending appointments can be checked in." };
+  }
+
+  const now = new Date();
+  await db
+    .update(appointments)
+    .set({ status: "checked_in", checkedInAt: now, updatedAt: now })
+    .where(eq(appointments.id, appointmentId));
+
+  void audit.appointmentUpdated(scope.callerId, {
+    appointmentId,
+    action: "checked_in",
+    statusFrom: current.status,
+    statusTo: "checked_in",
+  });
+
+  revalidatePath("/doctor");
+  revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
+  return { error: null };
+}
+
+export async function markNoShowAppointment(appointmentId: number): Promise<AppointmentActionResult> {
+  const scope = await requireWriteScope("appointments-edit");
+  if (!scope) return { error: "You don't have permission to update appointments." };
+  if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
+  if (!(await ensureAppointmentInScope(appointmentId, scope))) return { error: "Appointment not found." };
+
+  const [current] = await db
+    .select({ status: appointments.status })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId));
+  if (!current) return { error: "Appointment not found." };
+  if (current.status === "completed" || current.status === "cancelled" || current.status === "no_show") {
+    return { error: "This appointment cannot be marked as no-show." };
+  }
+
+  const now = new Date();
+  await db
+    .update(appointments)
+    .set({ status: "no_show", noShowAt: now, updatedAt: now })
+    .where(eq(appointments.id, appointmentId));
+
+  void audit.appointmentUpdated(scope.callerId, {
+    appointmentId,
+    action: "no_show",
+    statusFrom: current.status,
+    statusTo: "no_show",
+  });
+
+  revalidatePath("/doctor");
+  revalidatePath("/doctor/appointments");
+  revalidatePath("/admin/appointments");
   return { error: null };
 }

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appointments, doctorClinics, doctorSchedules, users } from "@/lib/db/schema";
+import { invalidateSlotCache } from "@/lib/queries/available-slots";
 import { getCurrentUser } from "@/lib/auth/user";
 import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
 import { sendMail } from "@/lib/mail/send";
@@ -112,6 +113,7 @@ export async function createPatientAppointment(
   const date = String(formData.get("date") ?? "").trim();
   const timeRaw = String(formData.get("time") ?? "").trim();
   const caseType = String(formData.get("case_type") ?? "clinical_visit").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
 
   if (!doctorId || !Number.isInteger(doctorId) || doctorId <= 0) {
     return { error: "Please choose a doctor." };
@@ -192,6 +194,7 @@ export async function createPatientAppointment(
         date: date as never,
         time,
         caseType: caseType as never,
+        reason,
         status: "confirmed" as never,
         consentType: "skipped",
         createdAt: now,
@@ -204,6 +207,8 @@ export async function createPatientAppointment(
     }
     throw err;
   }
+
+  invalidateSlotCache();
 
   void audit.appointmentCreated(user.id, {
     source: "patient_self_service",
@@ -286,6 +291,8 @@ export async function cancelPatientAppointment(appointmentId: number): Promise<P
     .update(appointments)
     .set({ status: "cancelled", updatedAt: new Date() })
     .where(eq(appointments.id, appointmentId));
+
+  invalidateSlotCache();
 
   void audit.appointmentCancelled(user.id, { appointmentId, doctorId: appt.doctorId, source: "patient_cancelled" });
 
@@ -404,6 +411,8 @@ export async function reschedulePatientAppointment(
     }
     throw err;
   }
+
+  invalidateSlotCache();
 
   void audit.appointmentUpdated(user.id, {
     source: "patient_reschedule",

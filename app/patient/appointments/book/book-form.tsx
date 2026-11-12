@@ -43,7 +43,7 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
   const [fetchedKey, setFetchedKey] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [slotMessage, setSlotMessage] = useState<string | null>(null);
-  const [visitType, setVisitType] = useState<"clinical_visit" | "home_visit">("clinical_visit");
+  const [visitType, setVisitType] = useState<"clinical_visit" | "home_visit" | "online_visit" | "on_call_visit">("clinical_visit");
   const today = new Date().toLocaleDateString("en-CA");
 
   const selectedDoctor = doctors.find((d) => String(d.id) === doctorId) ?? null;
@@ -289,6 +289,17 @@ export function BookAppointmentForm({ doctors }: { doctors: Doctor[] }) {
                   })}
                 </div>
               )}
+            </div>
+
+            <div>
+              <label htmlFor="reason" className="label">Reason for visit (optional)</label>
+              <textarea
+                id="reason"
+                name="reason"
+                rows={2}
+                className="input resize-none"
+                placeholder="Briefly describe your concern…"
+              />
             </div>
 
             {state.error && (

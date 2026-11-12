@@ -57,6 +57,8 @@ export const users = mysqlTable(
     address: varchar("address", { length: 255 }),
     gender: varchar("gender", { length: 255 }),
     referredBy: varchar("referred_by", { length: 200 }),
+    /** Patient-reported allergies / adverse reactions (free text). */
+    allergies: text("allergies"),
     dob: varchar("dob", { length: 50 }),
     pincode: int("pincode"),
     state: varchar("state", { length: 100 }),
@@ -437,11 +439,18 @@ export const appointments = mysqlTable(
       "pending",
       "pending_consent",
       "confirmed",
+      "checked_in",
       "completed",
       "cancelled",
+      "no_show",
     ])
       .default("pending")
       .notNull(),
+    reason: text("reason"),
+    intakeNotes: text("intake_notes"),
+    checkedInAt: timestamp("checked_in_at"),
+    noShowAt: timestamp("no_show_at"),
+    reminderSentAt: timestamp("reminder_sent_at"),
     clinicId: bigint("clinic_id", { mode: "number" }),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
@@ -772,8 +781,29 @@ export const billings = mysqlTable(
     pendingAmount: decimal("pending_amount", { precision: 12, scale: 2 }).default("0"),
     paymentMethod: mysqlEnum("payment_method", ["upi", "cash", "card", "netbanking", "credit"]),
     paymentDetails: json("payment_details"),
-    status: mysqlEnum("status", ["pending", "partial", "paid"]).default("pending"),
+    status: mysqlEnum("status", ["pending", "partial", "paid", "refunded"]).default("pending"),
     notes: text("notes"),
+    /** Insurance / payer tracking (self-pay by default). */
+    insuranceProvider: varchar("insurance_provider", { length: 255 }),
+    policyNumber: varchar("policy_number", { length: 100 }),
+    memberId: varchar("member_id", { length: 100 }),
+    claimStatus: mysqlEnum("claim_status", [
+      "not_submitted",
+      "submitted",
+      "accepted",
+      "denied",
+      "paid",
+    ])
+      .default("not_submitted")
+      .notNull(),
+    claimReference: varchar("claim_reference", { length: 100 }),
+    diagnosisCodes: text("diagnosis_codes"),
+    procedureCodes: text("procedure_codes"),
+    /** Discount & tax for invoice totals. */
+    discountAmount: decimal("discount_amount", { precision: 12, scale: 2 }).default("0"),
+    taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0"),
+    /** Refund tracking. */
+    refundedAmount: decimal("refunded_amount", { precision: 12, scale: 2 }).default("0"),
     billDate: date("bill_date", { mode: "string" }).notNull(),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at"),
@@ -1122,6 +1152,21 @@ export const consultations = mysqlTable(
     additionalNotes: text("additional_notes"),
     followUpStatus: varchar("follow_up_status", { length: 255 }).default("pending"),
     followUpComment: text("follow_up_comment"),
+    /** e-prescription issuance lifecycle (distinct from consultation record). */
+    prescriptionStatus: mysqlEnum("prescription_status", [
+      "draft",
+      "signed",
+      "issued",
+      "cancelled",
+      "amended",
+    ])
+      .default("draft")
+      .notNull(),
+    signedAt: timestamp("signed_at"),
+    signedByDoctorId: bigint("signed_by_doctor_id", { mode: "number" }),
+    issuedAt: timestamp("issued_at"),
+    prescriptionCancelledAt: timestamp("prescription_cancelled_at"),
+    cancellationReason: text("cancellation_reason"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
@@ -1275,6 +1320,7 @@ export const consultationMedications = mysqlTable(
     whenToTake: varchar("when_to_take", { length: 255 }),
     duration: varchar("duration", { length: 255 }),
     note: text("note"),
+    refills: int("refills").default(0),
     order: int("order").default(0),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
@@ -1880,6 +1926,108 @@ export const receptionistClinics = mysqlTable(
     foreignKey({
       columns: [t.clinicId],
       foreignColumns: [doctorClinics.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prescription refill requests (patient-initiated, doctor-fulfilled)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const prescriptionRefillRequests = mysqlTable(
+  "prescription_refill_requests",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    consultationId: bigint("consultation_id", { mode: "number" }).notNull(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    medicationName: varchar("medication_name", { length: 255 }),
+    quantity: int("quantity").default(1),
+    note: text("note"),
+    status: mysqlEnum("status", ["pending", "approved", "rejected", "fulfilled"])
+      .default("pending")
+      .notNull(),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: bigint("resolved_by", { mode: "number" }),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at"),
+  },
+  (t) => [
+    index("prr_consultation_id_index").on(t.consultationId),
+    index("prr_patient_id_index").on(t.patientId),
+    index("prr_doctor_id_index").on(t.doctorId),
+    index("prr_status_index").on(t.status),
+    foreignKey({
+      columns: [t.consultationId],
+      foreignColumns: [consultations.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing line items (invoice detail)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const billingLineItems = mysqlTable(
+  "billing_line_items",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    billingId: bigint("billing_id", { mode: "number" }).notNull(),
+    description: varchar("description", { length: 255 }).notNull(),
+    code: varchar("code", { length: 50 }),
+    quantity: int("quantity").default(1).notNull(),
+    unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => [
+    index("bli_billing_id_index").on(t.billingId),
+    foreignKey({
+      columns: [t.billingId],
+      foreignColumns: [billings.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patient portal messages (secure messaging thread)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const patientMessages = mysqlTable(
+  "patient_messages",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    senderRole: mysqlEnum("sender_role", ["patient", "doctor", "staff"]).notNull(),
+    senderId: bigint("sender_id", { mode: "number" }).notNull(),
+    subject: varchar("subject", { length: 255 }),
+    body: text("body").notNull(),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => [
+    index("pm_patient_doctor_index").on(t.patientId, t.doctorId),
+    index("pm_created_at_index").on(t.createdAt),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.senderId],
+      foreignColumns: [users.id],
     }).onDelete("cascade"),
   ]
 );

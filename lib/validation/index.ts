@@ -96,9 +96,11 @@ export const appointmentSchema = z.object({
     { message: "Invalid case type" }
   ),
   status: z
-    .enum(["pending", "pending_consent", "confirmed", "completed", "cancelled"])
+    .enum(["pending", "pending_consent", "confirmed", "checked_in", "completed", "cancelled", "no_show"])
     .optional(),
   notes: z.string().max(2000).optional().default(""),
+  reason: z.string().max(500).optional().default(""),
+  intakeNotes: z.string().max(2000).optional().default(""),
 });
 
 /** Bill creation. */
