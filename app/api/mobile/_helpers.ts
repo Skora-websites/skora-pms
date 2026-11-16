@@ -14,6 +14,7 @@ import type { CurrentUser } from "@/lib/auth/user";
 import { rejectForeignOrigin } from "@/lib/security/csrf";
 import { MOBILE_API_LIMIT, authRateLimit } from "@/lib/security/rate-limit";
 import { listDoctorIdsFor } from "@/lib/queries/clinic";
+import { isPracticeAccessExpired } from "@/lib/queries/packages";
 
 /**
  * Shared plumbing for the `/api/mobile/**` namespace.
@@ -190,6 +191,9 @@ export async function requireAdminActor(
   if (throttled instanceof Response) return throttled;
 
   const scope = await getBusinessScope();
+  if (scope.doctorIds.length > 0 && (await isPracticeAccessExpired(scope.doctorIds))) {
+    return apiError("Forbidden", 403);
+  }
   return {
     user: throttled,
     viewerRole: throttled.role === "admin" ? ("owner" as const) : ("manager" as const),

@@ -86,3 +86,24 @@ tmp-shot-*.png
 # harness command definitions (not application source)
 /.omp/
 /skoracares-app/
+
+# API audit deliverables and testing artifacts — local only, never commit/push
+API_INVENTORY.md
+API_TEST_REPORT.md
+API_RESPONSE_DATA.json
+API_FAILURES.md
+API_SECURITY_AUDIT.md
+API_PERFORMANCE_REPORT.md
+API_TEST_COLLECTION.json
+API_TEST_SUMMARY.csv
+API_FIX_LOG.md
+test_users.ts
+/scripts/audit_*
+/scripts/execute_all_tests.mjs
+/scripts/generate_all_reports.mjs
+/scripts/grant_test_perms.mjs
+/scripts/inventory.json
+/scripts/load_test_results.json
+/scripts/performance_*.json
+/scripts/run_master_api_audit.mjs
+

@@ -910,12 +910,17 @@ export async function getMySosHistory() {
       acceptedAt: sosRequests.acceptedAt,
       cancelledAt: sosRequests.cancelledAt,
       acceptedBy: users.name,
+      rating: sosCases.rating,
+      distanceKm: sosCases.distanceKm,
+      fare: billings.totalAmount,
     })
     .from(sosRequests)
     .leftJoin(users, eq(users.id, sosRequests.acceptedBy))
+    .leftJoin(sosCases, eq(sosCases.sosRequestId, sosRequests.id))
+    .leftJoin(billings, eq(billings.id, sosCases.billingId))
     .where(and(eq(sosRequests.patientId, user.id), sql`${sosRequests.status} IN ('completed','cancelled','expired')`))
     .orderBy(desc(sosRequests.createdAt))
-    .limit(20);
+    .limit(30);
   return rows;
 }
 

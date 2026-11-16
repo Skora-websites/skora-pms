@@ -170,9 +170,17 @@ export async function requireAdminPermission(
   if (user.role !== "admin" && user.role !== "manager") {
     redirect(homePathForRole(user.role));
   }
-  if (user.role === "admin") return { user, viewerRole: "owner" as const };
-  if (opts.ownerOnly) return null;
-  const ok = await hasPermission(user.id, permission);
-  if (!ok) return null;
-  return { user, viewerRole: "manager" as const };
+  if (user.role === "manager") {
+    if (opts.ownerOnly) return null;
+    const ok = await hasPermission(user.id, permission);
+    if (!ok) return null;
+  }
+  const scope = await getBusinessScope();
+  if (scope.doctorIds.length > 0 && (await isPracticeAccessExpired(scope.doctorIds))) {
+    return null;
+  }
+  return {
+    user,
+    viewerRole: user.role === "admin" ? ("owner" as const) : ("manager" as const),
+  };
 }

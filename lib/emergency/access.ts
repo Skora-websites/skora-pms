@@ -26,9 +26,12 @@ declare global {
   }
 }
 
-/** True only inside the native Android/iOS shell. */
+/** True only inside the native Android/iOS shell (or in dev preview with ?preview=app). */
 export function isNativeEmergencyApp(): boolean {
   if (typeof window === "undefined") return false;
+  if (window.location.search.includes("preview=app") || window.location.search.includes("native=1")) {
+    return true;
+  }
   const cap = window.Capacitor;
   if (!cap) return false;
   if (cap.isNativePlatform?.() !== true) return false;

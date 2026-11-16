@@ -177,8 +177,10 @@ export function EmergencyPanel({
     dropOfferToast(requestId);
     startTransition(async () => {
       const res = await acceptSos(requestId);
-      if (res.error) alert(res.error);
-      else {
+      if (res.error) {
+        notify({ title: "Emergency request unavailable", body: res.error, tone: "warning" });
+        setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
+      } else {
         setOffers((prev) => prev.filter((o) => o.requestId !== requestId));
         setActiveCase(requestId);
         // Plaintext arrival code + ETA exist only in this return value.

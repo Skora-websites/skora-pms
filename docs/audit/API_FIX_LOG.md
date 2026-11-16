@@ -127,3 +127,22 @@ npm test
 ```
 - **Integrity checks:** `npm run check:storage`, `npm run check:permissions`, `npm run check:links`, `npm run db:check`, and `npm run typecheck:tests` all pass with zero errors.
 - **Suite health:** 100% green. All code, database schema, collation, and test suite issues are fully resolved.
+
+---
+
+## 8. Admin-Tier Practice-Plan Gating & Mobile Alignment (2026-11-13)
+
+**Remediations:**
+1. **`app/api/mobile/_helpers.ts` (`requireAdminActor`):**
+   - Added `isPracticeAccessExpired(scope.doctorIds)` check after resolving business scope.
+   - Rejects expired practice owners and managers with `403 Forbidden` (`apiError("Forbidden", 403)`), matching the web's trial-expiry boundary and preventing unauthorized access to all 17 `/api/mobile/admin/**` endpoints.
+2. **`lib/auth/guard.ts` (`requireAdminPermission`):**
+   - Added `isPracticeAccessExpired(scope.doctorIds)` gate to admin-tier server action permissions before returning `{ user, viewerRole }`.
+   - Returns `null` when practice access has expired, blocking expired business owners and managers from invoking admin-tier server actions.
+3. **`skora-mobile` Fixes & Validation:**
+   - Fixed JSX syntax/fragment drift in `src/app/(doctor)/home.tsx`.
+   - Removed corrupted/dead draft component `src/components/doctor/sos-doctor-sheet.tsx`.
+   - Updated `src/app/(patient)/records.tsx`:
+     - Added direct report link handler (`Linking.openURL`) for attached test reports.
+     - Added interactive appointment cancellation button with confirmation dialog wired to `useCancelAppointment()`.
+   - Verified `npx tsc --noEmit` in both the web repository and `skora-mobile` with **0 errors**.
