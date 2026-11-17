@@ -11,7 +11,7 @@ echo "🚀 [$(date '+%Y-%m-%d %H:%M:%S')] Starting Automated Deployment..."
 echo "======================================================="
 
 # Target project directory on aaPanel (adjust to your website root)
-PROJECT_DIR="/www/wwwroot/pms.skorainfotech.com"
+PROJECT_DIR="/www/wwwroot/skora-pms"
 
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "❌ Error: Project directory $PROJECT_DIR not found!"
@@ -43,15 +43,9 @@ npm run db:migrate
 echo "🔨 Building Next.js application..."
 npm run build
 
-# 5. Reload PM2 with Zero Downtime
-echo "♻️ Restarting Node service..."
-if pm2 describe skoracares > /dev/null 2>&1; then
-    pm2 reload skoracares --update-env
-elif pm2 describe skoracare > /dev/null 2>&1; then
-    pm2 reload skoracare --update-env
-else
-    pm2 start npm --name "skoracares" -- start
-fi
+# 6. Reload PM2 with Zero Downtime
+echo "♻️ Restarting Node service (skoracare)..."
+pm2 reload skoracare --update-env || pm2 restart skoracare --update-env || pm2 start npm --name "skoracare" -- start
 
 echo "======================================================="
 echo "✅ [$(date '+%Y-%m-%d %H:%M:%S')] SkoraCare is LIVE!"
