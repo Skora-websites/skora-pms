@@ -115,6 +115,9 @@ export async function createPatientAppointment(
     return { error: "Please choose a doctor." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
+  if (!/^(0?[1-9]|1[0-2]):[0-5]\d\s*(AM|PM)$/i.test(timeRaw)) {
+    return { error: "Invalid time. Must be in 12-hour AM/PM format (e.g. 10:00 AM)." };
+  }
   if (!["clinical_visit", "home_visit", "online_visit", "on_call_visit"].includes(caseType)) {
     return { error: "Invalid visit type." };
   }
@@ -325,6 +328,9 @@ export async function reschedulePatientAppointment(
   if (user.role !== "patient") return { error: "Only patients can reschedule appointments." };
   if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
+  if (!/^(0?[1-9]|1[0-2]):[0-5]\d\s*(AM|PM)$/i.test(timeRaw)) {
+    return { error: "Invalid time. Must be in 12-hour AM/PM format (e.g. 10:00 AM)." };
+  }
 
   const [appt] = await db
     .select({

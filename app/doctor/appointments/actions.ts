@@ -235,10 +235,11 @@ export async function createAppointment(
     }
   }
 
+  const timeNormalized = normalizeTime(timeRaw);
   const parsed = appointmentSchema.safeParse({
     patientId: patientIdRaw || undefined,
     date,
-    time: timeRaw,
+    time: timeNormalized,
     caseType,
   });
   if (!parsed.success) {
@@ -482,10 +483,11 @@ export async function updateAppointment(
     return { error: "Cancelled appointments cannot be edited." };
   }
 
+  const timeNormalized = normalizeTime(timeRaw);
   const parsed = appointmentSchema.safeParse({
     patientId: patientIdRaw || undefined,
     date,
-    time: timeRaw,
+    time: timeNormalized,
     caseType,
   });
   if (!parsed.success) {

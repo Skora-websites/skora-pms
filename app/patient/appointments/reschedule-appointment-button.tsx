@@ -30,7 +30,16 @@ export function RescheduleAppointmentButton({
 
   async function handleSubmit(formData: FormData) {
     const date = String(formData.get("date") ?? "");
-    const time = String(formData.get("time") ?? "");
+    let time = String(formData.get("time") ?? "").trim();
+    const m = time.match(/^(\d{1,2}):(\d{2})$/);
+    if (m) {
+      let h = Number(m[1]);
+      const min = m[2];
+      const period = h >= 12 ? "PM" : "AM";
+      if (h === 0) h = 12;
+      else if (h > 12) h -= 12;
+      time = `${h}:${min} ${period}`;
+    }
     setBusy(true);
     setError(null);
     const res = await reschedulePatientAppointment(appointmentId, date, time);
