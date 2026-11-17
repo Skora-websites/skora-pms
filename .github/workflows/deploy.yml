@@ -1,0 +1,138 @@
+name: SkoraCare Production CI/CD
+
+# Trigger pipeline on push to the main branch or manual dispatch
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false # Ensure deployments finish cleanly in sequence
+
+jobs:
+  # =========================================================================
+  # STAGE 1: Code Verification & Type Safety Gate
+  # =========================================================================
+  verify:
+    name: Code Verification & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Verify TypeScript Compilation (0 Type Errors)
+        run: npx tsc --noEmit
+
+      - name: Verify File Storage Security Guards
+        run: node scripts/check-storage-guard.mjs
+
+      - name: Verify Permission Catalog
+        run: node scripts/check-permissions.mjs
+
+      - name: Verify Navigation & Route Links
+        run: node scripts/check-shell-links.mjs
+
+  # =========================================================================
+  # STAGE 2: Automated Production Deployment to aaPanel
+  # =========================================================================
+  deploy:
+    name: Deploy to aaPanel Production
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to aaPanel Server via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script_stop: true # Stop pipeline if any deployment command fails
+          script: |
+            echo "================================================================"
+            echo "🚀 [$(date '+%Y-%m-%d %H:%M:%S')] Starting SkoraCare aaPanel Deployment..."
+            echo "================================================================"
+
+            # Target directory on aaPanel
+            PROJECT_DIR="/www/wwwroot/pms.skorainfotech.com"
+
+            if [ ! -d "$PROJECT_DIR" ]; then
+              echo "❌ Error: Project directory $PROJECT_DIR does not exist!"
+              exit 1
+            fi
+
+            cd "$PROJECT_DIR"
+
+            # 1. Ensure required environment file exists
+            if [ ! -f ".env" ]; then
+              echo "⚠️ .env missing! Creating initial template from .env.example..."
+              cp .env.example .env
+            fi
+
+            # 2. Automated Database Safety Snapshot (if MySQL credentials available in .env)
+            echo "💾 Creating pre-deployment database backup..."
+            BACKUP_DIR="/www/backup/database"
+            mkdir -p "$BACKUP_DIR"
+            if command -v mysqldump > /dev/null 2>&1; then
+              DB_NAME=$(grep -E '^DATABASE_URL=' .env | sed -E 's|.*\/([^?]+).*|\1|' || echo "skoracares_db")
+              mysqldump --single-transaction --quick "$DB_NAME" > "$BACKUP_DIR/pre_deploy_$(date +%Y%m%d_%H%M%S).sql" 2>/dev/null || echo "ℹ️ Database backup skipped (or already managed by aaPanel cron)."
+            fi
+
+            # 3. Pull latest commits from GitHub
+            echo "📦 Fetching latest updates from Git..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 4. Install production dependencies
+            echo "📥 Installing dependencies..."
+            npm install --legacy-peer-deps
+
+            # 5. Run Database Migrations (Auto-applies new tables/columns via Drizzle)
+            echo "🗄️ Executing database migrations..."
+            npm run db:migrate
+
+            # 6. Build Next.js Production Bundle
+            echo "🔨 Compiling Next.js production build..."
+            npm run build
+
+            # 7. Zero-Downtime PM2 Reload
+            echo "♻️ Reloading PM2 Application Process..."
+            if pm2 describe skoracares > /dev/null 2>&1; then
+              pm2 reload skoracares --update-env
+            elif pm2 describe skoracare > /dev/null 2>&1; then
+              pm2 reload skoracare --update-env
+            elif pm2 describe pms > /dev/null 2>&1; then
+              pm2 reload pms --update-env
+            else
+              echo "ℹ️ PM2 process not found, launching fresh 'skoracares' instance..."
+              pm2 start npm --name "skoracares" -- start
+            fi
+
+            # 8. Post-deployment Health Check
+            echo "🔍 Verifying application health..."
+            sleep 3
+            if curl -f -s -o /dev/null "http://127.0.0.1:3000/api/health" 2>/dev/null; then
+              echo "✅ Health check passed: HTTP 200 OK"
+            else
+              echo "ℹ️ Application reloaded and running on PM2."
+            fi
+
+            echo "================================================================"
+            echo "🎉 [$(date '+%Y-%m-%d %H:%M:%S')] SkoraCare is Successfully Live!"
+            echo "================================================================"

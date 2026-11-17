@@ -106,4 +106,6 @@ test_users.ts
 /scripts/load_test_results.json
 /scripts/performance_*.json
 /scripts/run_master_api_audit.mjs
+*.sql
+/scripts/export_production_db.mjs
 
