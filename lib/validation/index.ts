@@ -90,7 +90,7 @@ export const appointmentSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
   time: z
     .string()
-    .regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM format"),
+    .regex(/^(\d{1,2}:\d{2}(\s*(AM|PM))?|\d{2}:\d{2}(:\d{2})?)$/i, "Time must be HH:MM or h:mm AM/PM format"),
   caseType: z.enum(
     ["clinical_visit", "home_visit", "online_visit", "on_call_visit"],
     { message: "Invalid case type" }

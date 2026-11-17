@@ -107,15 +107,17 @@ export async function createPatientAppointment(
   const doctorId = Number(formData.get("doctor_id"));
   const date = String(formData.get("date") ?? "").trim();
   const timeRaw = String(formData.get("time") ?? "").trim();
-  const caseType = String(formData.get("case_type") ?? "clinical_visit").trim();
+  let caseType = String(formData.get("case_type") ?? "clinical_visit").trim();
+  if (caseType === "online_consultation") caseType = "online_visit";
   const reason = String(formData.get("reason") ?? "").trim() || null;
 
   if (!doctorId || !Number.isInteger(doctorId) || doctorId <= 0) {
     return { error: "Please choose a doctor." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
-  if (!/^\d{2}:\d{2}$/.test(timeRaw)) return { error: "Invalid time." };
-  if (!["clinical_visit", "home_visit"].includes(caseType)) return { error: "Invalid visit type." };
+  if (!["clinical_visit", "home_visit", "online_visit", "on_call_visit"].includes(caseType)) {
+    return { error: "Invalid visit type." };
+  }
 
   const now = new Date();
   const today = todayStr(now);
@@ -323,7 +325,6 @@ export async function reschedulePatientAppointment(
   if (user.role !== "patient") return { error: "Only patients can reschedule appointments." };
   if (!appointmentId || !Number.isInteger(appointmentId)) return { error: "Invalid appointment ID." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Invalid date." };
-  if (!/^\d{2}:\d{2}$/.test(timeRaw)) return { error: "Invalid time." };
 
   const [appt] = await db
     .select({
