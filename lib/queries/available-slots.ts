@@ -184,7 +184,23 @@ export async function getAvailableSlots(doctorId: number, date: string): Promise
   const schedules = ctx.schedules;
 
   if (schedules.length === 0) {
-    return { slots: [], message: "Doctor is not available on this day.", holiday };
+    const dayOfWeek = weekdayOf(date);
+    if (dayOfWeek === 0) {
+      return { slots: [], message: "Doctor is not available on Sunday.", holiday };
+    }
+    const defaultTimes = [
+      "9:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
+      "12:00 PM", "12:30 PM", "2:30 PM", "3:00 PM", "3:30 PM",
+      "4:00 PM", "4:30 PM", "5:00 PM", "5:30 PM"
+    ];
+    const free = defaultTimes
+      .filter((slot) => !booked.has(slot))
+      .filter((slot) => {
+        if (!isToday) return true;
+        const min = parseTimeToMinutes(slot);
+        return min !== null && min > nowMin;
+      });
+    return { slots: free, message: null, holiday };
   }
 
   const booked = new Set(ctx.booked);

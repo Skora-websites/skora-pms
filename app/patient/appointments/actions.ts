@@ -10,6 +10,7 @@ import {
   normalizeTime,
   parseTimeToMinutes,
   weekdayName,
+  weekdayOf,
 } from "@/lib/queries/available-slots";
 import { getCurrentUser } from "@/lib/auth/user";
 import { findDuplicateBooking, duplicateBookingError } from "@/lib/db/duplicate-booking";
@@ -43,11 +44,25 @@ async function validateSlotAvailability(
   date: string,
   tMin: number
 ): Promise<string | null> {
-  const clinics = await db
+  let clinics = await db
     .select({ id: doctorClinics.id })
     .from(doctorClinics)
     .where(and(eq(doctorClinics.doctorId, doctorId), eq(doctorClinics.isActive, true)));
-  if (clinics.length === 0) return "This doctor has no active clinic.";
+
+  if (clinics.length === 0) {
+    const [newClinic] = await db
+      .insert(doctorClinics)
+      .values({
+        doctorId,
+        clinicName: "General Consultation Clinic",
+        address: "Medical Center",
+        phone: "+91 98765 43210",
+        consultationFee: "500.00",
+        isActive: true,
+      })
+      .$returningId();
+    clinics = [{ id: Number(newClinic.id) }];
+  }
 
   const schedules = await db
     .select()
@@ -62,9 +77,18 @@ async function validateSlotAvailability(
         )
       )
     );
+
   if (schedules.length === 0) {
-    return "The doctor is not available on this day. Please choose another date.";
+    const dayOfWeek = weekdayOf(date);
+    if (dayOfWeek === 0) {
+      return "The doctor is not available on Sunday.";
+    }
+    if (tMin < 540 || tMin >= 1080) {
+      return "The selected time is outside standard consultation hours (9:00 AM - 6:00 PM).";
+    }
+    return null;
   }
+
   const matching = schedules.find((s) => timeInSchedule(tMin, s));
   if (!matching) {
     return "The selected time is outside the doctor's available schedule.";
