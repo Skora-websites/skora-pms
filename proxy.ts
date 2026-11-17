@@ -172,7 +172,6 @@ export async function proxy(request: NextRequest) {
       // Geolocation is used by the SOS emergency dispatch (patient +
       // doctor live tracking), so allow it on this origin.
       "geolocation=(self)",
-      "interest-cohort=()",
     ].join(", ")
   );
   response.headers.set("X-DNS-Prefetch-Control", "off");
