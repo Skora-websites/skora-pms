@@ -1,10 +1,79 @@
 import { NextResponse } from "next/server";
+import { and, desc, eq, gt } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { sosOffers, sosRequests, users, sosCases } from "@/lib/db/schema";
 import { triggerSos } from "@/lib/dispatch/actions";
-import { requireApiRole } from "@/lib/auth/guard";
-
+import { requireApiRole, requireApiDoctorOnly } from "@/lib/auth/guard";
+import { maskPatient } from "@/lib/dispatch/geo";
+import { SOS_TTL_MIN } from "@/lib/config";
 import { apiError, redirectError, csrfGuard } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
+
+/**
+ * GET /api/mobile/emergency/requests — doctor's SOS feed.
+ * Returns pending broadcast offers and active cases for mobile.
+ */
+export async function GET() {
+  const user = await requireApiDoctorOnly();
+  if (user instanceof Response) return user;
+  const doctorId = user.id;
+
+  const ttlCutoff = new Date(Date.now() - SOS_TTL_MIN * 60_000);
+  const rows = await db
+    .select({
+      id: sosOffers.id,
+      requestId: sosOffers.sosRequestId,
+      offerDistanceKm: sosOffers.distanceKm,
+      offerStatus: sosOffers.status,
+      complaint: sosRequests.complaint,
+      patientName: users.name,
+      createdAt: sosRequests.createdAt,
+      caseDistanceKm: sosCases.distanceKm,
+      etaMinutes: sosCases.etaMinutes,
+      arrivedAt: sosCases.arrivedAt,
+      otpVerifiedAt: sosCases.otpVerifiedAt,
+    })
+    .from(sosOffers)
+    .innerJoin(sosRequests, eq(sosRequests.id, sosOffers.sosRequestId))
+    .innerJoin(users, eq(users.id, sosRequests.patientId))
+    .leftJoin(sosCases, and(eq(sosCases.sosRequestId, sosOffers.sosRequestId), eq(sosCases.doctorId, doctorId)))
+    .where(
+      and(
+        eq(sosOffers.doctorId, doctorId),
+        gt(sosRequests.createdAt, ttlCutoff)
+      )
+    )
+    .orderBy(desc(sosRequests.createdAt));
+
+  const offers = rows
+    .filter((r) => r.offerStatus === "broadcast")
+    .map((r) => ({
+      requestId: r.requestId,
+      distanceKm: r.offerDistanceKm,
+      complaint: r.complaint,
+      patient: maskPatient(r.patientName),
+      createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+      etaMinutes: null,
+      arrivedAt: null,
+      otpVerifiedAt: null,
+    }));
+
+  const active = rows
+    .filter((r) => r.offerStatus === "accepted")
+    .map((r) => ({
+      requestId: r.requestId,
+      distanceKm: r.caseDistanceKm,
+      etaMinutes: r.etaMinutes,
+      arrivedAt: r.arrivedAt ? r.arrivedAt.toISOString() : null,
+      otpVerifiedAt: r.otpVerifiedAt ? r.otpVerifiedAt.toISOString() : null,
+      patient: maskPatient(r.patientName),
+      complaint: r.complaint,
+      createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+    }));
+
+  return NextResponse.json({ offers, active });
+}
 
 /**
  * POST /api/mobile/emergency/requests — patient raises an SOS.

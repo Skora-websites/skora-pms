@@ -30,7 +30,11 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const result = await setDoctorOnDuty(raw.onDuty);
+    const coords =
+      typeof raw.latitude === "number" && typeof raw.longitude === "number"
+        ? { latitude: raw.latitude, longitude: raw.longitude }
+        : undefined;
+    const result = await setDoctorOnDuty(raw.onDuty, coords);
     if (result.error) return apiError(result.error, 400);
     return NextResponse.json({ error: null });
   } catch (err) {

@@ -605,9 +605,20 @@ async function billSosCase(requestId: number, patientId: number, doctorId: numbe
 }
 
 /** Doctor toggles on-duty availability (opt-in for SOS dispatch). */
-export async function setDoctorOnDuty(onDuty: boolean): Promise<SosActionResult> {
+export async function setDoctorOnDuty(
+  onDuty: boolean,
+  coords?: { latitude?: number | null; longitude?: number | null }
+): Promise<SosActionResult> {
   const doctor = await requireDoctor();
-  await db.update(users).set({ onDuty, updatedAt: new Date() }).where(eq(users.id, doctor.id));
+  const updateData: { onDuty: boolean; updatedAt: Date; latitude?: string; longitude?: string } = {
+    onDuty,
+    updatedAt: new Date(),
+  };
+  if (coords?.latitude != null && coords?.longitude != null) {
+    updateData.latitude = String(coords.latitude);
+    updateData.longitude = String(coords.longitude);
+  }
+  await db.update(users).set(updateData).where(eq(users.id, doctor.id));
   revalidatePath("/doctor/emergency");
   return { error: null };
 }

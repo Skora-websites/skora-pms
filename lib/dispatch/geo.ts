@@ -252,6 +252,40 @@ export async function findNearbyOnDutyDoctors(
     }
   }
 
+  // Safety fallback: if no doctor matched within the strict geo-box, include any
+  // active on-duty doctors so critical emergency dispatches are never dropped.
+  if (nearby.length === 0) {
+    const fallbackOnDuty = await db
+      .select({
+        doctorId: users.id,
+        doctorName: users.name,
+        dLat: users.latitude,
+        dLng: users.longitude,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(users.role, "doctor"),
+          eq(users.status, "active"),
+          eq(users.onDuty, true)
+        )
+      );
+
+    for (const doc of fallbackOnDuty) {
+      if (doctorsWithClinic.has(doc.doctorId)) continue;
+      const dLat = Number(doc.dLat);
+      const dLng = Number(doc.dLng);
+      const dist = Number.isFinite(dLat) && Number.isFinite(dLng) ? haversineKm(lat, lng, dLat, dLng) : 0;
+      nearby.push({
+        doctorId: doc.doctorId,
+        name: doc.doctorName,
+        clinicId: null,
+        clinicName: `${doc.doctorName} (on duty)`,
+        distanceKm: Math.round(dist * 100) / 100,
+      });
+    }
+  }
+
   // Ranked by the dispatch score (audit P5), not distance alone: the score
   // blends pickup distance with each doctor's offer-acceptance history, so a
   // busy-but-near doctor no longer jumps an idle doctor who will actually

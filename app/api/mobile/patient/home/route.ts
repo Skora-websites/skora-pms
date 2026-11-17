@@ -26,6 +26,7 @@ export async function GET() {
   ]);
 
   return apiOk({
+    greetingName: user.name,
     stats,
     upcomingAppointments,
     consultations,
