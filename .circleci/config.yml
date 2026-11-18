@@ -1,0 +1,94 @@
+version: 2.1
+
+executors:
+  android-builder:
+    docker:
+      - image: cimg/android:2024.01-node
+    resource_class: large
+
+jobs:
+  validate-and-typecheck:
+    docker:
+      - image: cimg/node:20.18
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-npm-deps-{{ checksum "skora-mobile/package.json" }}
+      - run:
+          name: Install Dependencies
+          working_directory: skora-mobile
+          command: npm install --legacy-peer-deps
+      - save_cache:
+          key: v1-npm-deps-{{ checksum "skora-mobile/package.json" }}
+          paths:
+            - ~/.npm
+            - skora-mobile/node_modules
+      - run:
+          name: Run Typecheck
+          working_directory: skora-mobile
+          command: npm run typecheck
+
+  build-android-cloud:
+    executor: android-builder
+    environment:
+      EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
+      EAS_BUILD_SKIP_LOCKFILE_CHECK: "1"
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-npm-deps-{{ checksum "skora-mobile/package.json" }}
+      - run:
+          name: Install Dependencies
+          working_directory: skora-mobile
+          command: npm install --legacy-peer-deps
+      - run:
+          name: Prebuild Android Native Project
+          working_directory: skora-mobile
+          command: npx expo prebuild --platform android --clean
+      - run:
+          name: Assemble Release APK via Gradle
+          working_directory: skora-mobile/android
+          command: ./gradlew assembleRelease --no-daemon
+      - store_artifacts:
+          path: skora-mobile/android/app/build/outputs/apk/
+          destination: apk
+
+  expo-production-build:
+    docker:
+      - image: cimg/node:20.18
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          working_directory: skora-mobile
+          command: npm install --legacy-peer-deps
+      - run:
+          name: Build via Expo EAS for Production
+          working_directory: skora-mobile
+          command: npx eas-cli build --platform android --profile production --non-interactive
+
+workflows:
+  version: 2
+  mobile-ci-cd:
+    jobs:
+      - validate-and-typecheck
+      - build-android-cloud:
+          requires:
+            - validate-and-typecheck
+      - hold-for-production:
+          type: approval
+          requires:
+            - build-android-cloud
+          filters:
+            branches:
+              only:
+                - main
+                - master
+      - expo-production-build:
+          requires:
+            - hold-for-production
