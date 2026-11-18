@@ -4,12 +4,13 @@ executors:
   android-builder:
     docker:
       - image: cimg/android:2026.11-node
-    resource_class: large
+    resource_class: 2xlarge+
 
 jobs:
   validate-and-typecheck:
     docker:
       - image: cimg/node:22.13
+    resource_class: xlarge
     steps:
       - checkout
       - restore_cache:
@@ -34,9 +35,9 @@ jobs:
     environment:
       EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
       EAS_BUILD_SKIP_LOCKFILE_CHECK: "1"
-      NODE_OPTIONS: "--max-old-space-size=4096"
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false"
-      _JAVA_OPTIONS: "-Xmx4096m"
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx16384m -XX:MaxMetaspaceSize=2048m' -Dorg.gradle.workers.max=8 -Dorg.gradle.parallel=true"
+      _JAVA_OPTIONS: "-Xmx16384m"
     steps:
       - checkout
       - restore_cache:
@@ -53,7 +54,7 @@ jobs:
       - run:
           name: Assemble Release APK via Gradle
           working_directory: skora-mobile/android
-          command: ./gradlew assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          command: ./gradlew assembleRelease --no-daemon --max-workers=8 -Dorg.gradle.jvmargs="-Xmx16384m -XX:MaxMetaspaceSize=2048m"
       - store_artifacts:
           path: skora-mobile/android/app/build/outputs/apk/
           destination: apk
