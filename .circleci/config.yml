@@ -35,10 +35,9 @@ jobs:
     environment:
       EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
       EAS_BUILD_SKIP_LOCKFILE_CHECK: "1"
-      NODE_OPTIONS: "--max-old-space-size=4096"
+      NODE_OPTIONS: "--max-old-space-size=2048"
       CMAKE_BUILD_PARALLEL_LEVEL: "2"
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx2560m -XX:MaxMetaspaceSize=512m' -Dorg.gradle.workers.max=4 -Dorg.gradle.parallel=true"
-      _JAVA_OPTIONS: "-Xmx2560m"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx2048m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC' -Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false"
     steps:
       - checkout
       - restore_cache:
@@ -55,7 +54,7 @@ jobs:
       - run:
           name: Assemble Release APK via Gradle
           working_directory: skora-mobile/android
-          command: ./gradlew assembleRelease --no-daemon --max-workers=4 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Dorg.gradle.jvmargs="-Xmx2560m -XX:MaxMetaspaceSize=512m"
+          command: ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"
       - store_artifacts:
           path: skora-mobile/android/app/build/outputs/apk/
           destination: apk
