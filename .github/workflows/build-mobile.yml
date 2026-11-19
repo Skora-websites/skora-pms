@@ -34,10 +34,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Ensure CMake 3.22.1
+      - name: Accept Android Licenses & Ensure CMake
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "cmake;3.22.1"
@@ -79,6 +76,7 @@ jobs:
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: mobile-continuous-test
@@ -95,6 +93,7 @@ jobs:
 
       - name: Upload to Open-Source Host (bashupload)
         id: bashupload
+        continue-on-error: true
         run: |
           URL=$(curl -s https://bashupload.com/ -T dist/skora-mobile-release.apk | grep "wget" | awk '{print $2}')
           echo "DIRECT_URL=$URL" >> $GITHUB_ENV
