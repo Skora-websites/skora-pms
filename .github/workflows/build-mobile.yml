@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-apk:
@@ -68,38 +68,60 @@ jobs:
         with:
           name: skora-mobile-release-apk
           path: dist/skora-mobile-release.apk
-          retention-days: 30
+          retention-days: 14
 
-      - name: Publish to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        with:
-          tag_name: mobile-continuous-test
-          name: Mobile Continuous Test Build (${{ github.sha }})
-          body: |
-            ### Automated Continuous Test Build
-            - **Commit:** `${{ github.sha }}`
-            - **Branch:** `${{ github.ref_name }}`
-            - **Triggered By:** `${{ github.actor }}`
-            - **Direct Download:** [skora-mobile-release.apk](https://github.com/${{ github.repository }}/releases/download/mobile-continuous-test/skora-mobile-release.apk)
-          files: dist/skora-mobile-release.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload to Open-Source Host (bashupload)
-        id: bashupload
-        continue-on-error: true
+      - name: Upload APK to Open Mirrors
+        id: upload-mirrors
         run: |
-          URL=$(curl -s https://bashupload.com/ -T dist/skora-mobile-release.apk | grep "wget" | awk '{print $2}')
-          echo "DIRECT_URL=$URL" >> $GITHUB_ENV
-          echo "Direct download URL: $URL"
+          echo "Uploading APK to open-source and direct mirrors..."
+          APK_FILE="dist/skora-mobile-release.apk"
+          
+          # 1. GoFile
+          SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name 2>/dev/null' || true)
+          if [ -n "$SERVER" ] && [ "$SERVER" != "null" ]; then
+            GOFILE_RESP=$(curl -s -F "file=@$APK_FILE" "https://${SERVER}.gofile.io/contents/uploadfile" || true)
+            GOFILE_URL=$(echo "$GOFILE_RESP" | jq -r '.data.downloadPage 2>/dev/null' || true)
+            echo "GOFILE_URL=$GOFILE_URL" >> $GITHUB_ENV
+            echo "GoFile: $GOFILE_URL"
+          fi
 
-      - name: Job Summary with Download Links
+          # 2. tmpfiles.org
+          TMP_RESP=$(curl -s -F "file=@$APK_FILE" https://tmpfiles.org/api/v1/upload || true)
+          TMP_PAGE=$(echo "$TMP_RESP" | jq -r '.data.url 2>/dev/null' || true)
+          if [ -n "$TMP_PAGE" ] && [ "$TMP_PAGE" != "null" ]; then
+            TMP_URL=$(echo "$TMP_PAGE" | sed 's|tmpfiles.org/|tmpfiles.org/dl/|')
+            echo "TMP_URL=$TMP_URL" >> $GITHUB_ENV
+            echo "TmpFiles: $TMP_URL"
+          fi
+
+          # 3. transfer.sh
+          TRANSFER_URL=$(curl -s --upload-file "$APK_FILE" https://transfer.sh/skora-mobile-release.apk || true)
+          echo "TRANSFER_URL=$TRANSFER_URL" >> $GITHUB_ENV
+          echo "Transfer.sh: $TRANSFER_URL"
+
+          # 4. bashupload.com
+          BASH_URL=$(curl -s https://bashupload.com/ -T "$APK_FILE" | grep "wget" | awk '{print $2}' || true)
+          echo "BASH_URL=$BASH_URL" >> $GITHUB_ENV
+          echo "BashUpload: $BASH_URL"
+
+      - name: Job Summary with Direct Download Links
         run: |
           echo "## 📱 Android APK Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 Download Links:" >> $GITHUB_STEP_SUMMARY
-          echo "1. **Direct GitHub Release Link:** [Download skora-mobile-release.apk](https://github.com/${{ github.repository }}/releases/download/mobile-continuous-test/skora-mobile-release.apk)" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Nightly.link (No Login Needed):** [Download via nightly.link](https://nightly.link/${{ github.repository }}/workflows/build-mobile/main/skora-mobile-release-apk.zip)" >> $GITHUB_STEP_SUMMARY
-          echo "3. **Direct Open-Source Mirror:** $DIRECT_URL" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 Direct Download Links (No Login Required):" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$GOFILE_URL" ] && [ "$GOFILE_URL" != "null" ]; then
+            echo "- 🚀 **GoFile (High Speed):** $GOFILE_URL" >> $GITHUB_STEP_SUMMARY
+            echo "::notice title=GoFile Download::$GOFILE_URL"
+          fi
+          if [ -n "$TMP_URL" ] && [ "$TMP_URL" != "null" ]; then
+            echo "- 📦 **TmpFiles Direct Link:** $TMP_URL" >> $GITHUB_STEP_SUMMARY
+            echo "::notice title=TmpFiles Download::$TMP_URL"
+          fi
+          if [ -n "$TRANSFER_URL" ] && [[ "$TRANSFER_URL" == https* ]]; then
+            echo "- 🌐 **Transfer.sh Mirror:** $TRANSFER_URL" >> $GITHUB_STEP_SUMMARY
+            echo "::notice title=Transfer.sh Mirror::$TRANSFER_URL"
+          fi
+          if [ -n "$BASH_URL" ] && [[ "$BASH_URL" == http* ]]; then
+            echo "- 💾 **BashUpload Mirror:** $BASH_URL" >> $GITHUB_STEP_SUMMARY
+            echo "::notice title=BashUpload Mirror::$BASH_URL"
+          fi
