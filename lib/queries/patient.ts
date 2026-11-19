@@ -93,8 +93,12 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
       symptomsNote: consultations.symptomsNote,
       followUpDate: consultations.followUpDate,
       prescriptionStatus: consultations.prescriptionStatus,
+      signedAt: consultations.signedAt,
       doctorName: users.name,
       doctorQualification: users.qualification,
+      doctorSpecialization: users.specialization,
+      doctorRegistrationNumber: users.registrationNumber,
+      doctorSignaturePath: users.signaturePath,
       additionalInfo: consultations.additionalInfo,
     })
     .from(consultations)
@@ -119,8 +123,18 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
         };
       }
     }
+    const isDigitallySigned = Boolean(
+      c.prescriptionStatus === "signed" ||
+      c.prescriptionStatus === "issued" ||
+      c.signedAt !== null ||
+      c.doctorSignaturePath
+    );
     return {
       ...c,
+      isDigitallySigned,
+      doctorRegistrationNumber: c.doctorRegistrationNumber ?? null,
+      doctorSpecialization: c.doctorSpecialization ?? null,
+      signedAt: c.signedAt ? c.signedAt.toISOString() : (c.consultationDate ? c.consultationDate.toISOString() : null),
       medications: medMap.get(c.id) ?? [],
       review,
     };
