@@ -68,6 +68,7 @@ export type AppointmentRow = {
   patientCity?: string | null;
   patientLatitude?: string | number | null;
   patientLongitude?: string | number | null;
+  patientAllergies?: string | null;
 };
 
 async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit?: number, offset?: number) {
@@ -98,6 +99,7 @@ async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit
       patientCity: users.city,
       patientLatitude: users.latitude,
       patientLongitude: users.longitude,
+      patientAllergies: users.allergies,
     })
     .from(appointments)
     .leftJoin(users, eq(users.id, appointments.patientId))
@@ -218,6 +220,7 @@ export const getDoctorPatients = cache(async (doctorId: number, search?: string,
       state: users.state,
       registrationId: users.registrationId,
       status: users.status,
+      allergies: users.allergies,
       createdAt: users.createdAt,
     })
     .from(users)
@@ -245,6 +248,7 @@ export const getPatientById = cache(async (doctorId: number, patientId: number) 
       registrationId: users.registrationId,
       profilePhotoPath: users.profilePhotoPath,
       status: users.status,
+      allergies: users.allergies,
       createdAt: users.createdAt,
     })
     .from(users)
