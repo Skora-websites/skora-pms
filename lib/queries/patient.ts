@@ -95,6 +95,7 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
       prescriptionStatus: consultations.prescriptionStatus,
       doctorName: users.name,
       doctorQualification: users.qualification,
+      additionalInfo: consultations.additionalInfo,
     })
     .from(consultations)
     .innerJoin(users, eq(users.id, consultations.doctorId))
@@ -104,7 +105,26 @@ export const getPatientPrescriptions = cache(async (patientId: number) => {
     .limit(LIST_HARD_CAP);
 
   const medMap = await medicationsByConsultation(rows.map((c) => c.id));
-  return rows.map((c) => ({ ...c, medications: medMap.get(c.id) ?? [] }));
+  return rows.map((c) => {
+    let review: { rating: number; tags: string[]; review: string | null; ratedAt: string } | null = null;
+    if (typeof c.additionalInfo === "object" && c.additionalInfo !== null) {
+      const info = c.additionalInfo as Record<string, unknown>;
+      if (typeof info.patientReview === "object" && info.patientReview !== null) {
+        const rev = info.patientReview as Record<string, unknown>;
+        review = {
+          rating: typeof rev.rating === "number" ? rev.rating : 5,
+          tags: Array.isArray(rev.tags) ? (rev.tags as string[]) : [],
+          review: typeof rev.review === "string" ? rev.review : null,
+          ratedAt: typeof rev.ratedAt === "string" ? rev.ratedAt : new Date().toISOString(),
+        };
+      }
+    }
+    return {
+      ...c,
+      medications: medMap.get(c.id) ?? [],
+      review,
+    };
+  });
 });
 
 /** Patient's test bookings (reports) with vendor name + uploaded file status. */
@@ -144,6 +164,8 @@ export type AvailableDoctor = {
   clinicName: string | null;
   clinicAddress: string | null;
   consultationFee: string | null;
+  ratingAvg?: number;
+  reviewCount?: number;
 };
 
 /** Doctors with at least one active clinic + schedule (available for self-booking). */
@@ -303,10 +325,37 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
     clinicsByDoctor.set(c.doctorId, list);
   }
 
+  // Fetch reviews for rating badges
+  const reviewRows = await db
+    .select({
+      doctorId: consultations.doctorId,
+      additionalInfo: consultations.additionalInfo,
+    })
+    .from(consultations)
+    .where(and(inArray(consultations.doctorId, doctorIds), isNotNull(consultations.additionalInfo)));
+
+  const ratingsByDoctor = new Map<number, { total: number; count: number }>();
+  for (const r of reviewRows) {
+    if (typeof r.additionalInfo === "object" && r.additionalInfo !== null) {
+      const info = r.additionalInfo as Record<string, unknown>;
+      if (typeof info.patientReview === "object" && info.patientReview !== null) {
+        const rev = info.patientReview as Record<string, unknown>;
+        const score = typeof rev.rating === "number" ? rev.rating : 5;
+        const cur = ratingsByDoctor.get(r.doctorId) ?? { total: 0, count: 0 };
+        cur.total += score;
+        cur.count += 1;
+        ratingsByDoctor.set(r.doctorId, cur);
+      }
+    }
+  }
+
   const available: AvailableDoctor[] = [];
   for (const d of doctors) {
     const clinics = clinicsByDoctor.get(d.id) ?? [];
     const clinic = clinics[0];
+    const ratingStats = ratingsByDoctor.get(d.id);
+    const reviewCount = ratingStats ? ratingStats.count : 0;
+    const ratingAvg = ratingStats && ratingStats.count > 0 ? Number((ratingStats.total / ratingStats.count).toFixed(1)) : 5.0;
 
     available.push({
       id: d.id,
@@ -320,6 +369,8 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
       clinicName: clinic?.clinicName ?? "SkoraCare Medical Center",
       clinicAddress: clinic?.address ?? (d.city ? `${d.city}` : "Online & In-Clinic"),
       consultationFee: clinic?.consultationFee ?? "500.00",
+      ratingAvg,
+      reviewCount,
     });
   }
   return available;
