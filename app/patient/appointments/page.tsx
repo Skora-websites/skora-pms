@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, CalendarPlus, CheckCircle2 } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, Video } from "lucide-react";
 import { requireRole } from "@/lib/auth/guard";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/ui/dashboard-ui";
@@ -80,7 +80,18 @@ export default async function PatientAppointmentsPage({
                   <td><StatusBadge status={a.status} /></td>
                   <td className="text-right">
                     {a.status !== "cancelled" && a.status !== "completed" && (
-                      <span className="inline-flex items-start gap-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        {a.caseType === "online_visit" && (
+                          <a
+                            href={`https://meet.jit.si/skoracare-online-${a.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                          >
+                            <Video className="h-3.5 w-3.5" />
+                            Join Video Call
+                          </a>
+                        )}
                         <RescheduleAppointmentButton
                           appointmentId={a.id}
                           currentDate={a.date}

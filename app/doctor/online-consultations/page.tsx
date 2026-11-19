@@ -92,13 +92,24 @@ export default async function OnlineConsultationsPage({
                   </td>
                   <td className="text-right">
                     {(c.status === "pending" || c.status === "pending_consent" || c.status === "confirmed") && (
-                      <Link
-                        href={`/doctor/consultations/${c.id}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
-                      >
-                        <Stethoscope className="h-3.5 w-3.5" />
-                        Start consultation
-                      </Link>
+                      <div className="inline-flex items-center gap-2">
+                        <a
+                          href={`https://meet.jit.si/skoracare-online-${c.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                        >
+                          <Video className="h-3.5 w-3.5" />
+                          Join Video Call
+                        </a>
+                        <Link
+                          href={`/doctor/consultations/${c.id}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-800"
+                        >
+                          <Stethoscope className="h-3.5 w-3.5" />
+                          Start consultation
+                        </Link>
+                      </div>
                     )}
                   </td>
                 </tr>
