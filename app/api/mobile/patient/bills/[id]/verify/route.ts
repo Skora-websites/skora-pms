@@ -8,6 +8,7 @@ import {
   verifyRazorpaySignature,
 } from "@/lib/packages/razorpay";
 import { todayStr } from "@/lib/utils";
+import { notifyUser } from "@/lib/notifications/service";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,7 @@ export async function POST(
       id: billings.id,
       billNumber: billings.billNumber,
       patientId: billings.patientId,
+      doctorId: billings.doctorId,
       totalAmount: billings.totalAmount,
       receivedAmount: billings.receivedAmount,
       pendingAmount: billings.pendingAmount,
@@ -99,6 +101,28 @@ export async function POST(
     description: `Online payment via Razorpay for Bill #${bill.billNumber}`,
     createdBy: "patient",
   });
+
+  // Notify Patient
+  if (bill.patientId) {
+    void notifyUser({
+      userId: bill.patientId,
+      title: "Payment Successful ✅",
+      message: `Your payment of ₹${paidAmount} for Bill #${bill.billNumber} has been received.`,
+      type: "payment",
+      link: "/records",
+    });
+  }
+
+  // Notify Doctor
+  if (bill.doctorId) {
+    void notifyUser({
+      userId: bill.doctorId,
+      title: "Payment Received 💳",
+      message: `Payment of ₹${paidAmount} received for Bill #${bill.billNumber}.`,
+      type: "payment",
+      link: "/billing",
+    });
+  }
 
   return apiOk({
     success: true,

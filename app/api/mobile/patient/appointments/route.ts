@@ -4,6 +4,7 @@ import { getPatientAppointments } from "@/lib/queries/patient";
 import { requireApiRole } from "@/lib/auth/guard";
 
 import { apiError, apiOk, redirectError, csrfGuard } from "@/app/api/mobile/_helpers";
+import { notifyUser } from "@/lib/notifications/service";
 
 export const runtime = "nodejs";
 
@@ -124,6 +125,23 @@ export async function POST(request: Request) {
     // arrive as NEXT_REDIRECT throws, so the destination decides which this
     // is — the appointments page means the insert committed.
     if (isBookingCommittedRedirect(err)) {
+      const doctorIdNum = Number(raw.doctorId);
+      if (Number.isInteger(doctorIdNum) && doctorIdNum > 0) {
+        void notifyUser({
+          userId: doctorIdNum,
+          title: "New Appointment Booked 📅",
+          message: `${user.name} booked an appointment for ${raw.date} at ${raw.time}.`,
+          type: "appointment",
+          link: "/schedule",
+        });
+      }
+      void notifyUser({
+        userId: user.id,
+        title: "Appointment Booked 📅",
+        message: `Your appointment is confirmed for ${raw.date} at ${raw.time}.`,
+        type: "appointment",
+        link: "/(patient)",
+      });
       return NextResponse.json({ error: null });
     }
     const guarded = redirectError(err);

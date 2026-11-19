@@ -40,6 +40,7 @@ export type ExpoMessage = {
   data: { url: string; tag: string };
   sound: "default";
   priority: "high" | "normal";
+  channelId?: string;
   /** iOS only: bypasses Do Not Disturb (needs the critical-alerts entitlement). */
   interruptionLevel?: "critical";
   /** Seconds; set for time-bound alerts so a queued one can't fire much later. */
@@ -85,6 +86,7 @@ export function toExpoMessage(token: string, payload: NativePushPayload): ExpoMe
     data: { url: payload.url ?? "/", tag: payload.tag ?? "skoracare" },
     sound: "default",
     priority: critical ? "high" : "normal",
+    channelId: critical ? "sos-alerts" : "default",
     // iOS critical alert + bounded redelivery window for emergencies only.
     ...(critical
       ? { interruptionLevel: "critical" as const, ttl: NATIVE_PUSH_TTL_S }

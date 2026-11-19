@@ -7,6 +7,7 @@ import {
   getConsultationIdByAppointment,
 } from "@/lib/queries/doctor";
 import { apiError, apiOk, anchorDoctorId, requireDoctorActor } from "@/app/api/mobile/_helpers";
+import { notifyUser } from "@/lib/notifications/service";
 
 export const runtime = "nodejs";
 
@@ -196,6 +197,16 @@ export async function POST(
 
     return consultId;
   });
+
+  if (appt.patientId) {
+    void notifyUser({
+      userId: appt.patientId,
+      title: "Prescription Issued 💊",
+      message: `Dr. ${user.name} has issued your digital prescription for ${diagnosisNote}. Tap to view.`,
+      type: "prescription",
+      link: "/records",
+    });
+  }
 
   return apiOk({
     consultationId,
