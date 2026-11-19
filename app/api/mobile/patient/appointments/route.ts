@@ -128,16 +128,23 @@ export async function POST(request: Request) {
     // arrive as NEXT_REDIRECT throws, so the destination decides which this
     // is — the appointments page means the insert committed.
     if (isBookingCommittedRedirect(err)) {
+      const updatePayload: Record<string, unknown> = {};
       if (raw.forMemberName) {
+        updatePayload.patientString = String(raw.forMemberName).trim();
+        updatePayload.remarks = raw.forMemberRelationship
+          ? `Family Dependent (${raw.forMemberRelationship})`
+          : "Family Dependent";
+      }
+      const clinicIdNum = Number(raw.clinicId);
+      if (Number.isInteger(clinicIdNum) && clinicIdNum > 0) {
+        updatePayload.clinicId = clinicIdNum;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
         try {
           await db
             .update(appointments)
-            .set({
-              patientString: String(raw.forMemberName).trim(),
-              remarks: raw.forMemberRelationship
-                ? `Family Dependent (${raw.forMemberRelationship})`
-                : "Family Dependent",
-            })
+            .set(updatePayload)
             .where(
               and(
                 eq(appointments.patientId, user.id),

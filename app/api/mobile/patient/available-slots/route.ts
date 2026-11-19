@@ -22,6 +22,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const doctorId = Number(url.searchParams.get("doctor_id"));
   const date = url.searchParams.get("date") ?? "";
+  const rawClinicId = url.searchParams.get("clinic_id");
+  const clinicId = rawClinicId && Number.isInteger(Number(rawClinicId)) && Number(rawClinicId) > 0
+    ? Number(rawClinicId)
+    : undefined;
 
   if (!doctorId || !Number.isInteger(doctorId) || doctorId <= 0) {
     return apiError("Invalid doctor.", 400);
@@ -38,5 +42,5 @@ export async function GET(request: Request) {
     .limit(1);
   if (!doctor) return apiError("Doctor not found.", 404);
 
-  return apiOk(await getAvailableSlots(doctorId, date));
+  return apiOk(await getAvailableSlots(doctorId, date, clinicId));
 }

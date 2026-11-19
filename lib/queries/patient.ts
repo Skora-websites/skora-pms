@@ -166,6 +166,12 @@ export type AvailableDoctor = {
   consultationFee: string | null;
   ratingAvg?: number;
   reviewCount?: number;
+  clinics?: Array<{
+    id: number;
+    clinicName: string;
+    address: string;
+    consultationFee: string | null;
+  }>;
 };
 
 /** Doctors with at least one active clinic + schedule (available for self-booking). */
@@ -371,6 +377,12 @@ export const getAvailableDoctors = cache(async (): Promise<AvailableDoctor[]> =>
       consultationFee: clinic?.consultationFee ?? "500.00",
       ratingAvg,
       reviewCount,
+      clinics: clinics.map((c) => ({
+        id: c.id,
+        clinicName: c.clinicName,
+        address: c.address,
+        consultationFee: c.consultationFee,
+      })),
     });
   }
   return available;
@@ -414,9 +426,16 @@ export const getPatientAppointments = cache(async (patientId: number) => {
       doctorQualification: users.qualification,
       patientString: appointments.patientString,
       remarks: appointments.remarks,
+      clinicId: appointments.clinicId,
+      clinicName: doctorClinics.clinicName,
+      clinicAddress: doctorClinics.address,
+      clinicPhone: doctorClinics.phone,
+      clinicLatitude: doctorClinics.latitude,
+      clinicLongitude: doctorClinics.longitude,
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
+    .leftJoin(doctorClinics, eq(appointments.clinicId, doctorClinics.id))
     .where(eq(appointments.patientId, patientId))
     // DB can't sort the legacy "h:mm AM/PM" time strings chronologically, so
     // the date sort happens in SQL and the time-of-day sort finishes in JS
@@ -443,9 +462,16 @@ export const getUpcomingPatientAppointments = cache(async (patientId: number) =>
       doctorQualification: users.qualification,
       patientString: appointments.patientString,
       remarks: appointments.remarks,
+      clinicId: appointments.clinicId,
+      clinicName: doctorClinics.clinicName,
+      clinicAddress: doctorClinics.address,
+      clinicPhone: doctorClinics.phone,
+      clinicLatitude: doctorClinics.latitude,
+      clinicLongitude: doctorClinics.longitude,
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
+    .leftJoin(doctorClinics, eq(appointments.clinicId, doctorClinics.id))
     .where(
       and(
         eq(appointments.patientId, patientId),

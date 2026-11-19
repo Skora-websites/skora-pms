@@ -112,20 +112,26 @@ const SLOT_CACHE_MAX = 500;
  * AFTER this returns, so a cached entry is never stale in a way a patient
  * could exploit to book a taken slot.
  */
-async function loadSlotContext(doctorId: number, date: string) {
-  const key = `${doctorId}:${date}`;
+async function loadSlotContext(doctorId: number, date: string, clinicId?: number) {
+  const key = `${doctorId}:${date}:${clinicId ?? "all"}`;
   const hit = slotCache.get(key);
   if (hit && hit.expiresAtMs > Date.now()) return hit;
 
   const holiday = await holidayAdvisoryFor(date);
 
-  const clinics = await db
-    .select({ id: schema.doctorClinics.id })
-    .from(schema.doctorClinics)
-    .where(and(eq(schema.doctorClinics.doctorId, doctorId), eq(schema.doctorClinics.isActive, true)));
+  let clinicIds: number[] = [];
+  if (clinicId && Number.isInteger(clinicId) && clinicId > 0) {
+    clinicIds = [clinicId];
+  } else {
+    const clinics = await db
+      .select({ id: schema.doctorClinics.id })
+      .from(schema.doctorClinics)
+      .where(and(eq(schema.doctorClinics.doctorId, doctorId), eq(schema.doctorClinics.isActive, true)));
+    clinicIds = clinics.map((c) => c.id);
+  }
 
   let schedules: (typeof schema.doctorSchedules.$inferSelect)[] = [];
-  if (clinics.length > 0) {
+  if (clinicIds.length > 0) {
     schedules = await db
       .select()
       .from(schema.doctorSchedules)
@@ -133,7 +139,7 @@ async function loadSlotContext(doctorId: number, date: string) {
         and(
           eq(schema.doctorSchedules.dayOfWeek, DAY_NAMES[weekdayOf(date)] as never),
           eq(schema.doctorSchedules.isActive, true),
-          inArray(schema.doctorSchedules.doctorClinicId, clinics.map((c) => c.id))
+          inArray(schema.doctorSchedules.doctorClinicId, clinicIds)
         )
       );
   }
@@ -178,8 +184,8 @@ export function invalidateSlotCache(): void {
  * and the mobile one share one implementation — the two must never drift on
  * what a patient is allowed to book.
  */
-export async function getAvailableSlots(doctorId: number, date: string): Promise<AvailableSlots> {
-  const ctx = await loadSlotContext(doctorId, date);
+export async function getAvailableSlots(doctorId: number, date: string, clinicId?: number): Promise<AvailableSlots> {
+  const ctx = await loadSlotContext(doctorId, date, clinicId);
   const holiday = ctx.holiday;
   const schedules = ctx.schedules;
 
