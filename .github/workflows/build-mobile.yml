@@ -34,11 +34,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Accept Android Licenses & Ensure CMake
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "cmake;3.22.1"
-
       - name: Install NPM Dependencies
         working_directory: skora-mobile
         run: npm install --legacy-peer-deps
@@ -55,6 +50,7 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
           EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
         run: |
+          chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: Locate and Rename APK
