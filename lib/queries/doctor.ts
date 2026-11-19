@@ -63,6 +63,11 @@ export type AppointmentRow = {
   height: string | null;
   remarks: string | null;
   note: string | null;
+  patientAddress?: string | null;
+  patientStreetAddress?: string | null;
+  patientCity?: string | null;
+  patientLatitude?: string | number | null;
+  patientLongitude?: string | number | null;
 };
 
 async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit?: number, offset?: number) {
@@ -88,6 +93,11 @@ async function appointmentRows(where: SQL | undefined, order: SQL | SQL[], limit
       remarks: appointments.remarks,
       intakeNotes: appointments.intakeNotes,
       note: appointments.note,
+      patientAddress: users.address,
+      patientStreetAddress: users.streetAddress,
+      patientCity: users.city,
+      patientLatitude: users.latitude,
+      patientLongitude: users.longitude,
     })
     .from(appointments)
     .leftJoin(users, eq(users.id, appointments.patientId))

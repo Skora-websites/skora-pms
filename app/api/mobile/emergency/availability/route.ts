@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { users } from "@/lib/db/schema";
 import { setDoctorOnDuty } from "@/lib/dispatch/actions";
 import { requireApiRole } from "@/lib/auth/guard";
 import { apiError, redirectError } from "@/app/api/mobile/_helpers";
@@ -6,11 +9,8 @@ import { apiError, redirectError } from "@/app/api/mobile/_helpers";
 export const runtime = "nodejs";
 
 /**
- * PUT /api/mobile/emergency/availability — doctor toggles SOS duty.
- *
- * Thin adapter over `setDoctorOnDuty`, which writes `users.on_duty` — the
- * single column dispatch reads. `clinicOnDuty` and `homeVisitOnDuty` are
- * unrelated toggles and are deliberately never touched here.
+ * PUT /api/mobile/emergency/availability — doctor toggles SOS duty and/or Home Visit duty.
+ * Body: { onDuty?: boolean; homeVisitOnDuty?: boolean; latitude?: number; longitude?: number }
  */
 export async function PUT(request: Request) {
   const user = await requireApiRole(["doctor"]);
@@ -25,23 +25,37 @@ export async function PUT(request: Request) {
     return apiError("Invalid input.", 400);
   }
   const raw = (body ?? {}) as Record<string, unknown>;
-  if (typeof raw.onDuty !== "boolean") {
-    return apiError("Invalid input.", 400);
+
+  if (typeof raw.onDuty !== "boolean" && typeof raw.homeVisitOnDuty !== "boolean") {
+    return apiError("Expected onDuty or homeVisitOnDuty boolean.", 400);
   }
 
   try {
-    const coords =
-      typeof raw.latitude === "number" && typeof raw.longitude === "number"
-        ? { latitude: raw.latitude, longitude: raw.longitude }
-        : undefined;
-    const result = await setDoctorOnDuty(raw.onDuty, coords);
-    if (result.error) return apiError(result.error, 400);
+    // 1. If onDuty is provided, call setDoctorOnDuty
+    if (typeof raw.onDuty === "boolean") {
+      const coords =
+        typeof raw.latitude === "number" && typeof raw.longitude === "number"
+          ? { latitude: raw.latitude, longitude: raw.longitude }
+          : undefined;
+      const result = await setDoctorOnDuty(raw.onDuty, coords);
+      if (result.error) return apiError(result.error, 400);
+    }
+
+    // 2. If homeVisitOnDuty is provided, update database
+    if (typeof raw.homeVisitOnDuty === "boolean") {
+      await db
+        .update(users)
+        .set({
+          homeVisitOnDuty: raw.homeVisitOnDuty,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+    }
+
     return NextResponse.json({ error: null });
   } catch (err) {
     const guarded = redirectError(err);
     if (guarded) {
-      // The shared detector answers "was this the guard's redirect"; the
-      // failure envelope for these routes is JSON, so map its status back.
       return apiError(
         guarded.status === 401 ? "Unauthorized" : "Forbidden",
         guarded.status
