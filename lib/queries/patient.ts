@@ -432,6 +432,9 @@ export const getPatientAppointments = cache(async (patientId: number) => {
       clinicPhone: doctorClinics.phone,
       clinicLatitude: doctorClinics.latitude,
       clinicLongitude: doctorClinics.longitude,
+      consentType: appointments.consentType,
+      consentValue: appointments.consentValue,
+      isConsentAccepted: sql<boolean>`(${appointments.consentValue} = 'signed_in_app' OR ${appointments.consentType} = 'consent')`.as("is_consent_accepted"),
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
@@ -468,6 +471,9 @@ export const getUpcomingPatientAppointments = cache(async (patientId: number) =>
       clinicPhone: doctorClinics.phone,
       clinicLatitude: doctorClinics.latitude,
       clinicLongitude: doctorClinics.longitude,
+      consentType: appointments.consentType,
+      consentValue: appointments.consentValue,
+      isConsentAccepted: sql<boolean>`(${appointments.consentValue} = 'signed_in_app' OR ${appointments.consentType} = 'consent')`.as("is_consent_accepted"),
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
