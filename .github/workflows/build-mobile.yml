@@ -35,17 +35,17 @@ jobs:
           java-version: 17
 
       - name: Install NPM Dependencies
-        working_directory: skora-mobile
+        working-directory: skora-mobile
         run: npm install --legacy-peer-deps
 
       - name: Prebuild Android Native
-        working_directory: skora-mobile
+        working-directory: skora-mobile
         env:
           EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
         run: npx expo prebuild --platform android --clean
 
       - name: Assemble Release APK via Gradle
-        working_directory: skora-mobile/android
+        working-directory: skora-mobile/android
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           EXPO_PUBLIC_API_URL: "https://pms.skorainfotech.com"
