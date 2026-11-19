@@ -26,6 +26,8 @@ interface BookLabTestPayload {
   homeLongitude?: number | null;
   paymentMethod?: "online" | "pay_on_sample";
   notes?: string;
+  forMemberName?: string;
+  forMemberRelationship?: string;
 }
 
 export async function POST(request: Request) {
@@ -135,6 +137,9 @@ export async function POST(request: Request) {
 
   // Notes containing collection metadata
   const notesMeta = [
+    raw.forMemberName
+      ? `Patient: ${raw.forMemberName}${raw.forMemberRelationship ? ` (${raw.forMemberRelationship})` : ""}`
+      : null,
     `Mode: ${collectionType === "home_collection" ? "Home Sample Collection" : "Clinic Walk-in"}`,
     collectionType === "home_collection" ? `Address: ${homeAddress}` : null,
     raw.homeLatitude && raw.homeLongitude ? `GPS: ${raw.homeLatitude}, ${raw.homeLongitude}` : null,

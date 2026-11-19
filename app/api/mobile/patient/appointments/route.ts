@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { appointments } from "@/lib/db/schema";
 import { createPatientAppointment } from "@/app/patient/appointments/actions";
 import { getPatientAppointments } from "@/lib/queries/patient";
 import { requireApiRole } from "@/lib/auth/guard";
@@ -125,12 +128,35 @@ export async function POST(request: Request) {
     // arrive as NEXT_REDIRECT throws, so the destination decides which this
     // is — the appointments page means the insert committed.
     if (isBookingCommittedRedirect(err)) {
+      if (raw.forMemberName) {
+        try {
+          await db
+            .update(appointments)
+            .set({
+              patientString: String(raw.forMemberName).trim(),
+              remarks: raw.forMemberRelationship
+                ? `Family Dependent (${raw.forMemberRelationship})`
+                : "Family Dependent",
+            })
+            .where(
+              and(
+                eq(appointments.patientId, user.id),
+                eq(appointments.date, String(raw.date) as never),
+                eq(appointments.time, String(raw.time))
+              )
+            );
+        } catch {
+          // non-critical metadata update failure
+        }
+      }
+
+      const forWhom = raw.forMemberName ? ` for family dependent ${raw.forMemberName}` : "";
       const doctorIdNum = Number(raw.doctorId);
       if (Number.isInteger(doctorIdNum) && doctorIdNum > 0) {
         void notifyUser({
           userId: doctorIdNum,
           title: "New Appointment Booked 📅",
-          message: `${user.name} booked an appointment for ${raw.date} at ${raw.time}.`,
+          message: `${user.name} booked an appointment${forWhom} for ${raw.date} at ${raw.time}.`,
           type: "appointment",
           link: "/schedule",
         });
@@ -138,7 +164,9 @@ export async function POST(request: Request) {
       void notifyUser({
         userId: user.id,
         title: "Appointment Booked 📅",
-        message: `Your appointment is confirmed for ${raw.date} at ${raw.time}.`,
+        message: raw.forMemberName
+          ? `Appointment for ${raw.forMemberName} confirmed for ${raw.date} at ${raw.time}.`
+          : `Your appointment is confirmed for ${raw.date} at ${raw.time}.`,
         type: "appointment",
         link: "/(patient)",
       });

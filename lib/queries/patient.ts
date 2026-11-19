@@ -361,6 +361,8 @@ export const getPatientAppointments = cache(async (patientId: number) => {
       doctorId: appointments.doctorId,
       doctorName: users.name,
       doctorQualification: users.qualification,
+      patientString: appointments.patientString,
+      remarks: appointments.remarks,
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
@@ -388,6 +390,8 @@ export const getUpcomingPatientAppointments = cache(async (patientId: number) =>
       doctorId: appointments.doctorId,
       doctorName: users.name,
       doctorQualification: users.qualification,
+      patientString: appointments.patientString,
+      remarks: appointments.remarks,
     })
     .from(appointments)
     .innerJoin(users, eq(users.id, appointments.doctorId))
