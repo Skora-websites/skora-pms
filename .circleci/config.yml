@@ -37,10 +37,14 @@ jobs:
       EAS_BUILD_SKIP_LOCKFILE_CHECK: "1"
       NODE_OPTIONS: "--max-old-space-size=2048"
       CMAKE_BUILD_PARALLEL_LEVEL: "2"
-      JDK_JAVA_OPTIONS: ""
       GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx2048m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC' -Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false"
     steps:
       - checkout
+      - run:
+          name: Clean Environment and JDK Options
+          command: |
+            echo "unset JDK_JAVA_OPTIONS" >> $BASH_ENV
+            echo "unset _JAVA_OPTIONS" >> $BASH_ENV
       - restore_cache:
           keys:
             - v1-npm-deps-{{ checksum "skora-mobile/package.json" }}
