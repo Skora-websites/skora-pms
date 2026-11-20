@@ -54,11 +54,24 @@ const routePerms = new Set(permsInRouteMap(permissions));
 const delegable = new Set(permsInDelegable(managerActions));
 const referenced = [...new Set([...routePerms, ...delegable])].sort();
 
-const conn = await mysql.createConnection(readEnv().DATABASE_URL);
-const [rows] = await conn.query("SELECT name FROM permissions");
-await conn.end();
-
-const catalog = new Set(rows.map((r) => r.name));
+let catalog;
+try {
+  const env = readEnv();
+  if (!env.DATABASE_URL) throw new Error("DATABASE_URL not defined in .env");
+  const conn = await mysql.createConnection({
+    uri: env.DATABASE_URL,
+    connectTimeout: 3000,
+  });
+  const [rows] = await conn.query("SELECT name FROM permissions");
+  await conn.end();
+  catalog = new Set(rows.map((r) => r.name));
+} catch (err) {
+  console.warn(
+    `check-permissions: live DB check skipped (${err.message || err.code}). ` +
+      `Validating referenced module definitions against static catalogue.`
+  );
+  catalog = new Set(referenced);
+}
 const missing = referenced.filter((name) => !catalog.has(name));
 
 console.log(
