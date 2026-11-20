@@ -214,7 +214,7 @@ const assetLogsStore: AssetMaintenanceLog[] = [
  * Retrieve clinic biomedical equipment register, calibration alerts, and service history.
  */
 export async function GET(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "super-admin"]);
+  const user = await requireApiRole(["admin", "manager", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   const { searchParams } = req.nextUrl;
@@ -326,7 +326,7 @@ export async function GET(req: NextRequest) {
  * - "update_status": Change equipment state (breakdown, operational, etc.)
  */
 export async function POST(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "super-admin"]);
+  const user = await requireApiRole(["admin", "manager", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   let body: any;

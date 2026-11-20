@@ -41,7 +41,7 @@ export type AttendanceResponse = {
  * Daily staff attendance roster and shift metrics.
  */
 export async function GET(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "receptionist", "doctor"]);
+  const user = await requireApiRole(["admin", "manager", "receptionist", "doctor", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   const doctorId = user.role === "doctor" ? user.id : (user.doctorId ?? user.id);
@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
  * }
  */
 export async function POST(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "receptionist", "doctor"]);
+  const user = await requireApiRole(["admin", "manager", "receptionist", "doctor", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   const doctorId = user.role === "doctor" ? user.id : (user.doctorId ?? user.id);

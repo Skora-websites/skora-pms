@@ -53,8 +53,24 @@ export type BusinessScope = {
 export const getBusinessScope = cache(async (): Promise<BusinessScope> => {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "admin" && user.role !== "manager") {
+  if (
+    user.role !== "admin" &&
+    user.role !== "manager" &&
+    user.role !== "super_admin" &&
+    user.role !== "super-admin"
+  ) {
     redirect("/login");
+  }
+
+  if (user.role === "super_admin" || user.role === "super-admin") {
+    const ownedBusinesses = await db
+      .select({ id: businesses.id })
+      .from(businesses)
+      .where(and(eq(businesses.ownerId, user.id), eq(businesses.isActive, true)));
+    if (ownedBusinesses.length > 0) {
+      return resolveOwnerScope(user.id);
+    }
+    return resolveSuperAdminScope();
   }
 
   if (user.role === "admin") {
@@ -62,6 +78,24 @@ export const getBusinessScope = cache(async (): Promise<BusinessScope> => {
   }
   return resolveManagerScope(user.id);
 });
+
+/** Super Admins see all active businesses, clinics, and doctors across the entire platform. */
+async function resolveSuperAdminScope(): Promise<BusinessScope> {
+  const allBusinesses = await db
+    .select({ id: businesses.id })
+    .from(businesses)
+    .where(eq(businesses.isActive, true));
+  const businessIds = allBusinesses.map((b) => b.id);
+
+  const allClinics = await db
+    .select({ id: doctorClinics.id })
+    .from(doctorClinics)
+    .where(eq(doctorClinics.isActive, true));
+  const clinicIds = allClinics.map((c) => c.id);
+
+  const doctorIds = await doctorIdsForClinics(clinicIds);
+  return { viewerRole: "owner", businessIds, clinicIds, doctorIds };
+}
 
 /** Owners see every clinic of every business they own. */
 async function resolveOwnerScope(ownerId: number): Promise<BusinessScope> {

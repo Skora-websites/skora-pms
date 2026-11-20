@@ -35,7 +35,7 @@ export type VendorsResponse = {
  *   ?search=metro
  */
 export async function GET(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist"]);
+  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   const { searchParams } = req.nextUrl;
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
  * Create or update a diagnostic laboratory or medical supply vendor.
  */
 export async function POST(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "doctor"]);
+  const user = await requireApiRole(["admin", "manager", "doctor", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   let body: any;

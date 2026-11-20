@@ -45,7 +45,7 @@ function deriveStockStatus(qty: number): StockStatus {
  *   ?status=all|in_stock|low_stock|out_of_stock
  */
 export async function GET(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist"]);
+  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   const { searchParams } = req.nextUrl;
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
  * }
  */
 export async function POST(req: NextRequest) {
-  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist"]);
+  const user = await requireApiRole(["admin", "manager", "doctor", "receptionist", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   let body: any;

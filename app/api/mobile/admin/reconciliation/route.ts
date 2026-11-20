@@ -45,7 +45,7 @@ const closureStore = new Map<string, ShiftClosureRecord>();
  * GET /api/mobile/admin/reconciliation — Today's cashier collection totals and drawer status.
  */
 export async function GET() {
-  const user = await requireApiRole(["admin", "manager", "receptionist"]);
+  const user = await requireApiRole(["admin", "manager", "receptionist", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   try {
@@ -131,7 +131,7 @@ export async function GET() {
  * POST /api/mobile/admin/reconciliation — Close and certify the daily cash drawer register.
  */
 export async function POST(request: Request) {
-  const user = await requireApiRole(["admin", "manager", "receptionist"]);
+  const user = await requireApiRole(["admin", "manager", "receptionist", "super_admin", "super-admin"]);
   if (user instanceof Response) return user;
 
   try {

@@ -174,9 +174,12 @@ export async function requireAdminActor(
   adminPath: string
 ): Promise<AdminActor | Response> {
   const inner = async (): Promise<CurrentUser | Response> => {
-    const user = await requireApiRole(["admin", "manager"]);
+    const user = await requireApiRole(["admin", "manager", "super_admin", "super-admin"]);
     if (user instanceof Response) return user;
-    const viewerRole = user.role === "admin" ? ("owner" as const) : ("manager" as const);
+    const viewerRole =
+      user.role === "admin" || user.role === "super_admin" || user.role === "super-admin"
+        ? ("owner" as const)
+        : ("manager" as const);
     if (viewerRole === "manager") {
       const perms = await getUserPermissions(user.id);
       if (!hasAdminModuleAccess(perms, adminPath, viewerRole)) {
@@ -196,7 +199,10 @@ export async function requireAdminActor(
   }
   return {
     user: throttled,
-    viewerRole: throttled.role === "admin" ? ("owner" as const) : ("manager" as const),
+    viewerRole:
+      throttled.role === "admin" || throttled.role === "super_admin" || throttled.role === "super-admin"
+        ? ("owner" as const)
+        : ("manager" as const),
     scope,
   };
 }
