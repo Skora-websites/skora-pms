@@ -1,4 +1,7 @@
 import { NextRequest } from "next/server";
+import { eq, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { patientInsurancePolicies, patientInsuranceClaims } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
 import { apiOk, apiError } from "@/app/api/mobile/_helpers";
 
@@ -121,19 +124,74 @@ export async function GET(req: NextRequest) {
 
   const patientId = user.id;
 
-  if (!userPoliciesCache.has(patientId)) {
-    userPoliciesCache.set(patientId, getInitialPolicies(user.name || "Patient"));
-  }
-  if (!userClaimsCache.has(patientId)) {
-    userClaimsCache.set(patientId, getInitialClaims());
+  let dbPolicies: InsurancePolicy[] = [];
+  let dbClaims: InsuranceClaim[] = [];
+
+  try {
+    const pRows = await db
+      .select()
+      .from(patientInsurancePolicies)
+      .where(eq(patientInsurancePolicies.patientId, patientId))
+      .orderBy(desc(patientInsurancePolicies.createdAt));
+
+    if (pRows && pRows.length > 0) {
+      dbPolicies = pRows.map((r) => ({
+        id: String(r.id),
+        providerName: r.providerName,
+        policyNumber: r.policyNumber,
+        tpaName: r.tpaName,
+        policyType: r.policyType || "Family Floater",
+        sumInsured: Number(r.sumInsured) || 500000,
+        remainingCover: Number(r.remainingCover) || 500000,
+        validTill: r.validTill,
+        status: (r.status as "active" | "expired" | "grace_period") || "active",
+        policyHolderName: r.policyHolderName,
+        membersCovered: Array.isArray(r.membersCovered) ? r.membersCovered : ["Self"],
+      }));
+    }
+
+    const cRows = await db
+      .select()
+      .from(patientInsuranceClaims)
+      .where(eq(patientInsuranceClaims.patientId, patientId))
+      .orderBy(desc(patientInsuranceClaims.createdAt));
+
+    if (cRows && cRows.length > 0) {
+      dbClaims = cRows.map((c) => ({
+        id: String(c.id),
+        claimNumber: c.claimNumber,
+        policyId: c.policyId,
+        providerName: c.providerName,
+        treatmentName: c.treatmentName,
+        hospitalOrClinic: c.hospitalOrClinic,
+        requestedAmount: Number(c.requestedAmount),
+        approvedAmount: c.approvedAmount ? Number(c.approvedAmount) : null,
+        status: (c.status as ClaimStatus) || "submitted",
+        submissionDate: c.submissionDate,
+        lastUpdated: c.lastUpdated,
+        remarks: c.remarks,
+      }));
+    }
+  } catch (err) {
+    // Database query error or unmigrated table - fallback to memory cache
   }
 
-  const policies = userPoliciesCache.get(patientId)!;
-  const claims = userClaimsCache.get(patientId)!;
+  if (dbPolicies.length === 0) {
+    if (!userPoliciesCache.has(patientId)) {
+      userPoliciesCache.set(patientId, getInitialPolicies(user.name || "Patient"));
+    }
+    dbPolicies = userPoliciesCache.get(patientId)!;
+  }
+  if (dbClaims.length === 0) {
+    if (!userClaimsCache.has(patientId)) {
+      userClaimsCache.set(patientId, getInitialClaims());
+    }
+    dbClaims = userClaimsCache.get(patientId)!;
+  }
 
-  const activePolicies = policies.filter((p) => p.status === "active");
+  const activePolicies = dbPolicies.filter((p) => p.status === "active");
   const totalSumInsured = activePolicies.reduce((acc, p) => acc + p.sumInsured, 0);
-  const activeClaimsCount = claims.filter(
+  const activeClaimsCount = dbClaims.filter(
     (c) => c.status === "submitted" || c.status === "under_review" || c.status === "approved"
   ).length;
 
@@ -145,8 +203,8 @@ export async function GET(req: NextRequest) {
 
   const response: InsuranceResponse = {
     summary,
-    policies,
-    claims,
+    policies: dbPolicies,
+    claims: dbClaims,
   };
 
   return apiOk(response);
@@ -190,8 +248,31 @@ export async function POST(req: NextRequest) {
       return apiError("Provider name and Policy Number are required", 400);
     }
 
+    let insertedId: string = `pol-${Date.now()}`;
+
+    try {
+      const [res] = await db.insert(patientInsurancePolicies).values({
+        patientId,
+        providerName,
+        policyNumber,
+        tpaName,
+        policyType,
+        sumInsured: String(sumInsured),
+        remainingCover: String(sumInsured),
+        validTill,
+        status: "active",
+        policyHolderName,
+        membersCovered: ["Self"],
+      });
+      if (res && res.insertId) {
+        insertedId = String(res.insertId);
+      }
+    } catch {
+      // Fallback
+    }
+
     const newPolicy: InsurancePolicy = {
-      id: `pol-${Date.now()}`,
+      id: insertedId,
       providerName,
       policyNumber,
       tpaName,
@@ -222,10 +303,35 @@ export async function POST(req: NextRequest) {
     }
 
     const matchedPolicy = policies.find((p) => p.id === policyId) || policies[0];
+    const claimNumber = `CLM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const today = new Date().toISOString().split("T")[0];
+    let insertedClaimId = `clm-${Date.now()}`;
+
+    try {
+      const [cRes] = await db.insert(patientInsuranceClaims).values({
+        patientId,
+        policyId: matchedPolicy ? matchedPolicy.id : policyId,
+        claimNumber,
+        providerName: matchedPolicy ? matchedPolicy.providerName : "Health Insurer",
+        treatmentName,
+        hospitalOrClinic,
+        requestedAmount: String(estimatedAmount),
+        approvedAmount: null,
+        status: "submitted",
+        submissionDate: today,
+        lastUpdated: today,
+        remarks,
+      });
+      if (cRes && cRes.insertId) {
+        insertedClaimId = String(cRes.insertId);
+      }
+    } catch {
+      // Fallback
+    }
 
     const newClaim: InsuranceClaim = {
-      id: `clm-${Date.now()}`,
-      claimNumber: `CLM-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: insertedClaimId,
+      claimNumber,
       policyId: matchedPolicy ? matchedPolicy.id : policyId,
       providerName: matchedPolicy ? matchedPolicy.providerName : "Health Insurer",
       treatmentName,
@@ -233,8 +339,8 @@ export async function POST(req: NextRequest) {
       requestedAmount: estimatedAmount,
       approvedAmount: null,
       status: "submitted",
-      submissionDate: new Date().toISOString().split("T")[0],
-      lastUpdated: new Date().toISOString().split("T")[0],
+      submissionDate: today,
+      lastUpdated: today,
       remarks,
     };
 

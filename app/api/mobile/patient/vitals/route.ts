@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, appointments } from "@/lib/db/schema";
+import { users, appointments, patientVitals } from "@/lib/db/schema";
 import { apiError, apiOk, csrfGuard, requirePatientActor } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
@@ -27,39 +27,72 @@ export async function GET() {
   const actor = await requirePatientActor();
   if (actor instanceof Response) return actor;
 
-  const [row] = await db
-    .select({
-      notificationPreferences: users.notificationPreferences,
-    })
-    .from(users)
-    .where(eq(users.id, actor.id))
-    .limit(1);
+  let vitals: VitalReadingPayload[] = [];
 
-  if (!row) {
-    return apiError("Patient record not found.", 404);
+  // 1. Try relational patient_vitals table
+  try {
+    const tableRows = await db
+      .select()
+      .from(patientVitals)
+      .where(eq(patientVitals.patientId, actor.id))
+      .orderBy(desc(patientVitals.recordedAt))
+      .limit(100);
+
+    if (tableRows && tableRows.length > 0) {
+      vitals = tableRows.map((r) => ({
+        id: String(r.id),
+        systolic: r.systolicBp ?? undefined,
+        diastolic: r.diastolicBp ?? undefined,
+        pulse: r.heartRate ?? undefined,
+        bloodSugar: r.bloodGlucose ? Number(r.bloodGlucose) : undefined,
+        sugarType: (r.glucoseContext as any) || undefined,
+        spo2: r.spo2 ?? undefined,
+        weight: r.weight ? Number(r.weight) : undefined,
+        temperature: r.temperature ? Number(r.temperature) : undefined,
+        recordedAt: r.recordedAt ? r.recordedAt.toISOString() : new Date().toISOString(),
+        notes: r.notes ?? undefined,
+      }));
+    }
+  } catch {
+    // Fallback if table not yet migrated
   }
 
-  const prefs = (row.notificationPreferences ?? {}) as Record<string, unknown>;
-  const rawVitals = Array.isArray(prefs.healthVitals) ? prefs.healthVitals : [];
+  // 2. Fallback to notificationPreferences if table had 0 rows
+  if (vitals.length === 0) {
+    const [row] = await db
+      .select({
+        notificationPreferences: users.notificationPreferences,
+      })
+      .from(users)
+      .where(eq(users.id, actor.id))
+      .limit(1);
 
-  const vitals: VitalReadingPayload[] = rawVitals
-    .filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null)
-    .map((v) => ({
-      id: String(v.id || Math.random().toString(36).substring(2, 9)),
-      systolic: typeof v.systolic === "number" ? v.systolic : undefined,
-      diastolic: typeof v.diastolic === "number" ? v.diastolic : undefined,
-      pulse: typeof v.pulse === "number" ? v.pulse : undefined,
-      bloodSugar: typeof v.bloodSugar === "number" ? v.bloodSugar : undefined,
-      sugarType: (["fasting", "post_meal", "random"].includes(String(v.sugarType))
-        ? v.sugarType
-        : undefined) as "fasting" | "post_meal" | "random" | undefined,
-      spo2: typeof v.spo2 === "number" ? v.spo2 : undefined,
-      weight: typeof v.weight === "number" ? v.weight : undefined,
-      temperature: typeof v.temperature === "number" ? v.temperature : undefined,
-      recordedAt: String(v.recordedAt || new Date().toISOString()),
-      notes: v.notes ? String(v.notes).trim() : undefined,
-    }))
-    .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+    if (!row) {
+      return apiError("Patient record not found.", 404);
+    }
+
+    const prefs = (row.notificationPreferences ?? {}) as Record<string, unknown>;
+    const rawVitals = Array.isArray(prefs.healthVitals) ? prefs.healthVitals : [];
+
+    vitals = rawVitals
+      .filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null)
+      .map((v) => ({
+        id: String(v.id || Math.random().toString(36).substring(2, 9)),
+        systolic: typeof v.systolic === "number" ? v.systolic : undefined,
+        diastolic: typeof v.diastolic === "number" ? v.diastolic : undefined,
+        pulse: typeof v.pulse === "number" ? v.pulse : undefined,
+        bloodSugar: typeof v.bloodSugar === "number" ? v.bloodSugar : undefined,
+        sugarType: (["fasting", "post_meal", "random"].includes(String(v.sugarType))
+          ? v.sugarType
+          : undefined) as "fasting" | "post_meal" | "random" | undefined,
+        spo2: typeof v.spo2 === "number" ? v.spo2 : undefined,
+        weight: typeof v.weight === "number" ? v.weight : undefined,
+        temperature: typeof v.temperature === "number" ? v.temperature : undefined,
+        recordedAt: String(v.recordedAt || new Date().toISOString()),
+        notes: v.notes ? String(v.notes).trim() : undefined,
+      }))
+      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+  }
 
   // Also fetch most recent appointment with BP or Weight to ensure clinical parity
   const [latestApptWithVitals] = await db
@@ -185,7 +218,26 @@ export async function POST(request: Request) {
   const currentPrefs = (row?.notificationPreferences ?? {}) as Record<string, unknown>;
   const existingVitals = Array.isArray(currentPrefs.healthVitals) ? currentPrefs.healthVitals : [];
 
-  // Prepend and cap at last 100 readings
+  // Insert into relational patient_vitals table
+  try {
+    await db.insert(patientVitals).values({
+      patientId: actor.id,
+      systolicBp: systolic,
+      diastolicBp: diastolic,
+      heartRate: pulse,
+      bloodGlucose: bloodSugar !== undefined ? String(bloodSugar) : null,
+      glucoseContext: sugarType,
+      spo2,
+      weight: weight !== undefined ? String(weight) : null,
+      temperature: temperature !== undefined ? String(temperature) : null,
+      recordedAt: new Date(recordedAt),
+      notes,
+    });
+  } catch {
+    // Graceful fallback to user JSON
+  }
+
+  // Prepend and cap at last 100 readings in user preferences for backwards compatibility
   const updatedVitals = [newReading, ...existingVitals].slice(0, 100);
 
   const updatedPrefs = {

@@ -1,4 +1,7 @@
 import { NextRequest } from "next/server";
+import { eq, desc, and } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { medicalCertificates } from "@/lib/db/schema";
 import { requireApiRole } from "@/lib/auth/guard";
 import { apiOk, apiError } from "@/app/api/mobile/_helpers";
 
@@ -88,21 +91,67 @@ export async function GET(req: NextRequest) {
   if (user instanceof Response) return user;
 
   const doctorId = user.id;
-  if (!doctorCertificatesMap.has(doctorId)) {
-    doctorCertificatesMap.set(doctorId, getInitialCertificates(user.name || "Doctor"));
-  }
-
-  const allCerts = doctorCertificatesMap.get(doctorId)!;
   const { searchParams } = req.nextUrl;
   const apptIdParam = searchParams.get("appointmentId");
+  const apptId = apptIdParam ? Number(apptIdParam) : null;
 
-  if (apptIdParam) {
-    const apptId = Number(apptIdParam);
-    const filtered = allCerts.filter((c) => c.appointmentId === apptId);
-    return apiOk({ certificates: filtered });
+  let dbCerts: MedicalCertificate[] = [];
+
+  try {
+    const query = db
+      .select()
+      .from(medicalCertificates)
+      .where(
+        apptId
+          ? and(
+              eq(medicalCertificates.doctorId, doctorId),
+              eq(medicalCertificates.appointmentId, apptId)
+            )
+          : eq(medicalCertificates.doctorId, doctorId)
+      )
+      .orderBy(desc(medicalCertificates.createdAt));
+
+    const rows = await query;
+
+    if (rows && rows.length > 0) {
+      dbCerts = rows.map((r) => ({
+        id: String(r.id),
+        certificateNumber: r.certificateNumber,
+        verificationCode: r.verificationCode,
+        appointmentId: r.appointmentId,
+        patientName: r.patientName,
+        patientAge: r.patientAge,
+        patientGender: r.patientGender,
+        certificateType: (r.certificateType as CertificateType) || "sick_leave",
+        diagnosis: r.diagnosis,
+        restFromDate: r.restFromDate,
+        restToDate: r.restToDate,
+        fitToResumeDate: r.fitToResumeDate,
+        doctorRemarks: r.doctorRemarks,
+        issuedDate: r.issuedDate,
+        doctorName: r.doctorName,
+        doctorRegistrationNumber: r.doctorRegistrationNumber,
+        clinicName: r.clinicName,
+        status: (r.status as "issued" | "revoked") || "issued",
+      }));
+    }
+  } catch {
+    // Database query error or unmigrated table
   }
 
-  return apiOk({ certificates: allCerts });
+  if (dbCerts.length === 0) {
+    if (!doctorCertificatesMap.has(doctorId)) {
+      doctorCertificatesMap.set(doctorId, getInitialCertificates(user.name || "Doctor"));
+    }
+    const allCerts = doctorCertificatesMap.get(doctorId)!;
+    if (apptId) {
+      dbCerts = allCerts.filter((c) => c.appointmentId === apptId);
+    } else {
+      dbCerts = allCerts;
+    }
+  }
+
+  return apiOk({ certificates: dbCerts });
 }
 
 /**
@@ -142,9 +191,43 @@ export async function POST(req: NextRequest) {
   const randomCode = Math.floor(1000 + Math.random() * 9000);
   const certNumber = `MC-${new Date().getFullYear()}-${random4}`;
   const verificationCode = `VER-${randomCode}-${random4}`;
+  const today = new Date().toISOString().split("T")[0];
+  const doctorName = user.name ? `Dr. ${user.name}` : "Dr. Attending Physician";
+  const doctorRegistrationNumber = "MCI-48921-A";
+  const clinicName = "SkoraCare Health Clinic";
+
+  let insertedId = `cert-${Date.now()}`;
+
+  try {
+    const [res] = await db.insert(medicalCertificates).values({
+      certificateNumber: certNumber,
+      verificationCode,
+      doctorId,
+      appointmentId: body.appointmentId ? Number(body.appointmentId) : null,
+      patientName,
+      patientAge: body.patientAge ? Number(body.patientAge) : null,
+      patientGender: body.patientGender ? String(body.patientGender).trim() : null,
+      certificateType,
+      diagnosis,
+      restFromDate: body.restFromDate ? String(body.restFromDate).trim() : null,
+      restToDate: body.restToDate ? String(body.restToDate).trim() : null,
+      fitToResumeDate: body.fitToResumeDate ? String(body.fitToResumeDate).trim() : null,
+      doctorRemarks: body.doctorRemarks ? String(body.doctorRemarks).trim() : null,
+      doctorName,
+      doctorRegistrationNumber,
+      clinicName,
+      status: "issued",
+      issuedDate: today,
+    });
+    if (res && res.insertId) {
+      insertedId = String(res.insertId);
+    }
+  } catch {
+    // Fallback
+  }
 
   const newCert: MedicalCertificate = {
-    id: `cert-${Date.now()}`,
+    id: insertedId,
     certificateNumber: certNumber,
     verificationCode: verificationCode,
     appointmentId: body.appointmentId ? Number(body.appointmentId) : null,
@@ -157,10 +240,10 @@ export async function POST(req: NextRequest) {
     restToDate: body.restToDate ? String(body.restToDate).trim() : null,
     fitToResumeDate: body.fitToResumeDate ? String(body.fitToResumeDate).trim() : null,
     doctorRemarks: body.doctorRemarks ? String(body.doctorRemarks).trim() : null,
-    issuedDate: new Date().toISOString().split("T")[0],
-    doctorName: user.name ? `Dr. ${user.name}` : "Dr. Attending Physician",
-    doctorRegistrationNumber: "MCI-48921-A",
-    clinicName: "SkoraCare Health Clinic",
+    issuedDate: today,
+    doctorName,
+    doctorRegistrationNumber,
+    clinicName,
     status: "issued",
   };
 

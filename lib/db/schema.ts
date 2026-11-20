@@ -2033,6 +2033,166 @@ export const patientMessages = mysqlTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Clinical Entities & Patient Records (Phases 12, 13, 36, 37)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const patientInsurancePolicies = mysqlTable(
+  "patient_insurance_policies",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    providerName: varchar("provider_name", { length: 255 }).notNull(),
+    policyNumber: varchar("policy_number", { length: 255 }).notNull(),
+    tpaName: varchar("tpa_name", { length: 255 }),
+    policyType: varchar("policy_type", { length: 100 }).default("Family Floater"),
+    sumInsured: decimal("sum_insured", { precision: 12, scale: 2 }).notNull().default("500000.00"),
+    remainingCover: decimal("remaining_cover", { precision: 12, scale: 2 }).notNull().default("500000.00"),
+    validTill: varchar("valid_till", { length: 50 }).notNull(),
+    status: varchar("status", { length: 50 }).notNull().default("active"),
+    policyHolderName: varchar("policy_holder_name", { length: 255 }).notNull(),
+    membersCovered: json("members_covered").$type<string[]>(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("pip_patient_id_idx").on(t.patientId),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+export const patientInsuranceClaims = mysqlTable(
+  "patient_insurance_claims",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    policyId: varchar("policy_id", { length: 100 }).notNull(),
+    claimNumber: varchar("claim_number", { length: 100 }).notNull(),
+    providerName: varchar("provider_name", { length: 255 }).notNull(),
+    treatmentName: varchar("treatment_name", { length: 255 }).notNull(),
+    hospitalOrClinic: varchar("hospital_or_clinic", { length: 255 }).notNull(),
+    requestedAmount: decimal("requested_amount", { precision: 12, scale: 2 }).notNull(),
+    approvedAmount: decimal("approved_amount", { precision: 12, scale: 2 }),
+    status: varchar("status", { length: 50 }).notNull().default("submitted"),
+    submissionDate: varchar("submission_date", { length: 50 }).notNull(),
+    lastUpdated: varchar("last_updated", { length: 50 }).notNull(),
+    remarks: text("remarks"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("pic_patient_id_idx").on(t.patientId),
+    uniqueIndex("pic_claim_number_unique").on(t.claimNumber),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+export const patientVitals = mysqlTable(
+  "patient_vitals",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    appointmentId: bigint("appointment_id", { mode: "number" }),
+    systolicBp: int("systolic_bp"),
+    diastolicBp: int("diastolic_bp"),
+    heartRate: int("heart_rate"),
+    spo2: int("spo2"),
+    temperature: decimal("temperature", { precision: 4, scale: 1 }),
+    bloodGlucose: decimal("blood_glucose", { precision: 6, scale: 1 }),
+    glucoseContext: varchar("glucose_context", { length: 50 }), // fasting | post_prandial | random
+    weight: decimal("weight", { precision: 5, scale: 2 }),
+    height: decimal("height", { precision: 5, scale: 2 }),
+    recordedAt: timestamp("recorded_at").defaultNow(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("pv_patient_id_idx").on(t.patientId),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.appointmentId],
+      foreignColumns: [appointments.id],
+    }).onDelete("set null"),
+  ]
+);
+
+export const patientFamilyMembers = mysqlTable(
+  "patient_family_members",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    patientId: bigint("patient_id", { mode: "number" }).notNull(),
+    fullName: varchar("full_name", { length: 255 }).notNull(),
+    relationship: varchar("relationship", { length: 100 }).notNull(),
+    dob: varchar("dob", { length: 50 }),
+    age: int("age"),
+    gender: varchar("gender", { length: 50 }),
+    bloodGroup: varchar("blood_group", { length: 10 }),
+    allergies: text("allergies"),
+    chronicConditions: text("chronic_conditions"),
+    emergencyContact: boolean("emergency_contact").default(false),
+    phone: varchar("phone", { length: 50 }),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("pfm_patient_id_idx").on(t.patientId),
+    foreignKey({
+      columns: [t.patientId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ]
+);
+
+export const medicalCertificates = mysqlTable(
+  "medical_certificates",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    certificateNumber: varchar("certificate_number", { length: 100 }).notNull(),
+    verificationCode: varchar("verification_code", { length: 100 }).notNull(),
+    doctorId: bigint("doctor_id", { mode: "number" }).notNull(),
+    appointmentId: bigint("appointment_id", { mode: "number" }),
+    patientName: varchar("patient_name", { length: 255 }).notNull(),
+    patientAge: int("patient_age"),
+    patientGender: varchar("patient_gender", { length: 50 }),
+    certificateType: varchar("certificate_type", { length: 50 }).notNull().default("sick_leave"),
+    diagnosis: text("diagnosis").notNull(),
+    restFromDate: varchar("rest_from_date", { length: 50 }),
+    restToDate: varchar("rest_to_date", { length: 50 }),
+    fitToResumeDate: varchar("fit_to_resume_date", { length: 50 }),
+    doctorRemarks: text("doctor_remarks"),
+    doctorName: varchar("doctor_name", { length: 255 }).notNull(),
+    doctorRegistrationNumber: varchar("doctor_registration_number", { length: 100 }).notNull(),
+    clinicName: varchar("clinic_name", { length: 255 }).notNull(),
+    status: varchar("status", { length: 50 }).notNull().default("issued"),
+    issuedDate: varchar("issued_date", { length: 50 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("mc_doctor_id_idx").on(t.doctorId),
+    uniqueIndex("mc_cert_number_unique").on(t.certificateNumber),
+    uniqueIndex("mc_verification_code_unique").on(t.verificationCode),
+    foreignKey({
+      columns: [t.doctorId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.appointmentId],
+      foreignColumns: [appointments.id],
+    }).onDelete("set null"),
+  ]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2060,3 +2220,13 @@ export type BusinessClinic = typeof businessClinics.$inferSelect;
 export type NewBusinessClinic = typeof businessClinics.$inferInsert;
 export type ClinicManager = typeof clinicManagers.$inferSelect;
 export type NewClinicManager = typeof clinicManagers.$inferInsert;
+export type PatientInsurancePolicy = typeof patientInsurancePolicies.$inferSelect;
+export type NewPatientInsurancePolicy = typeof patientInsurancePolicies.$inferInsert;
+export type PatientInsuranceClaim = typeof patientInsuranceClaims.$inferSelect;
+export type NewPatientInsuranceClaim = typeof patientInsuranceClaims.$inferInsert;
+export type PatientVital = typeof patientVitals.$inferSelect;
+export type NewPatientVital = typeof patientVitals.$inferInsert;
+export type PatientFamilyMember = typeof patientFamilyMembers.$inferSelect;
+export type NewPatientFamilyMember = typeof patientFamilyMembers.$inferInsert;
+export type MedicalCertificateRow = typeof medicalCertificates.$inferSelect;
+export type NewMedicalCertificateRow = typeof medicalCertificates.$inferInsert;

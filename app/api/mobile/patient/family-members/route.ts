@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, patientFamilyMembers } from "@/lib/db/schema";
 import { apiError, apiOk, csrfGuard, requirePatientActor } from "@/app/api/mobile/_helpers";
 
 export const runtime = "nodejs";
@@ -26,37 +26,68 @@ export async function GET() {
   const actor = await requirePatientActor();
   if (actor instanceof Response) return actor;
 
-  const [row] = await db
-    .select({
-      notificationPreferences: users.notificationPreferences,
-    })
-    .from(users)
-    .where(eq(users.id, actor.id))
-    .limit(1);
+  let familyMembers: FamilyMemberPayload[] = [];
 
-  if (!row) {
-    return apiError("Patient record not found.", 404);
+  // 1. Try relational patient_family_members table
+  try {
+    const tableRows = await db
+      .select()
+      .from(patientFamilyMembers)
+      .where(eq(patientFamilyMembers.patientId, actor.id));
+
+    if (tableRows && tableRows.length > 0) {
+      familyMembers = tableRows.map((r) => ({
+        id: String(r.id),
+        name: r.fullName,
+        relationship: (["Spouse", "Child", "Parent", "Sibling", "Other"].includes(r.relationship)
+          ? r.relationship
+          : "Other") as FamilyRelationship,
+        gender: (["male", "female", "other"].includes(String(r.gender).toLowerCase())
+          ? r.gender?.toLowerCase()
+          : "other") as FamilyGender,
+        dob: r.dob ?? undefined,
+        bloodGroup: r.bloodGroup ?? undefined,
+        allergies: r.allergies ?? undefined,
+      }));
+    }
+  } catch {
+    // Fallback if table not yet migrated
   }
 
-  const prefs = (row.notificationPreferences ?? {}) as Record<string, unknown>;
-  const rawMembers = Array.isArray(prefs.familyMembers) ? prefs.familyMembers : [];
+  // 2. Fallback to notificationPreferences
+  if (familyMembers.length === 0) {
+    const [row] = await db
+      .select({
+        notificationPreferences: users.notificationPreferences,
+      })
+      .from(users)
+      .where(eq(users.id, actor.id))
+      .limit(1);
 
-  const familyMembers: FamilyMemberPayload[] = rawMembers
-    .filter((m): m is Record<string, unknown> => typeof m === "object" && m !== null)
-    .map((m) => ({
-      id: String(m.id || Math.random().toString(36).substring(2, 9)),
-      name: String(m.name || "").trim(),
-      relationship: (["Spouse", "Child", "Parent", "Sibling", "Other"].includes(String(m.relationship))
-        ? m.relationship
-        : "Other") as FamilyRelationship,
-      gender: (["male", "female", "other"].includes(String(m.gender))
-        ? m.gender
-        : "other") as FamilyGender,
-      dob: m.dob ? String(m.dob).trim() : undefined,
-      bloodGroup: m.bloodGroup ? String(m.bloodGroup).trim() : undefined,
-      allergies: m.allergies ? String(m.allergies).trim() : undefined,
-    }))
-    .filter((m) => m.name.length > 0);
+    if (!row) {
+      return apiError("Patient record not found.", 404);
+    }
+
+    const prefs = (row.notificationPreferences ?? {}) as Record<string, unknown>;
+    const rawMembers = Array.isArray(prefs.familyMembers) ? prefs.familyMembers : [];
+
+    familyMembers = rawMembers
+      .filter((m): m is Record<string, unknown> => typeof m === "object" && m !== null)
+      .map((m) => ({
+        id: String(m.id || Math.random().toString(36).substring(2, 9)),
+        name: String(m.name || "").trim(),
+        relationship: (["Spouse", "Child", "Parent", "Sibling", "Other"].includes(String(m.relationship))
+          ? m.relationship
+          : "Other") as FamilyRelationship,
+        gender: (["male", "female", "other"].includes(String(m.gender))
+          ? m.gender
+          : "other") as FamilyGender,
+        dob: m.dob ? String(m.dob).trim() : undefined,
+        bloodGroup: m.bloodGroup ? String(m.bloodGroup).trim() : undefined,
+        allergies: m.allergies ? String(m.allergies).trim() : undefined,
+      }))
+      .filter((m) => m.name.length > 0);
+  }
 
   return apiOk({ familyMembers });
 }
@@ -120,6 +151,25 @@ export async function POST(request: Request) {
       bloodGroup,
       allergies,
     });
+  }
+
+  // Sync with relational patient_family_members table
+  try {
+    // Clear and re-insert for full sync
+    await db.delete(patientFamilyMembers).where(eq(patientFamilyMembers.patientId, actor.id));
+    for (const mem of sanitized) {
+      await db.insert(patientFamilyMembers).values({
+        patientId: actor.id,
+        fullName: mem.name,
+        relationship: mem.relationship,
+        gender: mem.gender,
+        dob: mem.dob,
+        bloodGroup: mem.bloodGroup,
+        allergies: mem.allergies,
+      });
+    }
+  } catch {
+    // Graceful fallback to user JSON
   }
 
   // Fetch current notification preferences
