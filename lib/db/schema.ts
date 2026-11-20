@@ -2192,6 +2192,62 @@ export const medicalCertificates = mysqlTable(
   ]
 );
 
+export const clinicAssets = mysqlTable(
+  "clinic_assets",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    clinicId: bigint("clinic_id", { mode: "number" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    category: varchar("category", { length: 100 }).notNull().default("diagnostic"),
+    model: varchar("model", { length: 150 }),
+    serialNumber: varchar("serial_number", { length: 150 }).notNull(),
+    department: varchar("department", { length: 150 }),
+    vendorName: varchar("vendor_name", { length: 255 }),
+    purchaseDate: varchar("purchase_date", { length: 50 }),
+    amcContractNumber: varchar("amc_contract_number", { length: 100 }),
+    amcVendor: varchar("amc_vendor", { length: 255 }),
+    amcExpiryDate: varchar("amc_expiry_date", { length: 50 }),
+    calibrationFrequencyMonths: int("calibration_frequency_months").default(12),
+    lastCalibrationDate: varchar("last_calibration_date", { length: 50 }),
+    nextCalibrationDate: varchar("next_calibration_date", { length: 50 }),
+    status: varchar("status", { length: 50 }).notNull().default("operational"),
+    location: varchar("location", { length: 255 }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (t) => [
+    index("ca_clinic_id_idx").on(t.clinicId),
+    uniqueIndex("ca_serial_number_unique").on(t.serialNumber),
+  ]
+);
+
+export const assetMaintenanceLogs = mysqlTable(
+  "asset_maintenance_logs",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    assetId: bigint("asset_id", { mode: "number" }).notNull(),
+    serviceType: varchar("service_type", { length: 100 }).notNull().default("calibration"),
+    serviceDate: varchar("service_date", { length: 50 }).notNull(),
+    performedBy: varchar("performed_by", { length: 255 }),
+    vendorName: varchar("vendor_name", { length: 255 }),
+    cost: int("cost").default(0),
+    notes: text("notes"),
+    calibrationPassed: boolean("calibration_passed").default(true),
+    nextScheduledDate: varchar("next_scheduled_date", { length: 50 }),
+    certificateUrl: text("certificate_url"),
+    status: varchar("status", { length: 50 }).notNull().default("completed"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [
+    index("aml_asset_id_idx").on(t.assetId),
+    foreignKey({
+      columns: [t.assetId],
+      foreignColumns: [clinicAssets.id],
+    }).onDelete("cascade"),
+  ]
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2230,3 +2286,7 @@ export type PatientFamilyMember = typeof patientFamilyMembers.$inferSelect;
 export type NewPatientFamilyMember = typeof patientFamilyMembers.$inferInsert;
 export type MedicalCertificateRow = typeof medicalCertificates.$inferSelect;
 export type NewMedicalCertificateRow = typeof medicalCertificates.$inferInsert;
+export type ClinicAssetRow = typeof clinicAssets.$inferSelect;
+export type NewClinicAssetRow = typeof clinicAssets.$inferInsert;
+export type AssetMaintenanceLogRow = typeof assetMaintenanceLogs.$inferSelect;
+export type NewAssetMaintenanceLogRow = typeof assetMaintenanceLogs.$inferInsert;
